@@ -195,8 +195,9 @@ private[scalanative] object LLVM {
       // * libpthread for process APIs and parallel garbage collection.
       // * Dbghelp for windows implementation of unwind libunwind API
       val platformsLinks =
-        if (config.targetsWindows) Seq("Dbghelp")
-        else Seq("pthread", "dl")
+        Seq()
+        // if (config.targetsWindows) Seq("Dbghelp")
+        // else Seq("pthread", "dl")
       platformsLinks ++ srclinks ++ gclinks
     }
     val linkopts = config.linkingOptions ++ links.map("-l" + _)
@@ -227,11 +228,11 @@ private[scalanative] object LLVM {
       // non-portable
       val linkNameFlags =
         if (config.compilerConfig.buildTarget == BuildTarget.LibraryDynamic)
-          if (config.targetsLinux)
-            List(s"-Wl,-soname,${config.artifactName}")
-          else if (config.targetsMac)
-            List(s"-Wl,-install_name,${config.artifactName}")
-          else Nil
+          // if (config.targetsLinux)
+          List(s"-Wl,-soname,${config.artifactName}")
+        // else if (config.targetsMac)
+        // List(s"-Wl,-install_name,${config.artifactName}")
+        // else Nil
         else Nil
 
       val output = Seq("-o", config.buildPath.abs)

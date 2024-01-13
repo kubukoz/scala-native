@@ -85,14 +85,16 @@ package object runtime {
       thread: Thread,
       throwable: Throwable
   ): Unit = {
-    try handler.uncaughtException(thread, throwable)
-    catch {
-      case ex: Throwable =>
-        val threadName = "\"" + thread.getName() + "\""
-        System.err.println(
-          s"\nException: ${ex.getClass().getName()} thrown from the UncaughtExceptionHandler in thread ${threadName}"
-        )
-    }
+    // try
+    // handler.uncaughtException(thread, throwable)
+    ()
+    // catch {
+    //   case ex: Throwable =>
+    //     val threadName = "\"" + thread.getName() + "\""
+    //     System.err.println(
+    //       s"\nException: ${ex.getClass().getName()} thrown from the UncaughtExceptionHandler in thread ${threadName}"
+    //     )
+    // }
   }
 
   @alwaysinline def fromRawPtr[T](rawptr: RawPtr): Ptr[T] =

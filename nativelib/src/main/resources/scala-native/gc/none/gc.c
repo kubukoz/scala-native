@@ -22,7 +22,7 @@
 // process would not use too much resources.
 #define DEFAULT_CHUNK_SIZE "64M"
 #else
-#define DEFAULT_CHUNK_SIZE "4G"
+#define DEFAULT_CHUNK_SIZE "4M"
 #endif
 
 #if defined(__has_feature)
@@ -41,7 +41,7 @@ static size_t TO_NORMAL_MMAP = 1L;
 static size_t DO_PREALLOC = 0L; // No Preallocation.
 
 static void exitWithOutOfMemory() {
-    fprintf(stderr, "Out of heap space\n");
+    // fprintf(stderr, "Out of heap space\n");
     exit(1);
 }
 

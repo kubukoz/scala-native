@@ -5,7 +5,7 @@
 
 #endif // Unix or Mac OS
 
-#if defined(_WIN32) // bogus values to keep linker happy
+#if defined(_WIN32) || defined(TARGET_PLAYDATE) // bogus values to keep linker happy
 #define NL_SETD -1
 #define NL_CAT_LOCALE -1
 #endif // _WIN32

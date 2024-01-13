@@ -31,6 +31,7 @@
 void scalanative_yield_processor() {
 #ifdef YieldProcessor
     YieldProcessor();
+#elif defined(TARGET_PLAYDATE)
 #else
     sleep(0);
 #endif

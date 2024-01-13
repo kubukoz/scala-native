@@ -1,6 +1,7 @@
 // MemoryMap.c is used by all GCs and Zone
 
 #include "shared/MemoryMap.h"
+#include <stdlib.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -44,8 +45,9 @@ word_t *memoryMap(size_t memorySize) {
     // supports only 32-bit address space and is in most cases not recommended.
     return VirtualAlloc(NULL, memorySize, MEM_RESERVE, PAGE_NOACCESS);
 #else // Unix
-    return mmap(NULL, memorySize, HEAP_MEM_PROT, HEAP_MEM_FLAGS, HEAP_MEM_FD,
-                HEAP_MEM_FD_OFFSET);
+    // return mmap(NULL, memorySize, HEAP_MEM_PROT, HEAP_MEM_FLAGS, HEAP_MEM_FD,
+    //             HEAP_MEM_FD_OFFSET);
+    return 0;
 #endif
 }
 
@@ -58,23 +60,14 @@ int memoryUnmap(void *address, size_t memorySize) {
 }
 
 word_t *memoryMapPrealloc(size_t memorySize, size_t doPrealloc) {
-#ifdef _WIN32
-    // No special pre-alloc support on Windows is needed
-    return memoryMap(memorySize);
-#else // Unix
-    if (!doPrealloc) {
-        return memoryMap(memorySize);
-    }
-    word_t *res = mmap(NULL, memorySize, HEAP_MEM_PROT, HEAP_MEM_FLAGS_PREALLOC,
-                       HEAP_MEM_FD, HEAP_MEM_FD_OFFSET);
-#ifndef __linux__
-    // if we are not on linux the next best thing we can do is to mark the pages
-    // as MADV_WILLNEED but only if doPrealloc is enabled.
-    madvise(res, memorySize, MADV_WILLNEED);
-#endif // __linux__
-
+    // if (!doPrealloc) {
+    //     return memoryMap(memorySize);
+    // }
+    word_t *res = malloc(memorySize);
+    // word_t *res = mmap(NULL, memorySize, HEAP_MEM_PROT,
+    // HEAP_MEM_FLAGS_PREALLOC,
+    //                    HEAP_MEM_FD, HEAP_MEM_FD_OFFSET);
     return res;
-#endif // !_WIN32
 }
 
 bool memoryCommit(void *ref, size_t memorySize) {

@@ -207,8 +207,10 @@ class Thread private[lang] (
   }
 
   def getUncaughtExceptionHandler(): Thread.UncaughtExceptionHandler = {
-    if (unhandledExceptionHandler != null) unhandledExceptionHandler
-    else getThreadGroup()
+    // todo: do _something_ on exceptions. We should probably have a native function that logs something with the playdate API
+    ???
+    // if (unhandledExceptionHandler != null) unhandledExceptionHandler
+    // else getThreadGroup()
   }
   def setUncaughtExceptionHandler(eh: Thread.UncaughtExceptionHandler): Unit =
     unhandledExceptionHandler = eh
@@ -510,7 +512,7 @@ object Thread {
 
   @alwaysinline private[lang] def nativeCompanion: NativeThread.Companion =
     if (isWindows) WindowsThread
-    else PosixThread
+    else sys.error("Threads not supported on the playdate")
 
   def activeCount(): Int = currentThread()
     .getThreadGroup()

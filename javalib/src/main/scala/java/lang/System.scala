@@ -161,9 +161,11 @@ private object SystemProperties {
         Some(fromCWideString(buf, StandardCharsets.UTF_16LE))
       else None
     } else {
-      val buf: Ptr[scala.Byte] = stackalloc[scala.Byte](bufSize)
-      val cwd = unistd.getcwd(buf, bufSize)
-      Option(cwd).map(fromCString(_))
+      // val buf: Ptr[scala.Byte] = stackalloc[scala.Byte](bufSize)
+      // val cwd = unistd.getcwd(buf, bufSize)
+      // Option(cwd).map(fromCString(_))
+      // todo: implement stubs for the above so that it links fine without Scala changes
+      None
     }
   }
 
@@ -178,12 +180,14 @@ private object SystemProperties {
         else None
       }
     } else {
-      val buf = stackalloc[pwd.passwd]()
-      val uid = unistd.getuid()
-      val res = pwd.getpwuid(uid, buf)
-      if (res == 0 && buf.pw_dir != null)
-        Some(fromCString(buf.pw_dir))
-      else None
+      // val buf = stackalloc[pwd.passwd]()
+      // val uid = unistd.getuid()
+      // val res = pwd.getpwuid(uid, buf)
+      // if (res == 0 && buf.pw_dir != null)
+      //   Some(fromCString(buf.pw_dir))
+      // else None
+      // todo: implement stubs for the above so that it links fine without Scala changes
+      None
     }
   }
 

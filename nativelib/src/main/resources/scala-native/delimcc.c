@@ -26,7 +26,9 @@
 #define ASM_JMPBUF_SIZE 256
 #define JMPBUF_STACK_POINTER_OFFSET (16 / 8)
 #else
-#error "Unsupported platform"
+// #error "Unsupported platform"
+#define ASM_JMPBUF_SIZE 192
+#define JMPBUF_STACK_POINTER_OFFSET (104 / 8)
 #endif
 
 #ifdef DELIMCC_DEBUG

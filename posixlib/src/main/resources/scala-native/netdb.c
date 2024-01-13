@@ -2,6 +2,8 @@
 #include <WinSock2.h>
 #include <ws2tcpip.h> // socklen_t
 // #include <Winerror.h>
+#elif defined(TARGET_PLAYDATE)
+// not supported
 #else // not _WIN32
 /* FreeBSD wants AF_INET, which is in <sys/socket.h>
  *
@@ -14,6 +16,8 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #endif
+
+#ifndef TARGET_PLAYDATE
 
 #include <stddef.h>
 
@@ -183,3 +187,4 @@ int scalanative_eai_system() { return -1; }
 int scalanative_eai_overflow() { return -1; }
 
 #endif // _Win32
+#endif

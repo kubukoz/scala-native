@@ -1,5 +1,5 @@
 #if defined(__unix__) || defined(__unix) || defined(unix) ||                   \
-    (defined(__APPLE__) && defined(__MACH__))
+    (defined(__APPLE__) && defined(__MACH__)) || defined(TARGET_PLAYDATE)
 
 // #define _POSIX_C_SOURCE 2 // constr
 // #define _X_OPEN // constr

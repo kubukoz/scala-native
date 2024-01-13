@@ -1,4 +1,9 @@
-#if !defined(_WIN32)
+#ifdef _WIN32
+#elif defined(TARGET_PLAYDATE)
+
+int clock_gettime(void) { return 0; }
+
+#else // Unix or Mac OS
 
 #if defined(__APPLE__)
 // clock_gettime() & ilk were introduced in MacOS 10.12

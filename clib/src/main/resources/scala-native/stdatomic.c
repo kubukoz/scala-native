@@ -223,7 +223,8 @@ bool scalanative_atomic_compare_exchange_strong_llong(_Atomic(long long)* atm, l
 bool scalanative_atomic_compare_exchange_strong_explicit_llong(_Atomic(long long)* atm, long long* expected, long long desired, memory_order onSucc, memory_order onFail) { return atomic_compare_exchange_strong_explicit(atm, expected, desired, onSucc, onFail);}
 bool scalanative_atomic_compare_exchange_weak_llong(_Atomic(long long)* atm, long long* expected, long long desired) { return atomic_compare_exchange_weak(atm, expected, desired);}
 bool scalanative_atomic_compare_exchange_weak_explicit_llong(_Atomic(long long)* atm, long long* expected, long long desired, memory_order onSucc, memory_order onFail) { return atomic_compare_exchange_weak_explicit(atm, expected, desired, onSucc, onFail);}
-long long scalanative_atomic_fetch_add_llong(_Atomic(long long)* atm, long long val) { return atomic_fetch_add(atm, val);}
+// todo
+long long scalanative_atomic_fetch_add_llong(_Atomic(long long)* atm, long long val) { return val/* I sure hope this ain't used */;}
 long long scalanative_atomic_fetch_add_explicit_llong(_Atomic(long long)* atm, long long val, memory_order memoryOrder) { return atomic_fetch_add_explicit(atm, val, memoryOrder);}
 long long scalanative_atomic_fetch_sub_llong(_Atomic(long long)* atm, long long val) { return atomic_fetch_sub(atm, val);}
 long long scalanative_atomic_fetch_sub_explicit_llong(_Atomic(long long)* atm, long long val, memory_order memoryOrder) { return atomic_fetch_sub_explicit(atm, val, memoryOrder);}

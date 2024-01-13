@@ -31,4 +31,14 @@ int scalanative_unw_reg_ip() { return UNW_REG_IP; }
 size_t scalanative_unwind_sizeof_context() { return sizeof(unw_context_t); }
 size_t scalanative_unwind_sizeof_cursor() { return sizeof(unw_cursor_t); }
 
+#else
+
+#include "../unwind.h"
+#include <string.h>
+int scalanative_unwind_get_proc_name(void *cursor, char *buffer, size_t length,
+                                     void *offset) {
+    strcpy("unwind-not-supported", buffer);
+    return 0;
+}
+
 #endif // Unix or Mac OS
