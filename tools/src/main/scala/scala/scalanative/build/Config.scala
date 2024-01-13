@@ -246,10 +246,9 @@ object Config {
         case BuildTarget.Application =>
           if (targetsWindows) ".exe" else ""
         case BuildTarget.LibraryDynamic =>
-          // if (targetsWindows) ".dll"
-          // else if (targetsMac) ".dylib"
-          // else
-          ".elf"
+          if (targetsWindows) ".dll"
+          else if (targetsMac) ".dylib"
+          else ".so"
         case BuildTarget.LibraryStatic =>
           if (targetsWindows) ".lib"
           else ".a"
