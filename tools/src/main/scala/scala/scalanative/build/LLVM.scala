@@ -228,11 +228,11 @@ private[scalanative] object LLVM {
       // non-portable
       val linkNameFlags =
         if (config.compilerConfig.buildTarget == BuildTarget.LibraryDynamic)
-          // if (config.targetsLinux)
-          List(s"-Wl,-soname,${config.artifactName}")
-        // else if (config.targetsMac)
-        // List(s"-Wl,-install_name,${config.artifactName}")
-        // else Nil
+          if (config.targetsLinux)
+            List(s"-Wl,-soname,${config.artifactName}")
+          else if (config.targetsMac)
+            List(s"-Wl,-install_name,${config.artifactName}")
+          else Nil
         else Nil
 
       val output = Seq("-o", config.buildPath.abs)
