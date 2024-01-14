@@ -329,8 +329,7 @@ private[nio] object MappedByteBufferImpl {
       fd.fd,
       position.toSize
     )
-    if (ptr.toInt == -1)
-      failMapping()
+    if (ptr.toInt == -1) failMapping()
     new MappedByteBufferData(mode, ptr, size, None)
   }
 
