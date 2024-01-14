@@ -22,7 +22,7 @@
 // process would not use too much resources.
 #define DEFAULT_CHUNK_SIZE "64M"
 #else
-#define DEFAULT_CHUNK_SIZE "4M"
+#define DEFAULT_CHUNK_SIZE "2M"
 #endif
 
 #if defined(__has_feature)

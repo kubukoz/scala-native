@@ -321,7 +321,7 @@ private[nio] object MappedByteBufferImpl {
       case _ => throw new IllegalStateException("Unknown MapMode")
     }
 
-    /* val ptr = mmap(
+    val ptr = mmap(
       null,
       size.toUInt,
       prot,
@@ -329,11 +329,9 @@ private[nio] object MappedByteBufferImpl {
       fd.fd,
       position.toSize
     )
-    if (ptr.toInt == -1)  */
-    failMapping()
-    ???
-
-    // new MappedByteBufferData(mode, ptr, size, None)
+    if (ptr.toInt == -1)
+      failMapping()
+    new MappedByteBufferData(mode, ptr, size, None)
   }
 
   private def mapData(
