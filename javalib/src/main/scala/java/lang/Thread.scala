@@ -207,10 +207,8 @@ class Thread private[lang] (
   }
 
   def getUncaughtExceptionHandler(): Thread.UncaughtExceptionHandler = {
-    // todo: do _something_ on exceptions. We should probably have a native function that logs something with the playdate API
-    ???
-    // if (unhandledExceptionHandler != null) unhandledExceptionHandler
-    // else getThreadGroup()
+    if (unhandledExceptionHandler != null) unhandledExceptionHandler
+    else getThreadGroup()
   }
   def setUncaughtExceptionHandler(eh: Thread.UncaughtExceptionHandler): Unit =
     unhandledExceptionHandler = eh
