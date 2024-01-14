@@ -47,566 +47,566 @@ import scala.language.implicitConversions
   type atomic_ptrdiff_t = CPtrDiff
   type atomic_intmax_t = CLongLong
   type atomic_uintmax_t = CUnsignedLongLong
-
+  
   type memory_order = Int // enum
   @extern object memory_order {
     @name("scalanative_atomic_memory_order_relaxed")
-    final def memory_order_relaxed: memory_order = extern
+    final def memory_order_relaxed: memory_order = extern    
     @name("scalanative_atomic_memory_order_consume")
-    final def memory_order_consume: memory_order = extern
+    final def memory_order_consume: memory_order = extern    
     @name("scalanative_atomic_memory_order_acquire")
-    final def memory_order_acquire: memory_order = extern
+    final def memory_order_acquire: memory_order = extern    
     @name("scalanative_atomic_memory_order_release")
-    final def memory_order_release: memory_order = extern
+    final def memory_order_release: memory_order = extern    
     @name("scalanative_atomic_memory_order_acq_rel")
-    final def memory_order_acq_rel: memory_order = extern
+    final def memory_order_acq_rel: memory_order = extern    
     @name("scalanative_atomic_memory_order_seq_cst")
-    final def memory_order_seq_cst: memory_order = extern
+    final def memory_order_seq_cst: memory_order = extern    
   }
 
   @name("scalanative_atomic_thread_fence")
   final def atomic_thread_fence(order: memory_order): Unit = extern
-
+  
   @name("scalanative_atomic_signal_fence")
   final def atomic_signal_fence(order: memory_order): Unit = extern
-
-  @name("scalanative_atomic_init_bool")
+ 
+  @name("scalanative_atomic_init_bool") 
   def atomic_init(atm: Ptr[atomic_bool], initValue: Boolean): Unit = extern
-
+  
   @name("scalanative_atomic_load_bool")
   def atomic_load(ptr: Ptr[atomic_bool]): Boolean = extern
   @name("scalanative_atomic_load_explicit_bool")
   def atomic_load_explicit(ptr: Ptr[atomic_bool], memoryOrder: memory_order): Boolean = extern
-
+  
   @name("scalanative_atomic_store_bool")
   def atomic_store(ptr: Ptr[atomic_bool], v: Boolean): Unit = extern
   @name("scalanative_atomic_store_explicit_bool")
   def atomic_store_explicit(ptr: Ptr[atomic_bool], v: Boolean, memoryOrder: memory_order): Unit = extern
-
+  
   @name("scalanative_atomic_exchange_bool")
   def atomic_exchange(ptr: Ptr[atomic_bool], v: Boolean): Boolean = extern
   @name("scalanative_atomic_exchange_explicit_bool")
   def atomic_exchange_explicit(ptr: Ptr[atomic_bool], v: Boolean, memoryOrder: memory_order): Boolean = extern
-
+  
   @name("scalanative_atomic_compare_exchange_strong_bool")
   def atomic_compare_exchange_strong(ptr: Ptr[atomic_bool], expected: Ptr[Boolean], desired: Boolean): CBool = extern
   @name("scalanative_atomic_compare_exchange_strong_explicit_bool")
   def atomic_compare_exchange_strong_explicit(ptr: Ptr[atomic_bool], expected: Ptr[Boolean], desired: Boolean, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
+  
   @name("scalanative_atomic_compare_exchange_weak_bool")
   def atomic_compare_exchange_weak(ptr: Ptr[atomic_bool],expected: Ptr[Boolean], desired: Boolean): CBool = extern
   @name("scalanative_atomic_compare_exchange_weak_explicit_bool")
   def atomic_compare_exchange_weak_explicit(ptr: Ptr[atomic_bool], expected: Ptr[Boolean], desired: Boolean, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
-  @name("scalanative_atomic_fetch_add_bool")
+  
+  @name("scalanative_atomic_fetch_add_bool")          
   def atomic_fetch_add(ptr: Ptr[atomic_bool], value: Boolean): Boolean = extern
-  @name("scalanative_atomic_fetch_add_explicit_bool")
+  @name("scalanative_atomic_fetch_add_explicit_bool") 
   def atomic_fetch_add_explicit(ptr: Ptr[atomic_bool], value: Boolean, memoryOrder: memory_order): Boolean = extern
-  @name("scalanative_atomic_fetch_sub_bool")
+  @name("scalanative_atomic_fetch_sub_bool")          
   def atomic_fetch_sub(ptr: Ptr[atomic_bool], value: Boolean): Boolean = extern
-  @name("scalanative_atomic_fetch_sub_explicit_bool")
+  @name("scalanative_atomic_fetch_sub_explicit_bool") 
   def atomic_fetch_sub_explicit(ptr: Ptr[atomic_bool], value: Boolean, memoryOrder: memory_order): Boolean = extern
-  @name("scalanative_atomic_fetch_or_bool")
+  @name("scalanative_atomic_fetch_or_bool")          
   def atomic_fetch_or(ptr: Ptr[atomic_bool], value: Boolean): Boolean = extern
-  @name("scalanative_atomic_fetch_or_explicit_bool")
+  @name("scalanative_atomic_fetch_or_explicit_bool") 
   def atomic_fetch_or_explicit(ptr: Ptr[atomic_bool], value: Boolean, memoryOrder: memory_order): Boolean = extern
-  @name("scalanative_atomic_fetch_and_bool")
+  @name("scalanative_atomic_fetch_and_bool")          
   def atomic_fetch_and(ptr: Ptr[atomic_bool], value: Boolean): Boolean = extern
-  @name("scalanative_atomic_fetch_and_explicit_bool")
+  @name("scalanative_atomic_fetch_and_explicit_bool") 
   def atomic_fetch_and_explicit(ptr: Ptr[atomic_bool], value: Boolean, memoryOrder: memory_order): Boolean = extern
-  @name("scalanative_atomic_fetch_xor_bool")
+  @name("scalanative_atomic_fetch_xor_bool")          
   def atomic_fetch_xor(ptr: Ptr[atomic_bool], value: Boolean): Boolean = extern
-  @name("scalanative_atomic_fetch_xor_explicit_bool")
+  @name("scalanative_atomic_fetch_xor_explicit_bool") 
   def atomic_fetch_xor_explicit(ptr: Ptr[atomic_bool], value: Boolean, memoryOrder: memory_order): Boolean = extern
 
-  @name("scalanative_atomic_init_byte")
+  @name("scalanative_atomic_init_byte") 
   def atomic_init(atm: Ptr[atomic_char], initValue: Byte): Unit = extern
-
+  
   @name("scalanative_atomic_load_byte")
   def atomic_load(ptr: Ptr[atomic_char]): Byte = extern
   @name("scalanative_atomic_load_explicit_byte")
   def atomic_load_explicit(ptr: Ptr[atomic_char], memoryOrder: memory_order): Byte = extern
-
+  
   @name("scalanative_atomic_store_byte")
   def atomic_store(ptr: Ptr[atomic_char], v: Byte): Unit = extern
   @name("scalanative_atomic_store_explicit_byte")
   def atomic_store_explicit(ptr: Ptr[atomic_char], v: Byte, memoryOrder: memory_order): Unit = extern
-
+  
   @name("scalanative_atomic_exchange_byte")
   def atomic_exchange(ptr: Ptr[atomic_char], v: Byte): Byte = extern
   @name("scalanative_atomic_exchange_explicit_byte")
   def atomic_exchange_explicit(ptr: Ptr[atomic_char], v: Byte, memoryOrder: memory_order): Byte = extern
-
+  
   @name("scalanative_atomic_compare_exchange_strong_byte")
   def atomic_compare_exchange_strong(ptr: Ptr[atomic_char], expected: Ptr[Byte], desired: Byte): CBool = extern
   @name("scalanative_atomic_compare_exchange_strong_explicit_byte")
   def atomic_compare_exchange_strong_explicit(ptr: Ptr[atomic_char], expected: Ptr[Byte], desired: Byte, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
+  
   @name("scalanative_atomic_compare_exchange_weak_byte")
   def atomic_compare_exchange_weak(ptr: Ptr[atomic_char],expected: Ptr[Byte], desired: Byte): CBool = extern
   @name("scalanative_atomic_compare_exchange_weak_explicit_byte")
   def atomic_compare_exchange_weak_explicit(ptr: Ptr[atomic_char], expected: Ptr[Byte], desired: Byte, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
-  @name("scalanative_atomic_fetch_add_byte")
+  
+  @name("scalanative_atomic_fetch_add_byte")          
   def atomic_fetch_add(ptr: Ptr[atomic_char], value: Byte): Byte = extern
-  @name("scalanative_atomic_fetch_add_explicit_byte")
+  @name("scalanative_atomic_fetch_add_explicit_byte") 
   def atomic_fetch_add_explicit(ptr: Ptr[atomic_char], value: Byte, memoryOrder: memory_order): Byte = extern
-  @name("scalanative_atomic_fetch_sub_byte")
+  @name("scalanative_atomic_fetch_sub_byte")          
   def atomic_fetch_sub(ptr: Ptr[atomic_char], value: Byte): Byte = extern
-  @name("scalanative_atomic_fetch_sub_explicit_byte")
+  @name("scalanative_atomic_fetch_sub_explicit_byte") 
   def atomic_fetch_sub_explicit(ptr: Ptr[atomic_char], value: Byte, memoryOrder: memory_order): Byte = extern
-  @name("scalanative_atomic_fetch_or_byte")
+  @name("scalanative_atomic_fetch_or_byte")          
   def atomic_fetch_or(ptr: Ptr[atomic_char], value: Byte): Byte = extern
-  @name("scalanative_atomic_fetch_or_explicit_byte")
+  @name("scalanative_atomic_fetch_or_explicit_byte") 
   def atomic_fetch_or_explicit(ptr: Ptr[atomic_char], value: Byte, memoryOrder: memory_order): Byte = extern
-  @name("scalanative_atomic_fetch_and_byte")
+  @name("scalanative_atomic_fetch_and_byte")          
   def atomic_fetch_and(ptr: Ptr[atomic_char], value: Byte): Byte = extern
-  @name("scalanative_atomic_fetch_and_explicit_byte")
+  @name("scalanative_atomic_fetch_and_explicit_byte") 
   def atomic_fetch_and_explicit(ptr: Ptr[atomic_char], value: Byte, memoryOrder: memory_order): Byte = extern
-  @name("scalanative_atomic_fetch_xor_byte")
+  @name("scalanative_atomic_fetch_xor_byte")          
   def atomic_fetch_xor(ptr: Ptr[atomic_char], value: Byte): Byte = extern
-  @name("scalanative_atomic_fetch_xor_explicit_byte")
+  @name("scalanative_atomic_fetch_xor_explicit_byte") 
   def atomic_fetch_xor_explicit(ptr: Ptr[atomic_char], value: Byte, memoryOrder: memory_order): Byte = extern
 
-  @name("scalanative_atomic_init_ubyte")
+  @name("scalanative_atomic_init_ubyte") 
   def atomic_init(atm: Ptr[atomic_uchar], initValue: UByte): Unit = extern
-
+  
   @name("scalanative_atomic_load_ubyte")
   def atomic_load(ptr: Ptr[atomic_uchar]): UByte = extern
   @name("scalanative_atomic_load_explicit_ubyte")
   def atomic_load_explicit(ptr: Ptr[atomic_uchar], memoryOrder: memory_order): UByte = extern
-
+  
   @name("scalanative_atomic_store_ubyte")
   def atomic_store(ptr: Ptr[atomic_uchar], v: UByte): Unit = extern
   @name("scalanative_atomic_store_explicit_ubyte")
   def atomic_store_explicit(ptr: Ptr[atomic_uchar], v: UByte, memoryOrder: memory_order): Unit = extern
-
+  
   @name("scalanative_atomic_exchange_ubyte")
   def atomic_exchange(ptr: Ptr[atomic_uchar], v: UByte): UByte = extern
   @name("scalanative_atomic_exchange_explicit_ubyte")
   def atomic_exchange_explicit(ptr: Ptr[atomic_uchar], v: UByte, memoryOrder: memory_order): UByte = extern
-
+  
   @name("scalanative_atomic_compare_exchange_strong_ubyte")
   def atomic_compare_exchange_strong(ptr: Ptr[atomic_uchar], expected: Ptr[UByte], desired: UByte): CBool = extern
   @name("scalanative_atomic_compare_exchange_strong_explicit_ubyte")
   def atomic_compare_exchange_strong_explicit(ptr: Ptr[atomic_uchar], expected: Ptr[UByte], desired: UByte, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
+  
   @name("scalanative_atomic_compare_exchange_weak_ubyte")
   def atomic_compare_exchange_weak(ptr: Ptr[atomic_uchar],expected: Ptr[UByte], desired: UByte): CBool = extern
   @name("scalanative_atomic_compare_exchange_weak_explicit_ubyte")
   def atomic_compare_exchange_weak_explicit(ptr: Ptr[atomic_uchar], expected: Ptr[UByte], desired: UByte, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
-  @name("scalanative_atomic_fetch_add_ubyte")
+  
+  @name("scalanative_atomic_fetch_add_ubyte")          
   def atomic_fetch_add(ptr: Ptr[atomic_uchar], value: UByte): UByte = extern
-  @name("scalanative_atomic_fetch_add_explicit_ubyte")
+  @name("scalanative_atomic_fetch_add_explicit_ubyte") 
   def atomic_fetch_add_explicit(ptr: Ptr[atomic_uchar], value: UByte, memoryOrder: memory_order): UByte = extern
-  @name("scalanative_atomic_fetch_sub_ubyte")
+  @name("scalanative_atomic_fetch_sub_ubyte")          
   def atomic_fetch_sub(ptr: Ptr[atomic_uchar], value: UByte): UByte = extern
-  @name("scalanative_atomic_fetch_sub_explicit_ubyte")
+  @name("scalanative_atomic_fetch_sub_explicit_ubyte") 
   def atomic_fetch_sub_explicit(ptr: Ptr[atomic_uchar], value: UByte, memoryOrder: memory_order): UByte = extern
-  @name("scalanative_atomic_fetch_or_ubyte")
+  @name("scalanative_atomic_fetch_or_ubyte")          
   def atomic_fetch_or(ptr: Ptr[atomic_uchar], value: UByte): UByte = extern
-  @name("scalanative_atomic_fetch_or_explicit_ubyte")
+  @name("scalanative_atomic_fetch_or_explicit_ubyte") 
   def atomic_fetch_or_explicit(ptr: Ptr[atomic_uchar], value: UByte, memoryOrder: memory_order): UByte = extern
-  @name("scalanative_atomic_fetch_and_ubyte")
+  @name("scalanative_atomic_fetch_and_ubyte")          
   def atomic_fetch_and(ptr: Ptr[atomic_uchar], value: UByte): UByte = extern
-  @name("scalanative_atomic_fetch_and_explicit_ubyte")
+  @name("scalanative_atomic_fetch_and_explicit_ubyte") 
   def atomic_fetch_and_explicit(ptr: Ptr[atomic_uchar], value: UByte, memoryOrder: memory_order): UByte = extern
-  @name("scalanative_atomic_fetch_xor_ubyte")
+  @name("scalanative_atomic_fetch_xor_ubyte")          
   def atomic_fetch_xor(ptr: Ptr[atomic_uchar], value: UByte): UByte = extern
-  @name("scalanative_atomic_fetch_xor_explicit_ubyte")
+  @name("scalanative_atomic_fetch_xor_explicit_ubyte") 
   def atomic_fetch_xor_explicit(ptr: Ptr[atomic_uchar], value: UByte, memoryOrder: memory_order): UByte = extern
 
-  @name("scalanative_atomic_init_short")
+  @name("scalanative_atomic_init_short") 
   def atomic_init(atm: Ptr[atomic_short], initValue: CShort): Unit = extern
-
+  
   @name("scalanative_atomic_load_short")
   def atomic_load(ptr: Ptr[atomic_short]): CShort = extern
   @name("scalanative_atomic_load_explicit_short")
   def atomic_load_explicit(ptr: Ptr[atomic_short], memoryOrder: memory_order): CShort = extern
-
+  
   @name("scalanative_atomic_store_short")
   def atomic_store(ptr: Ptr[atomic_short], v: CShort): Unit = extern
   @name("scalanative_atomic_store_explicit_short")
   def atomic_store_explicit(ptr: Ptr[atomic_short], v: CShort, memoryOrder: memory_order): Unit = extern
-
+  
   @name("scalanative_atomic_exchange_short")
   def atomic_exchange(ptr: Ptr[atomic_short], v: CShort): CShort = extern
   @name("scalanative_atomic_exchange_explicit_short")
   def atomic_exchange_explicit(ptr: Ptr[atomic_short], v: CShort, memoryOrder: memory_order): CShort = extern
-
+  
   @name("scalanative_atomic_compare_exchange_strong_short")
   def atomic_compare_exchange_strong(ptr: Ptr[atomic_short], expected: Ptr[CShort], desired: CShort): CBool = extern
   @name("scalanative_atomic_compare_exchange_strong_explicit_short")
   def atomic_compare_exchange_strong_explicit(ptr: Ptr[atomic_short], expected: Ptr[CShort], desired: CShort, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
+  
   @name("scalanative_atomic_compare_exchange_weak_short")
   def atomic_compare_exchange_weak(ptr: Ptr[atomic_short],expected: Ptr[CShort], desired: CShort): CBool = extern
   @name("scalanative_atomic_compare_exchange_weak_explicit_short")
   def atomic_compare_exchange_weak_explicit(ptr: Ptr[atomic_short], expected: Ptr[CShort], desired: CShort, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
-  @name("scalanative_atomic_fetch_add_short")
+  
+  @name("scalanative_atomic_fetch_add_short")          
   def atomic_fetch_add(ptr: Ptr[atomic_short], value: CShort): CShort = extern
-  @name("scalanative_atomic_fetch_add_explicit_short")
+  @name("scalanative_atomic_fetch_add_explicit_short") 
   def atomic_fetch_add_explicit(ptr: Ptr[atomic_short], value: CShort, memoryOrder: memory_order): CShort = extern
-  @name("scalanative_atomic_fetch_sub_short")
+  @name("scalanative_atomic_fetch_sub_short")          
   def atomic_fetch_sub(ptr: Ptr[atomic_short], value: CShort): CShort = extern
-  @name("scalanative_atomic_fetch_sub_explicit_short")
+  @name("scalanative_atomic_fetch_sub_explicit_short") 
   def atomic_fetch_sub_explicit(ptr: Ptr[atomic_short], value: CShort, memoryOrder: memory_order): CShort = extern
-  @name("scalanative_atomic_fetch_or_short")
+  @name("scalanative_atomic_fetch_or_short")          
   def atomic_fetch_or(ptr: Ptr[atomic_short], value: CShort): CShort = extern
-  @name("scalanative_atomic_fetch_or_explicit_short")
+  @name("scalanative_atomic_fetch_or_explicit_short") 
   def atomic_fetch_or_explicit(ptr: Ptr[atomic_short], value: CShort, memoryOrder: memory_order): CShort = extern
-  @name("scalanative_atomic_fetch_and_short")
+  @name("scalanative_atomic_fetch_and_short")          
   def atomic_fetch_and(ptr: Ptr[atomic_short], value: CShort): CShort = extern
-  @name("scalanative_atomic_fetch_and_explicit_short")
+  @name("scalanative_atomic_fetch_and_explicit_short") 
   def atomic_fetch_and_explicit(ptr: Ptr[atomic_short], value: CShort, memoryOrder: memory_order): CShort = extern
-  @name("scalanative_atomic_fetch_xor_short")
+  @name("scalanative_atomic_fetch_xor_short")          
   def atomic_fetch_xor(ptr: Ptr[atomic_short], value: CShort): CShort = extern
-  @name("scalanative_atomic_fetch_xor_explicit_short")
+  @name("scalanative_atomic_fetch_xor_explicit_short") 
   def atomic_fetch_xor_explicit(ptr: Ptr[atomic_short], value: CShort, memoryOrder: memory_order): CShort = extern
 
-  @name("scalanative_atomic_init_ushort")
+  @name("scalanative_atomic_init_ushort") 
   def atomic_init(atm: Ptr[atomic_ushort], initValue: CUnsignedShort): Unit = extern
-
+  
   @name("scalanative_atomic_load_ushort")
   def atomic_load(ptr: Ptr[atomic_ushort]): CUnsignedShort = extern
   @name("scalanative_atomic_load_explicit_ushort")
   def atomic_load_explicit(ptr: Ptr[atomic_ushort], memoryOrder: memory_order): CUnsignedShort = extern
-
+  
   @name("scalanative_atomic_store_ushort")
   def atomic_store(ptr: Ptr[atomic_ushort], v: CUnsignedShort): Unit = extern
   @name("scalanative_atomic_store_explicit_ushort")
   def atomic_store_explicit(ptr: Ptr[atomic_ushort], v: CUnsignedShort, memoryOrder: memory_order): Unit = extern
-
+  
   @name("scalanative_atomic_exchange_ushort")
   def atomic_exchange(ptr: Ptr[atomic_ushort], v: CUnsignedShort): CUnsignedShort = extern
   @name("scalanative_atomic_exchange_explicit_ushort")
   def atomic_exchange_explicit(ptr: Ptr[atomic_ushort], v: CUnsignedShort, memoryOrder: memory_order): CUnsignedShort = extern
-
+  
   @name("scalanative_atomic_compare_exchange_strong_ushort")
   def atomic_compare_exchange_strong(ptr: Ptr[atomic_ushort], expected: Ptr[CUnsignedShort], desired: CUnsignedShort): CBool = extern
   @name("scalanative_atomic_compare_exchange_strong_explicit_ushort")
   def atomic_compare_exchange_strong_explicit(ptr: Ptr[atomic_ushort], expected: Ptr[CUnsignedShort], desired: CUnsignedShort, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
+  
   @name("scalanative_atomic_compare_exchange_weak_ushort")
   def atomic_compare_exchange_weak(ptr: Ptr[atomic_ushort],expected: Ptr[CUnsignedShort], desired: CUnsignedShort): CBool = extern
   @name("scalanative_atomic_compare_exchange_weak_explicit_ushort")
   def atomic_compare_exchange_weak_explicit(ptr: Ptr[atomic_ushort], expected: Ptr[CUnsignedShort], desired: CUnsignedShort, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
-  @name("scalanative_atomic_fetch_add_ushort")
+  
+  @name("scalanative_atomic_fetch_add_ushort")          
   def atomic_fetch_add(ptr: Ptr[atomic_ushort], value: CUnsignedShort): CUnsignedShort = extern
-  @name("scalanative_atomic_fetch_add_explicit_ushort")
+  @name("scalanative_atomic_fetch_add_explicit_ushort") 
   def atomic_fetch_add_explicit(ptr: Ptr[atomic_ushort], value: CUnsignedShort, memoryOrder: memory_order): CUnsignedShort = extern
-  @name("scalanative_atomic_fetch_sub_ushort")
+  @name("scalanative_atomic_fetch_sub_ushort")          
   def atomic_fetch_sub(ptr: Ptr[atomic_ushort], value: CUnsignedShort): CUnsignedShort = extern
-  @name("scalanative_atomic_fetch_sub_explicit_ushort")
+  @name("scalanative_atomic_fetch_sub_explicit_ushort") 
   def atomic_fetch_sub_explicit(ptr: Ptr[atomic_ushort], value: CUnsignedShort, memoryOrder: memory_order): CUnsignedShort = extern
-  @name("scalanative_atomic_fetch_or_ushort")
+  @name("scalanative_atomic_fetch_or_ushort")          
   def atomic_fetch_or(ptr: Ptr[atomic_ushort], value: CUnsignedShort): CUnsignedShort = extern
-  @name("scalanative_atomic_fetch_or_explicit_ushort")
+  @name("scalanative_atomic_fetch_or_explicit_ushort") 
   def atomic_fetch_or_explicit(ptr: Ptr[atomic_ushort], value: CUnsignedShort, memoryOrder: memory_order): CUnsignedShort = extern
-  @name("scalanative_atomic_fetch_and_ushort")
+  @name("scalanative_atomic_fetch_and_ushort")          
   def atomic_fetch_and(ptr: Ptr[atomic_ushort], value: CUnsignedShort): CUnsignedShort = extern
-  @name("scalanative_atomic_fetch_and_explicit_ushort")
+  @name("scalanative_atomic_fetch_and_explicit_ushort") 
   def atomic_fetch_and_explicit(ptr: Ptr[atomic_ushort], value: CUnsignedShort, memoryOrder: memory_order): CUnsignedShort = extern
-  @name("scalanative_atomic_fetch_xor_ushort")
+  @name("scalanative_atomic_fetch_xor_ushort")          
   def atomic_fetch_xor(ptr: Ptr[atomic_ushort], value: CUnsignedShort): CUnsignedShort = extern
-  @name("scalanative_atomic_fetch_xor_explicit_ushort")
+  @name("scalanative_atomic_fetch_xor_explicit_ushort") 
   def atomic_fetch_xor_explicit(ptr: Ptr[atomic_ushort], value: CUnsignedShort, memoryOrder: memory_order): CUnsignedShort = extern
 
-  @name("scalanative_atomic_init_int")
+  @name("scalanative_atomic_init_int") 
   def atomic_init(atm: Ptr[atomic_int], initValue: CInt): Unit = extern
-
+  
   @name("scalanative_atomic_load_int")
   def atomic_load(ptr: Ptr[atomic_int]): CInt = extern
   @name("scalanative_atomic_load_explicit_int")
   def atomic_load_explicit(ptr: Ptr[atomic_int], memoryOrder: memory_order): CInt = extern
-
+  
   @name("scalanative_atomic_store_int")
   def atomic_store(ptr: Ptr[atomic_int], v: CInt): Unit = extern
   @name("scalanative_atomic_store_explicit_int")
   def atomic_store_explicit(ptr: Ptr[atomic_int], v: CInt, memoryOrder: memory_order): Unit = extern
-
+  
   @name("scalanative_atomic_exchange_int")
   def atomic_exchange(ptr: Ptr[atomic_int], v: CInt): CInt = extern
   @name("scalanative_atomic_exchange_explicit_int")
   def atomic_exchange_explicit(ptr: Ptr[atomic_int], v: CInt, memoryOrder: memory_order): CInt = extern
-
+  
   @name("scalanative_atomic_compare_exchange_strong_int")
   def atomic_compare_exchange_strong(ptr: Ptr[atomic_int], expected: Ptr[CInt], desired: CInt): CBool = extern
   @name("scalanative_atomic_compare_exchange_strong_explicit_int")
   def atomic_compare_exchange_strong_explicit(ptr: Ptr[atomic_int], expected: Ptr[CInt], desired: CInt, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
+  
   @name("scalanative_atomic_compare_exchange_weak_int")
   def atomic_compare_exchange_weak(ptr: Ptr[atomic_int],expected: Ptr[CInt], desired: CInt): CBool = extern
   @name("scalanative_atomic_compare_exchange_weak_explicit_int")
   def atomic_compare_exchange_weak_explicit(ptr: Ptr[atomic_int], expected: Ptr[CInt], desired: CInt, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
-  @name("scalanative_atomic_fetch_add_int")
+  
+  @name("scalanative_atomic_fetch_add_int")          
   def atomic_fetch_add(ptr: Ptr[atomic_int], value: CInt): CInt = extern
-  @name("scalanative_atomic_fetch_add_explicit_int")
+  @name("scalanative_atomic_fetch_add_explicit_int") 
   def atomic_fetch_add_explicit(ptr: Ptr[atomic_int], value: CInt, memoryOrder: memory_order): CInt = extern
-  @name("scalanative_atomic_fetch_sub_int")
+  @name("scalanative_atomic_fetch_sub_int")          
   def atomic_fetch_sub(ptr: Ptr[atomic_int], value: CInt): CInt = extern
-  @name("scalanative_atomic_fetch_sub_explicit_int")
+  @name("scalanative_atomic_fetch_sub_explicit_int") 
   def atomic_fetch_sub_explicit(ptr: Ptr[atomic_int], value: CInt, memoryOrder: memory_order): CInt = extern
-  @name("scalanative_atomic_fetch_or_int")
+  @name("scalanative_atomic_fetch_or_int")          
   def atomic_fetch_or(ptr: Ptr[atomic_int], value: CInt): CInt = extern
-  @name("scalanative_atomic_fetch_or_explicit_int")
+  @name("scalanative_atomic_fetch_or_explicit_int") 
   def atomic_fetch_or_explicit(ptr: Ptr[atomic_int], value: CInt, memoryOrder: memory_order): CInt = extern
-  @name("scalanative_atomic_fetch_and_int")
+  @name("scalanative_atomic_fetch_and_int")          
   def atomic_fetch_and(ptr: Ptr[atomic_int], value: CInt): CInt = extern
-  @name("scalanative_atomic_fetch_and_explicit_int")
+  @name("scalanative_atomic_fetch_and_explicit_int") 
   def atomic_fetch_and_explicit(ptr: Ptr[atomic_int], value: CInt, memoryOrder: memory_order): CInt = extern
-  @name("scalanative_atomic_fetch_xor_int")
+  @name("scalanative_atomic_fetch_xor_int")          
   def atomic_fetch_xor(ptr: Ptr[atomic_int], value: CInt): CInt = extern
-  @name("scalanative_atomic_fetch_xor_explicit_int")
+  @name("scalanative_atomic_fetch_xor_explicit_int") 
   def atomic_fetch_xor_explicit(ptr: Ptr[atomic_int], value: CInt, memoryOrder: memory_order): CInt = extern
 
-  @name("scalanative_atomic_init_uint")
+  @name("scalanative_atomic_init_uint") 
   def atomic_init(atm: Ptr[atomic_uint], initValue: CUnsignedInt): Unit = extern
-
+  
   @name("scalanative_atomic_load_uint")
   def atomic_load(ptr: Ptr[atomic_uint]): CUnsignedInt = extern
   @name("scalanative_atomic_load_explicit_uint")
   def atomic_load_explicit(ptr: Ptr[atomic_uint], memoryOrder: memory_order): CUnsignedInt = extern
-
+  
   @name("scalanative_atomic_store_uint")
   def atomic_store(ptr: Ptr[atomic_uint], v: CUnsignedInt): Unit = extern
   @name("scalanative_atomic_store_explicit_uint")
   def atomic_store_explicit(ptr: Ptr[atomic_uint], v: CUnsignedInt, memoryOrder: memory_order): Unit = extern
-
+  
   @name("scalanative_atomic_exchange_uint")
   def atomic_exchange(ptr: Ptr[atomic_uint], v: CUnsignedInt): CUnsignedInt = extern
   @name("scalanative_atomic_exchange_explicit_uint")
   def atomic_exchange_explicit(ptr: Ptr[atomic_uint], v: CUnsignedInt, memoryOrder: memory_order): CUnsignedInt = extern
-
+  
   @name("scalanative_atomic_compare_exchange_strong_uint")
   def atomic_compare_exchange_strong(ptr: Ptr[atomic_uint], expected: Ptr[CUnsignedInt], desired: CUnsignedInt): CBool = extern
   @name("scalanative_atomic_compare_exchange_strong_explicit_uint")
   def atomic_compare_exchange_strong_explicit(ptr: Ptr[atomic_uint], expected: Ptr[CUnsignedInt], desired: CUnsignedInt, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
+  
   @name("scalanative_atomic_compare_exchange_weak_uint")
   def atomic_compare_exchange_weak(ptr: Ptr[atomic_uint],expected: Ptr[CUnsignedInt], desired: CUnsignedInt): CBool = extern
   @name("scalanative_atomic_compare_exchange_weak_explicit_uint")
   def atomic_compare_exchange_weak_explicit(ptr: Ptr[atomic_uint], expected: Ptr[CUnsignedInt], desired: CUnsignedInt, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
-  @name("scalanative_atomic_fetch_add_uint")
+  
+  @name("scalanative_atomic_fetch_add_uint")          
   def atomic_fetch_add(ptr: Ptr[atomic_uint], value: CUnsignedInt): CUnsignedInt = extern
-  @name("scalanative_atomic_fetch_add_explicit_uint")
+  @name("scalanative_atomic_fetch_add_explicit_uint") 
   def atomic_fetch_add_explicit(ptr: Ptr[atomic_uint], value: CUnsignedInt, memoryOrder: memory_order): CUnsignedInt = extern
-  @name("scalanative_atomic_fetch_sub_uint")
+  @name("scalanative_atomic_fetch_sub_uint")          
   def atomic_fetch_sub(ptr: Ptr[atomic_uint], value: CUnsignedInt): CUnsignedInt = extern
-  @name("scalanative_atomic_fetch_sub_explicit_uint")
+  @name("scalanative_atomic_fetch_sub_explicit_uint") 
   def atomic_fetch_sub_explicit(ptr: Ptr[atomic_uint], value: CUnsignedInt, memoryOrder: memory_order): CUnsignedInt = extern
-  @name("scalanative_atomic_fetch_or_uint")
+  @name("scalanative_atomic_fetch_or_uint")          
   def atomic_fetch_or(ptr: Ptr[atomic_uint], value: CUnsignedInt): CUnsignedInt = extern
-  @name("scalanative_atomic_fetch_or_explicit_uint")
+  @name("scalanative_atomic_fetch_or_explicit_uint") 
   def atomic_fetch_or_explicit(ptr: Ptr[atomic_uint], value: CUnsignedInt, memoryOrder: memory_order): CUnsignedInt = extern
-  @name("scalanative_atomic_fetch_and_uint")
+  @name("scalanative_atomic_fetch_and_uint")          
   def atomic_fetch_and(ptr: Ptr[atomic_uint], value: CUnsignedInt): CUnsignedInt = extern
-  @name("scalanative_atomic_fetch_and_explicit_uint")
+  @name("scalanative_atomic_fetch_and_explicit_uint") 
   def atomic_fetch_and_explicit(ptr: Ptr[atomic_uint], value: CUnsignedInt, memoryOrder: memory_order): CUnsignedInt = extern
-  @name("scalanative_atomic_fetch_xor_uint")
+  @name("scalanative_atomic_fetch_xor_uint")          
   def atomic_fetch_xor(ptr: Ptr[atomic_uint], value: CUnsignedInt): CUnsignedInt = extern
-  @name("scalanative_atomic_fetch_xor_explicit_uint")
+  @name("scalanative_atomic_fetch_xor_explicit_uint") 
   def atomic_fetch_xor_explicit(ptr: Ptr[atomic_uint], value: CUnsignedInt, memoryOrder: memory_order): CUnsignedInt = extern
 
-  @name("scalanative_atomic_init_long")
+  @name("scalanative_atomic_init_long") 
   def atomic_init(atm: Ptr[atomic_long], initValue: CLong): Unit = extern
-
+  
   @name("scalanative_atomic_load_long")
   def atomic_load(ptr: Ptr[atomic_long]): CLong = extern
   @name("scalanative_atomic_load_explicit_long")
   def atomic_load_explicit(ptr: Ptr[atomic_long], memoryOrder: memory_order): CLong = extern
-
+  
   @name("scalanative_atomic_store_long")
   def atomic_store(ptr: Ptr[atomic_long], v: CLong): Unit = extern
   @name("scalanative_atomic_store_explicit_long")
   def atomic_store_explicit(ptr: Ptr[atomic_long], v: CLong, memoryOrder: memory_order): Unit = extern
-
+  
   @name("scalanative_atomic_exchange_long")
   def atomic_exchange(ptr: Ptr[atomic_long], v: CLong): CLong = extern
   @name("scalanative_atomic_exchange_explicit_long")
   def atomic_exchange_explicit(ptr: Ptr[atomic_long], v: CLong, memoryOrder: memory_order): CLong = extern
-
+  
   @name("scalanative_atomic_compare_exchange_strong_long")
   def atomic_compare_exchange_strong(ptr: Ptr[atomic_long], expected: Ptr[CLong], desired: CLong): CBool = extern
   @name("scalanative_atomic_compare_exchange_strong_explicit_long")
   def atomic_compare_exchange_strong_explicit(ptr: Ptr[atomic_long], expected: Ptr[CLong], desired: CLong, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
+  
   @name("scalanative_atomic_compare_exchange_weak_long")
   def atomic_compare_exchange_weak(ptr: Ptr[atomic_long],expected: Ptr[CLong], desired: CLong): CBool = extern
   @name("scalanative_atomic_compare_exchange_weak_explicit_long")
   def atomic_compare_exchange_weak_explicit(ptr: Ptr[atomic_long], expected: Ptr[CLong], desired: CLong, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
-  @name("scalanative_atomic_fetch_add_long")
+  
+  @name("scalanative_atomic_fetch_add_long")          
   def atomic_fetch_add(ptr: Ptr[atomic_long], value: CLong): CLong = extern
-  @name("scalanative_atomic_fetch_add_explicit_long")
+  @name("scalanative_atomic_fetch_add_explicit_long") 
   def atomic_fetch_add_explicit(ptr: Ptr[atomic_long], value: CLong, memoryOrder: memory_order): CLong = extern
-  @name("scalanative_atomic_fetch_sub_long")
+  @name("scalanative_atomic_fetch_sub_long")          
   def atomic_fetch_sub(ptr: Ptr[atomic_long], value: CLong): CLong = extern
-  @name("scalanative_atomic_fetch_sub_explicit_long")
+  @name("scalanative_atomic_fetch_sub_explicit_long") 
   def atomic_fetch_sub_explicit(ptr: Ptr[atomic_long], value: CLong, memoryOrder: memory_order): CLong = extern
-  @name("scalanative_atomic_fetch_or_long")
+  @name("scalanative_atomic_fetch_or_long")          
   def atomic_fetch_or(ptr: Ptr[atomic_long], value: CLong): CLong = extern
-  @name("scalanative_atomic_fetch_or_explicit_long")
+  @name("scalanative_atomic_fetch_or_explicit_long") 
   def atomic_fetch_or_explicit(ptr: Ptr[atomic_long], value: CLong, memoryOrder: memory_order): CLong = extern
-  @name("scalanative_atomic_fetch_and_long")
+  @name("scalanative_atomic_fetch_and_long")          
   def atomic_fetch_and(ptr: Ptr[atomic_long], value: CLong): CLong = extern
-  @name("scalanative_atomic_fetch_and_explicit_long")
+  @name("scalanative_atomic_fetch_and_explicit_long") 
   def atomic_fetch_and_explicit(ptr: Ptr[atomic_long], value: CLong, memoryOrder: memory_order): CLong = extern
-  @name("scalanative_atomic_fetch_xor_long")
+  @name("scalanative_atomic_fetch_xor_long")          
   def atomic_fetch_xor(ptr: Ptr[atomic_long], value: CLong): CLong = extern
-  @name("scalanative_atomic_fetch_xor_explicit_long")
+  @name("scalanative_atomic_fetch_xor_explicit_long") 
   def atomic_fetch_xor_explicit(ptr: Ptr[atomic_long], value: CLong, memoryOrder: memory_order): CLong = extern
 
-  @name("scalanative_atomic_init_ulong")
+  @name("scalanative_atomic_init_ulong") 
   def atomic_init(atm: Ptr[atomic_ulong], initValue: CUnsignedLong): Unit = extern
-
+  
   @name("scalanative_atomic_load_ulong")
   def atomic_load(ptr: Ptr[atomic_ulong]): CUnsignedLong = extern
   @name("scalanative_atomic_load_explicit_ulong")
   def atomic_load_explicit(ptr: Ptr[atomic_ulong], memoryOrder: memory_order): CUnsignedLong = extern
-
+  
   @name("scalanative_atomic_store_ulong")
   def atomic_store(ptr: Ptr[atomic_ulong], v: CUnsignedLong): Unit = extern
   @name("scalanative_atomic_store_explicit_ulong")
   def atomic_store_explicit(ptr: Ptr[atomic_ulong], v: CUnsignedLong, memoryOrder: memory_order): Unit = extern
-
+  
   @name("scalanative_atomic_exchange_ulong")
   def atomic_exchange(ptr: Ptr[atomic_ulong], v: CUnsignedLong): CUnsignedLong = extern
   @name("scalanative_atomic_exchange_explicit_ulong")
   def atomic_exchange_explicit(ptr: Ptr[atomic_ulong], v: CUnsignedLong, memoryOrder: memory_order): CUnsignedLong = extern
-
+  
   @name("scalanative_atomic_compare_exchange_strong_ulong")
   def atomic_compare_exchange_strong(ptr: Ptr[atomic_ulong], expected: Ptr[CUnsignedLong], desired: CUnsignedLong): CBool = extern
   @name("scalanative_atomic_compare_exchange_strong_explicit_ulong")
   def atomic_compare_exchange_strong_explicit(ptr: Ptr[atomic_ulong], expected: Ptr[CUnsignedLong], desired: CUnsignedLong, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
+  
   @name("scalanative_atomic_compare_exchange_weak_ulong")
   def atomic_compare_exchange_weak(ptr: Ptr[atomic_ulong],expected: Ptr[CUnsignedLong], desired: CUnsignedLong): CBool = extern
   @name("scalanative_atomic_compare_exchange_weak_explicit_ulong")
   def atomic_compare_exchange_weak_explicit(ptr: Ptr[atomic_ulong], expected: Ptr[CUnsignedLong], desired: CUnsignedLong, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
-  @name("scalanative_atomic_fetch_add_ulong")
+  
+  @name("scalanative_atomic_fetch_add_ulong")          
   def atomic_fetch_add(ptr: Ptr[atomic_ulong], value: CUnsignedLong): CUnsignedLong = extern
-  @name("scalanative_atomic_fetch_add_explicit_ulong")
+  @name("scalanative_atomic_fetch_add_explicit_ulong") 
   def atomic_fetch_add_explicit(ptr: Ptr[atomic_ulong], value: CUnsignedLong, memoryOrder: memory_order): CUnsignedLong = extern
-  @name("scalanative_atomic_fetch_sub_ulong")
+  @name("scalanative_atomic_fetch_sub_ulong")          
   def atomic_fetch_sub(ptr: Ptr[atomic_ulong], value: CUnsignedLong): CUnsignedLong = extern
-  @name("scalanative_atomic_fetch_sub_explicit_ulong")
+  @name("scalanative_atomic_fetch_sub_explicit_ulong") 
   def atomic_fetch_sub_explicit(ptr: Ptr[atomic_ulong], value: CUnsignedLong, memoryOrder: memory_order): CUnsignedLong = extern
-  @name("scalanative_atomic_fetch_or_ulong")
+  @name("scalanative_atomic_fetch_or_ulong")          
   def atomic_fetch_or(ptr: Ptr[atomic_ulong], value: CUnsignedLong): CUnsignedLong = extern
-  @name("scalanative_atomic_fetch_or_explicit_ulong")
+  @name("scalanative_atomic_fetch_or_explicit_ulong") 
   def atomic_fetch_or_explicit(ptr: Ptr[atomic_ulong], value: CUnsignedLong, memoryOrder: memory_order): CUnsignedLong = extern
-  @name("scalanative_atomic_fetch_and_ulong")
+  @name("scalanative_atomic_fetch_and_ulong")          
   def atomic_fetch_and(ptr: Ptr[atomic_ulong], value: CUnsignedLong): CUnsignedLong = extern
-  @name("scalanative_atomic_fetch_and_explicit_ulong")
+  @name("scalanative_atomic_fetch_and_explicit_ulong") 
   def atomic_fetch_and_explicit(ptr: Ptr[atomic_ulong], value: CUnsignedLong, memoryOrder: memory_order): CUnsignedLong = extern
-  @name("scalanative_atomic_fetch_xor_ulong")
+  @name("scalanative_atomic_fetch_xor_ulong")          
   def atomic_fetch_xor(ptr: Ptr[atomic_ulong], value: CUnsignedLong): CUnsignedLong = extern
-  @name("scalanative_atomic_fetch_xor_explicit_ulong")
+  @name("scalanative_atomic_fetch_xor_explicit_ulong") 
   def atomic_fetch_xor_explicit(ptr: Ptr[atomic_ulong], value: CUnsignedLong, memoryOrder: memory_order): CUnsignedLong = extern
 
-  @name("scalanative_atomic_init_llong")
+  @name("scalanative_atomic_init_llong") 
   def atomic_init(atm: Ptr[atomic_llong], initValue: CLongLong): Unit = extern
-
+  
   @name("scalanative_atomic_load_llong")
   def atomic_load(ptr: Ptr[atomic_llong]): CLongLong = extern
   @name("scalanative_atomic_load_explicit_llong")
   def atomic_load_explicit(ptr: Ptr[atomic_llong], memoryOrder: memory_order): CLongLong = extern
-
+  
   @name("scalanative_atomic_store_llong")
   def atomic_store(ptr: Ptr[atomic_llong], v: CLongLong): Unit = extern
   @name("scalanative_atomic_store_explicit_llong")
   def atomic_store_explicit(ptr: Ptr[atomic_llong], v: CLongLong, memoryOrder: memory_order): Unit = extern
-
+  
   @name("scalanative_atomic_exchange_llong")
   def atomic_exchange(ptr: Ptr[atomic_llong], v: CLongLong): CLongLong = extern
   @name("scalanative_atomic_exchange_explicit_llong")
   def atomic_exchange_explicit(ptr: Ptr[atomic_llong], v: CLongLong, memoryOrder: memory_order): CLongLong = extern
-
+  
   @name("scalanative_atomic_compare_exchange_strong_llong")
   def atomic_compare_exchange_strong(ptr: Ptr[atomic_llong], expected: Ptr[CLongLong], desired: CLongLong): CBool = extern
   @name("scalanative_atomic_compare_exchange_strong_explicit_llong")
   def atomic_compare_exchange_strong_explicit(ptr: Ptr[atomic_llong], expected: Ptr[CLongLong], desired: CLongLong, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
+  
   @name("scalanative_atomic_compare_exchange_weak_llong")
   def atomic_compare_exchange_weak(ptr: Ptr[atomic_llong],expected: Ptr[CLongLong], desired: CLongLong): CBool = extern
   @name("scalanative_atomic_compare_exchange_weak_explicit_llong")
   def atomic_compare_exchange_weak_explicit(ptr: Ptr[atomic_llong], expected: Ptr[CLongLong], desired: CLongLong, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
-  // @name("scalanative_atomic_fetch_add_llong")
-  // def atomic_fetch_add(ptr: Ptr[atomic_llong], value: CLongLong): CLongLong = extern
-  @name("scalanative_atomic_fetch_add_explicit_llong")
+  
+//  @name("scalanative_atomic_fetch_add_llong")          
+//  def atomic_fetch_add(ptr: Ptr[atomic_llong], value: CLongLong): CLongLong = extern
+  @name("scalanative_atomic_fetch_add_explicit_llong") 
   def atomic_fetch_add_explicit(ptr: Ptr[atomic_llong], value: CLongLong, memoryOrder: memory_order): CLongLong = extern
-  @name("scalanative_atomic_fetch_sub_llong")
+  @name("scalanative_atomic_fetch_sub_llong")          
   def atomic_fetch_sub(ptr: Ptr[atomic_llong], value: CLongLong): CLongLong = extern
-  @name("scalanative_atomic_fetch_sub_explicit_llong")
+  @name("scalanative_atomic_fetch_sub_explicit_llong") 
   def atomic_fetch_sub_explicit(ptr: Ptr[atomic_llong], value: CLongLong, memoryOrder: memory_order): CLongLong = extern
-  @name("scalanative_atomic_fetch_or_llong")
+  @name("scalanative_atomic_fetch_or_llong")          
   def atomic_fetch_or(ptr: Ptr[atomic_llong], value: CLongLong): CLongLong = extern
-  @name("scalanative_atomic_fetch_or_explicit_llong")
+  @name("scalanative_atomic_fetch_or_explicit_llong") 
   def atomic_fetch_or_explicit(ptr: Ptr[atomic_llong], value: CLongLong, memoryOrder: memory_order): CLongLong = extern
-  @name("scalanative_atomic_fetch_and_llong")
+  @name("scalanative_atomic_fetch_and_llong")          
   def atomic_fetch_and(ptr: Ptr[atomic_llong], value: CLongLong): CLongLong = extern
-  @name("scalanative_atomic_fetch_and_explicit_llong")
+  @name("scalanative_atomic_fetch_and_explicit_llong") 
   def atomic_fetch_and_explicit(ptr: Ptr[atomic_llong], value: CLongLong, memoryOrder: memory_order): CLongLong = extern
-  @name("scalanative_atomic_fetch_xor_llong")
+  @name("scalanative_atomic_fetch_xor_llong")          
   def atomic_fetch_xor(ptr: Ptr[atomic_llong], value: CLongLong): CLongLong = extern
-  @name("scalanative_atomic_fetch_xor_explicit_llong")
+  @name("scalanative_atomic_fetch_xor_explicit_llong") 
   def atomic_fetch_xor_explicit(ptr: Ptr[atomic_llong], value: CLongLong, memoryOrder: memory_order): CLongLong = extern
 
-  @name("scalanative_atomic_init_ullong")
+  @name("scalanative_atomic_init_ullong") 
   def atomic_init(atm: Ptr[atomic_ullong], initValue: CUnsignedLongLong): Unit = extern
-
+  
   @name("scalanative_atomic_load_ullong")
   def atomic_load(ptr: Ptr[atomic_ullong]): CUnsignedLongLong = extern
   @name("scalanative_atomic_load_explicit_ullong")
   def atomic_load_explicit(ptr: Ptr[atomic_ullong], memoryOrder: memory_order): CUnsignedLongLong = extern
-
+  
   @name("scalanative_atomic_store_ullong")
   def atomic_store(ptr: Ptr[atomic_ullong], v: CUnsignedLongLong): Unit = extern
   @name("scalanative_atomic_store_explicit_ullong")
   def atomic_store_explicit(ptr: Ptr[atomic_ullong], v: CUnsignedLongLong, memoryOrder: memory_order): Unit = extern
-
+  
   @name("scalanative_atomic_exchange_ullong")
   def atomic_exchange(ptr: Ptr[atomic_ullong], v: CUnsignedLongLong): CUnsignedLongLong = extern
   @name("scalanative_atomic_exchange_explicit_ullong")
   def atomic_exchange_explicit(ptr: Ptr[atomic_ullong], v: CUnsignedLongLong, memoryOrder: memory_order): CUnsignedLongLong = extern
-
+  
   @name("scalanative_atomic_compare_exchange_strong_ullong")
   def atomic_compare_exchange_strong(ptr: Ptr[atomic_ullong], expected: Ptr[CUnsignedLongLong], desired: CUnsignedLongLong): CBool = extern
   @name("scalanative_atomic_compare_exchange_strong_explicit_ullong")
   def atomic_compare_exchange_strong_explicit(ptr: Ptr[atomic_ullong], expected: Ptr[CUnsignedLongLong], desired: CUnsignedLongLong, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
+  
   @name("scalanative_atomic_compare_exchange_weak_ullong")
   def atomic_compare_exchange_weak(ptr: Ptr[atomic_ullong],expected: Ptr[CUnsignedLongLong], desired: CUnsignedLongLong): CBool = extern
   @name("scalanative_atomic_compare_exchange_weak_explicit_ullong")
   def atomic_compare_exchange_weak_explicit(ptr: Ptr[atomic_ullong], expected: Ptr[CUnsignedLongLong], desired: CUnsignedLongLong, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
-  @name("scalanative_atomic_fetch_add_ullong")
+  
+  @name("scalanative_atomic_fetch_add_ullong")          
   def atomic_fetch_add(ptr: Ptr[atomic_ullong], value: CUnsignedLongLong): CUnsignedLongLong = extern
-  @name("scalanative_atomic_fetch_add_explicit_ullong")
+  @name("scalanative_atomic_fetch_add_explicit_ullong") 
   def atomic_fetch_add_explicit(ptr: Ptr[atomic_ullong], value: CUnsignedLongLong, memoryOrder: memory_order): CUnsignedLongLong = extern
-  @name("scalanative_atomic_fetch_sub_ullong")
+  @name("scalanative_atomic_fetch_sub_ullong")          
   def atomic_fetch_sub(ptr: Ptr[atomic_ullong], value: CUnsignedLongLong): CUnsignedLongLong = extern
-  @name("scalanative_atomic_fetch_sub_explicit_ullong")
+  @name("scalanative_atomic_fetch_sub_explicit_ullong") 
   def atomic_fetch_sub_explicit(ptr: Ptr[atomic_ullong], value: CUnsignedLongLong, memoryOrder: memory_order): CUnsignedLongLong = extern
-  @name("scalanative_atomic_fetch_or_ullong")
+  @name("scalanative_atomic_fetch_or_ullong")          
   def atomic_fetch_or(ptr: Ptr[atomic_ullong], value: CUnsignedLongLong): CUnsignedLongLong = extern
-  @name("scalanative_atomic_fetch_or_explicit_ullong")
+  @name("scalanative_atomic_fetch_or_explicit_ullong") 
   def atomic_fetch_or_explicit(ptr: Ptr[atomic_ullong], value: CUnsignedLongLong, memoryOrder: memory_order): CUnsignedLongLong = extern
-  @name("scalanative_atomic_fetch_and_ullong")
+  @name("scalanative_atomic_fetch_and_ullong")          
   def atomic_fetch_and(ptr: Ptr[atomic_ullong], value: CUnsignedLongLong): CUnsignedLongLong = extern
-  @name("scalanative_atomic_fetch_and_explicit_ullong")
+  @name("scalanative_atomic_fetch_and_explicit_ullong") 
   def atomic_fetch_and_explicit(ptr: Ptr[atomic_ullong], value: CUnsignedLongLong, memoryOrder: memory_order): CUnsignedLongLong = extern
-  @name("scalanative_atomic_fetch_xor_ullong")
+  @name("scalanative_atomic_fetch_xor_ullong")          
   def atomic_fetch_xor(ptr: Ptr[atomic_ullong], value: CUnsignedLongLong): CUnsignedLongLong = extern
-  @name("scalanative_atomic_fetch_xor_explicit_ullong")
+  @name("scalanative_atomic_fetch_xor_explicit_ullong") 
   def atomic_fetch_xor_explicit(ptr: Ptr[atomic_ullong], value: CUnsignedLongLong, memoryOrder: memory_order): CUnsignedLongLong = extern
 
 
@@ -615,34 +615,34 @@ import scala.language.implicitConversions
   // ========================
 
   type atomic_ptr[T] = Ptr[T]
-  @name("scalanative_atomic_init_intptr")
+  @name("scalanative_atomic_init_intptr") 
   def atomic_init[T](atm: atomic_ptr[T], initValue: T): Unit = extern
 
   @name("scalanative_atomic_load_intptr")
   def atomic_load[T](ptr: atomic_ptr[T]): T = extern
   @name("scalanative_atomic_load_explicit_intptr")
   def atomic_load_explicit[T](ptr: atomic_ptr[T], memoryOrder: memory_order): T = extern
-
+  
   @name("scalanative_atomic_store_intptr")
   def atomic_store[T](ptr: atomic_ptr[T], v: T): Unit = extern
   @name("scalanative_atomic_store_explicit_intptr")
   def atomic_store_explicit[T](ptr: atomic_ptr[T], v: T, memoryOrder: memory_order): Unit = extern
-
+  
   @name("scalanative_atomic_exchange_intptr")
   def atomic_exchange[T](ptr: atomic_ptr[T], v: T): T = extern
   @name("scalanative_atomic_exchange_explicit_intptr")
   def atomic_exchange_explicit[T](ptr: atomic_ptr[T], v: T, memoryOrder: memory_order): T = extern
-
+  
   @name("scalanative_atomic_compare_exchange_strong_intptr")
   def atomic_compare_exchange_strong[T](ptr: atomic_ptr[T], expected: Ptr[T], desired: T): CBool = extern
   @name("scalanative_atomic_compare_exchange_strong_explicit_intptr")
   def atomic_compare_exchange_strong_explicit[T](ptr: atomic_ptr[T],expected: Ptr[T],desired: T,memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
+  
   @name("scalanative_atomic_compare_exchange_weak_intptr")
   def atomic_compare_exchange_weak[T](ptr: atomic_ptr[T], expected: Ptr[T], desired: T): CBool = extern
   @name("scalanative_atomic_compare_exchange_weak_explicit_intptr")
   def atomic_compare_exchange_weak_explicit[T](ptr: atomic_ptr[T], expected: Ptr[T], desired: T, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
-
+  
   @name("scalanative_atomic_fetch_add_intptr")
   def atomic_fetch_add[T](ptr: atomic_ptr[T], value: T): T = extern
   @name("scalanative_atomic_fetch_add_explicit_intptr")
@@ -688,7 +688,7 @@ import scala.language.implicitConversions
 
     def exchange(value: Boolean): Boolean = atomic_exchange(underlying, value)
     def exchange(value: Boolean, memoryOrder: memory_order): Boolean = atomic_exchange_explicit(underlying, value, memoryOrder)
-
+    
     def compareExchangeStrong(expected: Ptr[Boolean], desired: Boolean): Boolean = atomic_compare_exchange_strong(underlying, expected, desired)
     def compareExchangeStrong(expected: Ptr[Boolean], desired: Boolean, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrderOnSuccess, memoryOrderOnFailure)
     def compareExchangeStrong(expected: Ptr[Boolean], desired: Boolean, memoryOrder: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrder, memoryOrder)
@@ -765,7 +765,7 @@ import scala.language.implicitConversions
 
     def exchange(value: Byte): Byte = atomic_exchange(underlying, value)
     def exchange(value: Byte, memoryOrder: memory_order): Byte = atomic_exchange_explicit(underlying, value, memoryOrder)
-
+    
     def compareExchangeStrong(expected: Ptr[Byte], desired: Byte): Boolean = atomic_compare_exchange_strong(underlying, expected, desired)
     def compareExchangeStrong(expected: Ptr[Byte], desired: Byte, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrderOnSuccess, memoryOrderOnFailure)
     def compareExchangeStrong(expected: Ptr[Byte], desired: Byte, memoryOrder: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrder, memoryOrder)
@@ -842,7 +842,7 @@ import scala.language.implicitConversions
 
     def exchange(value: UByte): UByte = atomic_exchange(underlying, value)
     def exchange(value: UByte, memoryOrder: memory_order): UByte = atomic_exchange_explicit(underlying, value, memoryOrder)
-
+    
     def compareExchangeStrong(expected: Ptr[UByte], desired: UByte): Boolean = atomic_compare_exchange_strong(underlying, expected, desired)
     def compareExchangeStrong(expected: Ptr[UByte], desired: UByte, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrderOnSuccess, memoryOrderOnFailure)
     def compareExchangeStrong(expected: Ptr[UByte], desired: UByte, memoryOrder: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrder, memoryOrder)
@@ -919,7 +919,7 @@ import scala.language.implicitConversions
 
     def exchange(value: CShort): CShort = atomic_exchange(underlying, value)
     def exchange(value: CShort, memoryOrder: memory_order): CShort = atomic_exchange_explicit(underlying, value, memoryOrder)
-
+    
     def compareExchangeStrong(expected: Ptr[CShort], desired: CShort): Boolean = atomic_compare_exchange_strong(underlying, expected, desired)
     def compareExchangeStrong(expected: Ptr[CShort], desired: CShort, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrderOnSuccess, memoryOrderOnFailure)
     def compareExchangeStrong(expected: Ptr[CShort], desired: CShort, memoryOrder: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrder, memoryOrder)
@@ -996,7 +996,7 @@ import scala.language.implicitConversions
 
     def exchange(value: CUnsignedShort): CUnsignedShort = atomic_exchange(underlying, value)
     def exchange(value: CUnsignedShort, memoryOrder: memory_order): CUnsignedShort = atomic_exchange_explicit(underlying, value, memoryOrder)
-
+    
     def compareExchangeStrong(expected: Ptr[CUnsignedShort], desired: CUnsignedShort): Boolean = atomic_compare_exchange_strong(underlying, expected, desired)
     def compareExchangeStrong(expected: Ptr[CUnsignedShort], desired: CUnsignedShort, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrderOnSuccess, memoryOrderOnFailure)
     def compareExchangeStrong(expected: Ptr[CUnsignedShort], desired: CUnsignedShort, memoryOrder: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrder, memoryOrder)
@@ -1073,7 +1073,7 @@ import scala.language.implicitConversions
 
     def exchange(value: CInt): CInt = atomic_exchange(underlying, value)
     def exchange(value: CInt, memoryOrder: memory_order): CInt = atomic_exchange_explicit(underlying, value, memoryOrder)
-
+    
     def compareExchangeStrong(expected: Ptr[CInt], desired: CInt): Boolean = atomic_compare_exchange_strong(underlying, expected, desired)
     def compareExchangeStrong(expected: Ptr[CInt], desired: CInt, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrderOnSuccess, memoryOrderOnFailure)
     def compareExchangeStrong(expected: Ptr[CInt], desired: CInt, memoryOrder: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrder, memoryOrder)
@@ -1150,7 +1150,7 @@ import scala.language.implicitConversions
 
     def exchange(value: CUnsignedInt): CUnsignedInt = atomic_exchange(underlying, value)
     def exchange(value: CUnsignedInt, memoryOrder: memory_order): CUnsignedInt = atomic_exchange_explicit(underlying, value, memoryOrder)
-
+    
     def compareExchangeStrong(expected: Ptr[CUnsignedInt], desired: CUnsignedInt): Boolean = atomic_compare_exchange_strong(underlying, expected, desired)
     def compareExchangeStrong(expected: Ptr[CUnsignedInt], desired: CUnsignedInt, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrderOnSuccess, memoryOrderOnFailure)
     def compareExchangeStrong(expected: Ptr[CUnsignedInt], desired: CUnsignedInt, memoryOrder: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrder, memoryOrder)
@@ -1227,7 +1227,7 @@ import scala.language.implicitConversions
 
     def exchange(value: CLong): CLong = atomic_exchange(underlying, value)
     def exchange(value: CLong, memoryOrder: memory_order): CLong = atomic_exchange_explicit(underlying, value, memoryOrder)
-
+    
     def compareExchangeStrong(expected: Ptr[CLong], desired: CLong): Boolean = atomic_compare_exchange_strong(underlying, expected, desired)
     def compareExchangeStrong(expected: Ptr[CLong], desired: CLong, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrderOnSuccess, memoryOrderOnFailure)
     def compareExchangeStrong(expected: Ptr[CLong], desired: CLong, memoryOrder: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrder, memoryOrder)
@@ -1304,7 +1304,7 @@ import scala.language.implicitConversions
 
     def exchange(value: CUnsignedLong): CUnsignedLong = atomic_exchange(underlying, value)
     def exchange(value: CUnsignedLong, memoryOrder: memory_order): CUnsignedLong = atomic_exchange_explicit(underlying, value, memoryOrder)
-
+    
     def compareExchangeStrong(expected: Ptr[CUnsignedLong], desired: CUnsignedLong): Boolean = atomic_compare_exchange_strong(underlying, expected, desired)
     def compareExchangeStrong(expected: Ptr[CUnsignedLong], desired: CUnsignedLong, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrderOnSuccess, memoryOrderOnFailure)
     def compareExchangeStrong(expected: Ptr[CUnsignedLong], desired: CUnsignedLong, memoryOrder: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrder, memoryOrder)
@@ -1381,7 +1381,7 @@ import scala.language.implicitConversions
 
     def exchange(value: CLongLong): CLongLong = atomic_exchange(underlying, value)
     def exchange(value: CLongLong, memoryOrder: memory_order): CLongLong = atomic_exchange_explicit(underlying, value, memoryOrder)
-
+    
     def compareExchangeStrong(expected: Ptr[CLongLong], desired: CLongLong): Boolean = atomic_compare_exchange_strong(underlying, expected, desired)
     def compareExchangeStrong(expected: Ptr[CLongLong], desired: CLongLong, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrderOnSuccess, memoryOrderOnFailure)
     def compareExchangeStrong(expected: Ptr[CLongLong], desired: CLongLong, memoryOrder: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrder, memoryOrder)
@@ -1458,7 +1458,7 @@ import scala.language.implicitConversions
 
     def exchange(value: CUnsignedLongLong): CUnsignedLongLong = atomic_exchange(underlying, value)
     def exchange(value: CUnsignedLongLong, memoryOrder: memory_order): CUnsignedLongLong = atomic_exchange_explicit(underlying, value, memoryOrder)
-
+    
     def compareExchangeStrong(expected: Ptr[CUnsignedLongLong], desired: CUnsignedLongLong): Boolean = atomic_compare_exchange_strong(underlying, expected, desired)
     def compareExchangeStrong(expected: Ptr[CUnsignedLongLong], desired: CUnsignedLongLong, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrderOnSuccess, memoryOrderOnFailure)
     def compareExchangeStrong(expected: Ptr[CUnsignedLongLong], desired: CUnsignedLongLong, memoryOrder: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrder, memoryOrder)
@@ -1514,7 +1514,7 @@ import scala.language.implicitConversions
       atomic_compare_exchange_weak_explicit(underlying, expectedPtr, desired, memoryOrder, memoryOrder)
     }
   }
-
+  
   object AtomicPtr{
     def apply[T](initialValue: Ptr[T])(implicit zone: Zone): AtomicPtr[T] = {
       val ref = new AtomicPtr(zone.alloc(sizeOf[Ptr[T]]).asInstanceOf[Ptr[stdatomic.atomic_ptr[T]]])
@@ -1536,7 +1536,7 @@ import scala.language.implicitConversions
 
     def exchange(value: Ptr[T]): Ptr[T] = atomic_exchange(underlying, value)
     def exchange(value: Ptr[T], memoryOrder: memory_order): Ptr[T] = atomic_exchange_explicit(underlying, value, memoryOrder)
-
+    
     def compareExchangeStrong(expected: Ptr[Ptr[T]], desired: Ptr[T]): Boolean = atomic_compare_exchange_strong(underlying, expected, desired)
     def compareExchangeStrong(expected: Ptr[Ptr[T]], desired: Ptr[T], memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrderOnSuccess, memoryOrderOnFailure)
     def compareExchangeStrong(expected: Ptr[Ptr[T]], desired: Ptr[T], memoryOrder: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrder, memoryOrder)
@@ -1603,7 +1603,7 @@ import scala.language.implicitConversions
 
     def exchange(value: T): T = atomic_exchange(underlying, value)
     def exchange(value: T, memoryOrder: memory_order): T = atomic_exchange_explicit(underlying, value, memoryOrder)
-
+    
     def compareExchangeStrong(expected: Ptr[T], desired: T): Boolean = atomic_compare_exchange_strong(underlying, expected, desired)
     def compareExchangeStrong(expected: Ptr[T], desired: T, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrderOnSuccess, memoryOrderOnFailure)
     def compareExchangeStrong(expected: Ptr[T], desired: T, memoryOrder: memory_order): Boolean = atomic_compare_exchange_strong_explicit(underlying, expected, desired, memoryOrder, memoryOrder)
