@@ -85,6 +85,7 @@ package object runtime {
       thread: Thread,
       throwable: Throwable
   ): Unit = {
+    System.err.println(throwable.getMessage())
     // try
     // handler.uncaughtException(thread, throwable)
     ()
