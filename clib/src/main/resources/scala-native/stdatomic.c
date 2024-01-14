@@ -213,13 +213,13 @@ unsigned long scalanative_atomic_fetch_xor_ulong(_Atomic(unsigned long)* atm, un
 unsigned long scalanative_atomic_fetch_xor_explicit_ulong(_Atomic(unsigned long)* atm, unsigned long val, memory_order memoryOrder) { return atomic_fetch_xor_explicit(atm, val, memoryOrder);}
 
 void scalanative_atomic_init_llong(_Atomic(long long)* atm, long long init_value) { atomic_init(atm, init_value);}
-long long scalanative_atomic_load_llong(_Atomic(long long)* atm) { return atomic_load(atm);}
+// long long scalanative_atomic_load_llong(_Atomic(long long)* atm) { return atomic_load(atm);}
 long long scalanative_atomic_load_explicit_llong(_Atomic(long long)* atm, memory_order memoryOrder) { return atomic_load_explicit(atm, memoryOrder);}
 void scalanative_atomic_store_llong(_Atomic(long long)* atm, long long val) {atomic_store(atm, val);}
 void scalanative_atomic_store_explicit_llong(_Atomic(long long)* atm, long long val, memory_order memoryOrder) { atomic_store_explicit(atm, val, memoryOrder);}
 long long scalanative_atomic_exchange_llong(_Atomic(long long)* atm, long long val) { return atomic_exchange(atm, val);}
 long long scalanative_atomic_exchange_explicit_llong(_Atomic(long long)* atm, long long val, memory_order memoryOrder) { return atomic_exchange_explicit(atm, val, memoryOrder);}
-bool scalanative_atomic_compare_exchange_strong_llong(_Atomic(long long)* atm, long long* expected, long long desired) { return atomic_compare_exchange_strong(atm, expected, desired);}
+// bool scalanative_atomic_compare_exchange_strong_llong(_Atomic(long long)* atm, long long* expected, long long desired) { return atomic_compare_exchange_strong(atm, expected, desired);}
 bool scalanative_atomic_compare_exchange_strong_explicit_llong(_Atomic(long long)* atm, long long* expected, long long desired, memory_order onSucc, memory_order onFail) { return atomic_compare_exchange_strong_explicit(atm, expected, desired, onSucc, onFail);}
 bool scalanative_atomic_compare_exchange_weak_llong(_Atomic(long long)* atm, long long* expected, long long desired) { return atomic_compare_exchange_weak(atm, expected, desired);}
 bool scalanative_atomic_compare_exchange_weak_explicit_llong(_Atomic(long long)* atm, long long* expected, long long desired, memory_order onSucc, memory_order onFail) { return atomic_compare_exchange_weak_explicit(atm, expected, desired, onSucc, onFail);}

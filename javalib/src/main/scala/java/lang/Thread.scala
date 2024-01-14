@@ -18,12 +18,23 @@ import scala.scalanative.libc.stdatomic.memory_order._
 import scala.scalanative.runtime.UnsupportedFeature
 
 import scala.scalanative.runtime.JoinNonDaemonThreads
+import scala.scalanative.unsafe.extern
+import scala.scalanative.unsafe.name
+import scala.scalanative.unsafe.CQuote
+import scala.scalanative.unsafe.CString
 
+object logFunctions {
+  // writes message to console and disk
+  @extern @name("pd_log_error") def log(msg: CString): Unit = extern
+}
+
+import logFunctions.log
 class Thread private[lang] (
     @volatile private var name: String,
     private[java] val platformCtx: PlatformThreadContext /* | Null */
 ) extends Runnable {
-  protected val tid = ThreadIdentifiers.next()
+  // this will be reset by MainThread afterwards, so we don't need to use the atomic counter.
+  protected val tid: scala.Long = -1 // ThreadIdentifiers.next()
 
   @volatile private var interruptedState = false
   @volatile private[java] var parkBlocker: Object = _
@@ -510,7 +521,7 @@ object Thread {
 
   @alwaysinline private[lang] def nativeCompanion: NativeThread.Companion =
     if (isWindows) WindowsThread
-    else sys.error("Threads not supported on the playdate")
+    else PlaydateThread // PosixThread
 
   def activeCount(): Int = currentThread()
     .getThreadGroup()
