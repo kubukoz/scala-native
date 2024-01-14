@@ -95,7 +95,8 @@ size_t getMemorySize() {
 
 #elif defined(TARGET_PLAYDATE)
     // Games have up to 8MB of memory
-    return (size_t)8 * 1024 * 1024;
+    // but let's stick to 4 for now
+    return (size_t)4 * 1024 * 1024;
 #else
     return 0L; /* Unknown OS. */
 #endif

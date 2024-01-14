@@ -59,7 +59,7 @@ void Prealloc_Or_Default() {
                                 // or execute default mmap settings
         size_t memorySize = getMemorySize();
 
-        DEFAULT_CHUNK = // Default Maximum allocation Map 4GB
+        DEFAULT_CHUNK = // Default Maximum allocation Map 2MB
             Choose_IF(Parse_Env_Or_Default_String("GC_MAXIMUM_HEAP_SIZE",
                                                   DEFAULT_CHUNK_SIZE),
                       Less_OR_Equal, memorySize);
