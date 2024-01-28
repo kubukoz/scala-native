@@ -2,6 +2,7 @@
 
 #include "shared/MemoryMap.h"
 #include <stdlib.h>
+#include <stdio.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -37,6 +38,8 @@
 #define HEAP_MEM_FD_OFFSET 0
 #endif // Unix
 
+extern void pd_log_error(char *str);
+
 word_t *memoryMap(size_t memorySize) {
 #ifdef _WIN32
     // On Windows only reserve given chunk of memory. It should be explicitly
@@ -47,7 +50,16 @@ word_t *memoryMap(size_t memorySize) {
 #else // Unix
     // return mmap(NULL, memorySize, HEAP_MEM_PROT, HEAP_MEM_FLAGS, HEAP_MEM_FD,
     //             HEAP_MEM_FD_OFFSET);
-    return malloc(memorySize);
+
+    char str[100];
+    sprintf(str, "Trying to map %d bytes of memory\n", memorySize);
+    pd_log_error(str);
+    word_t *result = malloc(memorySize);
+    if(result == NULL)
+    {
+        pd_log_error("Failed to map memory\n");
+    }
+    return result;
 #endif
 }
 
