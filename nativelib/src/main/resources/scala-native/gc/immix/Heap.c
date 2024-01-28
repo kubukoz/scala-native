@@ -17,8 +17,12 @@
 #include "WeakRefStack.h"
 #include "immix_commix/Synchronizer.h"
 
+extern void pd_log_error(char *str);
+
 void Heap_exitWithOutOfMemory(const char *details) {
-    fprintf(stderr, "Out of heap space %s\n", details);
+    char str[100];
+    sprintf(str, "Out of heap space %s\n", details);
+    pd_log_error(str);
     StackTrace_PrintStackTrace();
     exit(1);
 }
@@ -58,26 +62,29 @@ word_t *Heap_mapAndAlign(size_t memoryLimit, size_t alignmentSize) {
 void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
     size_t memoryLimit = Heap_getMemoryLimit();
 
+    char str[100];
+
     if (maxHeapSize < MIN_HEAP_SIZE) {
-        fprintf(stderr, "GC_MAXIMUM_HEAP_SIZE too small to initialize heap.\n");
-        fprintf(stderr, "Minimum required: %zum \n",
+        sprintf(str, "GC_MAXIMUM_HEAP_SIZE too small to initialize heap.\n");
+        pd_log_error(str);
+        sprintf(str, "Minimum required: %zum \n",
                 (size_t)(MIN_HEAP_SIZE / 1024 / 1024));
-        fflush(stderr);
+        pd_log_error(str);
         exit(1);
     }
 
     if (minHeapSize > memoryLimit) {
-        fprintf(stderr, "GC_INITIAL_HEAP_SIZE is too large.\n");
-        fprintf(stderr, "Maximum possible: %zug \n",
-                memoryLimit / 1024 / 1024 / 1024);
-        fflush(stderr);
+        sprintf(str, "GC_INITIAL_HEAP_SIZE is too large.\n");
+        pd_log_error(str);
+        sprintf(str, "Maximum possible: %zum \n", memoryLimit / 1024 / 1024);
+        pd_log_error(str);
         exit(1);
     }
 
     if (maxHeapSize < minHeapSize) {
-        fprintf(stderr, "GC_MAXIMUM_HEAP_SIZE should be at least "
-                        "GC_INITIAL_HEAP_SIZE\n");
-        fflush(stderr);
+        sprintf(str, "GC_MAXIMUM_HEAP_SIZE should be at least "
+                     "GC_INITIAL_HEAP_SIZE\n");
+        pd_log_error(str);
         exit(1);
     }
 
@@ -144,10 +151,10 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
     BlockAllocator_Init(&blockAllocator, blockMetaStart, initialBlockCount);
     Bytemap_Init(bytemap, heapStart, maxHeapSize);
     char *statsFile = Settings_StatsFileName();
-    if (statsFile != NULL) {
+    // if (statsFile != NULL) {
         heap->stats = malloc(sizeof(Stats));
         Stats_Init(heap->stats, statsFile);
-    }
+    // }
     mutex_init(&heap->lock);
 }
 /**
@@ -277,8 +284,7 @@ void Heap_Collect(Heap *heap, Stack *stack) {
     uint64_t start_ns, nullify_start_ns, sweep_start_ns, end_ns;
     Stats *stats = heap->stats;
 #ifdef DEBUG_PRINT
-    printf("\nCollect\n");
-    fflush(stdout);
+    pd_log_error("\nCollect\n");
 #endif
     if (stats != NULL) {
         start_ns = scalanative_nano_time();
@@ -307,7 +313,6 @@ void Heap_Collect(Heap *heap, Stack *stack) {
 #endif
 #ifdef DEBUG_PRINT
     printf("End collect\n");
-    fflush(stdout);
 #endif
 }
 
@@ -322,11 +327,15 @@ bool Heap_shouldGrow(Heap *heap) {
         blockCount - (freeBlockCount + recycledBlockCount);
 
 #ifdef DEBUG_PRINT
-    printf("\n\nBlock count: %u\n", blockCount);
-    printf("Unavailable: %u\n", unavailableBlockCount);
-    printf("Free: %u\n", freeBlockCount);
-    printf("Recycled: %u\n", recycledBlockCount);
-    fflush(stdout);
+    char str[100];
+    sprintf(str, "\n\nBlock count: %u\n", blockCount);
+    pd_log_error(str);
+    sprintf(str, "Unavailable: %u\n", unavailableBlockCount);
+    pd_log_error(str);
+    sprintf(str, "Free: %u\n", freeBlockCount);
+    pd_log_error(str);
+    sprintf(str, "Recycled: %u\n", recycledBlockCount);
+    pd_log_error(str);
 #endif
 
     return freeBlockCount * 2 < blockCount ||
@@ -419,9 +428,10 @@ void Heap_Grow(Heap *heap, uint32_t incrementInBlocks) {
     size_t incrementInBytes = incrementInBlocks * SPACE_USED_PER_BLOCK;
 
 #ifdef DEBUG_PRINT
-    printf("Growing small heap by %zu bytes, to %zu bytes\n", incrementInBytes,
-           heap->heapSize + incrementInBytes);
-    fflush(stdout);
+    char str[100];
+    sprintf(str, "Growing small heap by %zu bytes, to %zu bytes\n",
+            incrementInBytes, heap->heapSize + incrementInBytes);
+    pd_log_error(str);
 #endif
 
     word_t *heapEnd = heap->heapEnd;

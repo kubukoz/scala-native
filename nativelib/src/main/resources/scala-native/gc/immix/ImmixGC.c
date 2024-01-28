@@ -26,6 +26,8 @@ void scalanative_GC_collect();
 
 void scalanative_afterexit() { Stats_OnExit(heap.stats); }
 
+extern void pd_log_error(char *str);
+
 NOINLINE void scalanative_GC_init() {
     volatile int dummy = 0;
     Heap_Init(&heap, Settings_MinHeapSize(), Settings_MaxHeapSize());
