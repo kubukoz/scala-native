@@ -81,7 +81,7 @@ Organization of the build
 The build has roughly five groups of sub-projects as follows:
 
 1.  The compiler plugin, which generates NIR files. It is used in all the
-    Scana Native artifacts in the build, with
+    Scala Native artifacts in the build, with
     ``.dependsOn(nscplugin % "plugin")``. This is a JVM project.
 
     - ``nscplugin``
