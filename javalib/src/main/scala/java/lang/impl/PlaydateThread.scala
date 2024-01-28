@@ -3,7 +3,6 @@ package java.lang.impl
 import scala.scalanative.runtime.NativeThread
 import scala.scalanative.unsafe.CInt
 import scala.scalanative.unsafe.CQuote
-import logFunctions.log
 
 object PlaydateThread extends NativeThread.Companion {
   type Impl = PlaydateThread

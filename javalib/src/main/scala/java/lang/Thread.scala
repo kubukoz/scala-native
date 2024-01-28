@@ -23,12 +23,6 @@ import scala.scalanative.unsafe.name
 import scala.scalanative.unsafe.CQuote
 import scala.scalanative.unsafe.CString
 
-object logFunctions {
-  // writes message to console and disk
-  @extern @name("pd_log_error") def log(msg: CString): Unit = extern
-}
-
-import logFunctions.log
 class Thread private[lang] (
     @volatile private var name: String,
     private[java] val platformCtx: PlatformThreadContext /* | Null */
