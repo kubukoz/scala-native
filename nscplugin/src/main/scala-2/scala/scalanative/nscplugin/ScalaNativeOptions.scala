@@ -1,6 +1,6 @@
 package scala.scalanative.nscplugin
 
-import java.net.URI
+import java.nio.file.Path
 
 /** This trait allows to query all options to the ScalaNative Plugin
  *
@@ -8,7 +8,6 @@ import java.net.URI
  *  options.
  */
 trait ScalaNativeOptions {
-  import ScalaNativeOptions._
 
   /** Should static forwarders be emitted for non-top-level objects.
    *
@@ -18,12 +17,6 @@ trait ScalaNativeOptions {
    */
   def genStaticForwardersForNonTopLevelObjects: Boolean
 
-  /** Which source locations in source maps should be relativized (or where
-   *  should they be mapped to)?
-   */
-  def sourceURIMaps: List[URIMap]
-}
-
-object ScalaNativeOptions {
-  case class URIMap(from: URI, to: Option[URI])
+  /** List of paths usd for relativization of source file positions */
+  def positionRelativizationPaths: Seq[Path]
 }

@@ -1,5 +1,5 @@
 #if defined(SCALANATIVE_GC_IMMIX)
-
+#include <stdint.h>
 #include <stdio.h>
 #include <setjmp.h>
 #include "Marker.h"
@@ -12,6 +12,7 @@
 #include "WeakRefStack.h"
 #include "shared/GCTypes.h"
 #include <stdatomic.h>
+#include "shared/ThreadUtil.h"
 
 extern word_t *__modules;
 extern int __modules_size;
@@ -20,6 +21,8 @@ extern int __modules_size;
 
 static inline void Marker_markLockWords(Heap *heap, Stack *stack,
                                         Object *object);
+static void Marker_markRange(Heap *heap, Stack *stack, word_t **from,
+                             word_t **to);
 
 void Marker_markObject(Heap *heap, Stack *stack, Bytemap *bytemap,
                        Object *object, ObjectMeta *objectMeta) {
@@ -86,13 +89,19 @@ void Marker_Mark(Heap *heap, Stack *stack) {
     while (!Stack_IsEmpty(stack)) {
         Object *object = Stack_Pop(stack);
         if (Object_IsArray(object)) {
-            if (object->rtti->rt.id == __object_array_id) {
-                ArrayHeader *arrayHeader = (ArrayHeader *)object;
-                size_t length = arrayHeader->length;
+            ArrayHeader *arrayHeader = (ArrayHeader *)object;
+            const int arrayId = object->rtti->rt.id;
+            const size_t length = arrayHeader->length;
+
+            if (arrayId == __object_array_id) {
                 word_t **fields = (word_t **)(arrayHeader + 1);
                 for (int i = 0; i < length; i++) {
                     Marker_markField(heap, stack, fields[i]);
                 }
+            } else if (arrayId == __blob_array_id) {
+                int8_t *start = (int8_t *)(arrayHeader + 1);
+                int8_t *end = start + BlobArray_ScannableLimit(arrayHeader);
+                Marker_markRange(heap, stack, (word_t **)start, (word_t **)end);
             }
             // non-object arrays do not contain pointers
         } else {
@@ -106,8 +115,8 @@ void Marker_Mark(Heap *heap, Stack *stack) {
     }
 }
 
-NO_SANITIZE void Marker_markRange(Heap *heap, Stack *stack, word_t **from,
-                                  word_t **to) {
+NO_SANITIZE static void Marker_markRange(Heap *heap, Stack *stack,
+                                         word_t **from, word_t **to) {
     assert(from != NULL);
     assert(to != NULL);
     for (word_t **current = from; current <= to; current += 1) {
@@ -121,7 +130,12 @@ NO_SANITIZE void Marker_markRange(Heap *heap, Stack *stack, word_t **from,
 NO_SANITIZE void Marker_markProgramStack(MutatorThread *thread, Heap *heap,
                                          Stack *stack) {
     word_t **stackBottom = thread->stackBottom;
-    word_t **stackTop = (word_t **)atomic_load(&thread->stackTop);
+    word_t **stackTop = NULL;
+    do {
+        // Can spuriously fail, very rare, yet deadly
+        stackTop = (word_t **)atomic_load_explicit(&thread->stackTop,
+                                                   memory_order_acquire);
+    } while (stackTop == NULL);
     // Extend scanning slightly over the approximated stack top
     // In the past we were frequently missing objects allocated just before GC
     // (mostly under LTO enabled)
@@ -146,12 +160,12 @@ void Marker_markModules(Heap *heap, Stack *stack) {
 }
 
 void Marker_markCustomRoots(Heap *heap, Stack *stack, GC_Roots *roots) {
-    GC_Roots *it = roots;
-    while (it != NULL) {
+    mutex_lock(&roots->modificationLock);
+    for (GC_Root *it = roots->head; it != NULL; it = it->next) {
         Marker_markRange(heap, stack, (word_t **)it->range.address_low,
                          (word_t **)it->range.address_high);
-        it = it->next;
     }
+    mutex_unlock(&roots->modificationLock);
 }
 
 void Marker_MarkRoots(Heap *heap, Stack *stack) {
@@ -163,7 +177,7 @@ void Marker_MarkRoots(Heap *heap, Stack *stack) {
         Marker_markProgramStack(thread, heap, stack);
     }
     Marker_markModules(heap, stack);
-    Marker_markCustomRoots(heap, stack, roots);
+    Marker_markCustomRoots(heap, stack, customRoots);
     Marker_Mark(heap, stack);
 }
 

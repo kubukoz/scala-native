@@ -23,6 +23,7 @@ import scala.scalanative.posix.netdb._
 import scala.scalanative.posix.netdbOps._
 import scala.scalanative.posix.string.{memcpy, strerror}
 import scala.scalanative.posix.sys.socket._
+import scala.scalanative.posix.sys.socketOps._
 import scala.scalanative.posix.time.{time_t, time, difftime}
 import scala.scalanative.posix.unistd
 
@@ -88,11 +89,7 @@ class InetAddress protected (ipAddress: Array[Byte], originalHost: String)
     if (ipAddress.length == 4) {
       formatIn4Addr(bytes)
     } else if (ipAddress.length == 16) {
-      if (isIPv4MappedAddress(bytes)) {
-        formatIn4Addr(extractIP4Bytes(bytes).at(0))
-      } else {
-        Inet6Address.formatInet6Address(this.asInstanceOf[Inet6Address])
-      }
+      Inet6Address.formatInet6Address(this.asInstanceOf[Inet6Address])
     } else {
       "<unknown>"
     }
@@ -120,11 +117,14 @@ class InetAddress protected (ipAddress: Array[Byte], originalHost: String)
       | ((bytes(start) & 255) << 24))
   }
 
-  protected def getZoneIdent(): String = "" // Ease Inet6Address declaration
-
-  override def hashCode(): Int =
-    if (ipAddress.length == 4) bytesToInt(ipAddress, 0) // too scared to change
-    else ju.Arrays.hashCode(ipAddress)
+  override def hashCode(): Int = {
+    ju.Arrays.hashCode(ipAddress)
+    var res = 1
+    res = 31 * res + ju.Arrays.hashCode(ipAddress)
+    if (originalHost != null)
+      res = 31 * res + originalHost.hashCode()
+    res
+  }
 
   def isLinkLocalAddress(): Boolean = false
 
@@ -216,58 +216,8 @@ object InetAddress {
      * to leave the host field blank/empty.
      */
     val effectiveHost = if (isNumeric) null else host
+    SocketHelpers.sockaddrToInetAddress(addrinfoP.ai_addr, effectiveHost)
 
-    if (addrinfoP.ai_family == AF_INET) {
-      new Inet4Address(addrinfoToByteArray(addrinfoP), effectiveHost)
-    } else if (addrinfoP.ai_family == AF_INET6) {
-      val addr = addrinfoP.ai_addr.asInstanceOf[Ptr[sockaddr_in6]]
-      val addrBytes = addr.sin6_addr.at1.at(0).asInstanceOf[Ptr[Byte]]
-
-      // Scala JVM down-converts even when preferIPv6Addresses is "true"
-      if (isIPv4MappedAddress(addrBytes)) {
-        new Inet4Address(extractIP4Bytes(addrBytes), effectiveHost)
-      } else {
-        /* Yes, Java specifies Int for scope_id in a way which disallows
-         * some values POSIX/IEEE/IETF allows.
-         */
-
-        val scope_id = addr.sin6_scope_id.toInt
-
-        val zoneIdent = {
-          val ifIndex = host.indexOf('%')
-          val ifNameStart = ifIndex + 1
-          if ((ifIndex < 0) || (ifNameStart >= host.length)) ""
-          else host.substring(ifNameStart)
-        }
-
-        Inet6Address(
-          addrinfoToByteArray(addrinfoP),
-          effectiveHost,
-          scope_id,
-          zoneIdent
-        )
-      }
-    } else {
-      val af = addrinfoP.ai_family
-      throw new IOException(
-        s"The requested address family is not supported: ${af}."
-      )
-    }
-  }
-
-  private def addrinfoToByteArray(
-      addrinfoP: Ptr[addrinfo]
-  ): Array[Byte] = {
-    SocketHelpers.sockaddrToByteArray(addrinfoP.ai_addr)
-  }
-
-  private def extractIP4Bytes(pb: Ptr[Byte]): Array[Byte] = {
-    val buf = new Array[Byte](4)
-    buf(0) = pb(12)
-    buf(1) = pb(13)
-    buf(2) = pb(14)
-    buf(3) = pb(15)
-    buf
   }
 
   private def formatIn4Addr(pb: Ptr[Byte]): String = {
@@ -344,6 +294,15 @@ object InetAddress {
         }
   }
 
+  private def vetScopeText(host: String): Unit = { // callers have handled null
+    // Fail on either numeric %-2 and non-numeric (text) %-abc
+    val idx = host.indexOf("%-")
+    if (idx >= 0) {
+      val invalidIf = host.substring(idx + 1)
+      throw new UnknownHostException(s"no such interface: ${invalidIf}")
+    }
+  }
+
   private def getByNonNumericName(host: String): InetAddress = Zone {
     implicit z =>
       /* Design Note:
@@ -412,6 +371,8 @@ object InetAddress {
         }
       }
 
+      vetScopeText(host)
+
       val hints = stackalloc[addrinfo]() // stackalloc clears its memory
       val addrinfo = stackalloc[Ptr[addrinfo]]()
 
@@ -479,8 +440,12 @@ object InetAddress {
       // By contract the 'sockaddr' argument passed in is cleared/all_zeros.
       if (ipBA.length == 16) {
         val v6addr = addr.asInstanceOf[Ptr[sockaddr_in6]]
+        /* No need to set other sin6 fields, particularly sin6_scope_id
+         * and sin6_flowinfo. v6addr is later passed to getnameinfo() which
+         * is likely to ignore, reject, or get confused by non-zero values
+         * in those fields.
+         */
         v6addr.sin6_family = AF_INET6.toUShort
-        // because the FQDN scope is Global, no need to set sin6_scope_id
         val dst = v6addr.sin6_addr.at1.at(0).asInstanceOf[Ptr[Byte]]
         memcpy(dst, from, 16.toUInt)
       } else if (ipBA.length == 4) {
@@ -676,10 +641,12 @@ object InetAddress {
       val ia = if (lbBytes.length == 4) {
         new Inet4Address(lbBytes, "localhost")
       } else {
-        new Inet6Address(lbBytes, "localhost")
+        Inet6Address(lbBytes, "localhost")
       }
       Array[InetAddress](ia)
     } else {
+      vetScopeText(host)
+
       val ips = InetAddress.hostToInetAddressArray(host)
       if (ips.isEmpty) {
         throw new UnknownHostException(host + ": Name or service not known")
@@ -698,7 +665,7 @@ object InetAddress {
     if (addr.length == 4) {
       new Inet4Address(addr.clone, host)
     } else if (addr.length == 16) {
-      new Inet6Address(addr.clone, host)
+      Inet6Address(addr.clone, host)
     } else {
       throw new UnknownHostException(
         s"addr is of illegal length: ${addr.length}"

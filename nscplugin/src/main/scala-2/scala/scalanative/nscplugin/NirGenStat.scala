@@ -32,6 +32,8 @@ trait NirGenStat[G <: nsc.Global with Singleton] { self: NirGenPhase[G] =>
 
   class MethodEnv(val fresh: nir.Fresh) {
     private val env = mutable.Map.empty[Symbol, nir.Val]
+    var isUsingIntrinsics: Boolean = false
+    var isUsingLinktimeResolvedValue: Boolean = false
 
     def enter(sym: Symbol, value: nir.Val): Unit = {
       env += ((sym, value))
@@ -484,11 +486,11 @@ trait NirGenStat[G <: nsc.Global with Singleton] { self: NirGenPhase[G] =>
         // initialising and returning an instance of the class, using C.
         for ((ctor, ctorIdx) <- ctors.zipWithIndex) {
           val ctorSig = genMethodSig(ctor)
-          val ctorArgsSig = ctorSig.args.map(_.mangle).mkString
+          val ctorSuffix = if (ctorIdx == 0) "" else s"$$$ctorIdx"
           implicit val pos: nir.Position = ctor.pos
 
           reflectiveInstantiationInfo += ReflectiveInstantiationBuffer(
-            fqSymId + ctorArgsSig
+            fqSymId + ctorSuffix
           )
           val reflInstBuffer = reflectiveInstantiationInfo.last
 
@@ -708,12 +710,14 @@ trait NirGenStat[G <: nsc.Global with Singleton] { self: NirGenPhase[G] =>
             scoped(
               curMethodSig := sig
             ) {
-              curMethodUsesLinktimeResolvedValues = false
               val body = genMethodBody(dd, rhs, isExtern)
               val methodAttrs =
-                if (curMethodUsesLinktimeResolvedValues)
-                  attrs.copy(isLinktimeResolved = true)
-                else attrs
+                if (env.isUsingLinktimeResolvedValue || env.isUsingIntrinsics) {
+                  attrs.copy(
+                    isLinktimeResolved = env.isUsingLinktimeResolvedValue,
+                    isUsingIntrinsics = env.isUsingIntrinsics
+                  )
+                } else attrs
               Some(
                 new nir.Defn.Define(
                   methodAttrs,

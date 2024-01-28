@@ -83,28 +83,26 @@
 //       Try(onSuspend(continuation))
 //     Impl.suspend(label, suspendFn, call, continuation)
 
-//   /** A `Continuation` holds the C implementation continuation pointer,
-//    *  alongside a list of `ObjectArray`s, used for storing suspended fragments
-//    *  of the stack.
-//    *
-//    *  These fragments need to be treated as possibly containing pointers into
-//    *  the GC heap, and so needs to be scanned by the GC. We store them in an
-//    *  `ObjectArray` to simulate just that.
-//    */
-//   private[Continuations] class Continuation[-R, +T] extends (R => T):
-//     private[Continuations] var inner: Impl.Continuation = fromRawPtr(
-//       castIntToRawPtr(0)
-//     ) // null
-//     private val allocas = mutable.ArrayBuffer[ObjectArray]()
+  /** A `Continuation` holds the C implementation continuation pointer,
+   *  alongside a list of `ObjectArray`s, used for storing suspended fragments
+   *  of the stack.
+   *
+   *  These fragments need to be treated as possibly containing pointers into
+   *  the GC heap, and so needs to be scanned by the GC. We store them in an
+   *  `ObjectArray` to simulate just that.
+   */
+  // private[Continuations] class Continuation[-R, +T] extends (R => T):
+  //   private[Continuations] var inner: Impl.Continuation = _
+  //   private val allocas = mutable.ArrayBuffer[BlobArray]()
 
 //     def apply(x: R): T =
 //       resume(inner, x).get
 
-//     private[Continuations] def alloc(size: CUnsignedLong): Ptr[Byte] =
-//       val obj = ObjectArray.alloc(size.toInt) // round up the blob size
-//       allocas += obj
-//       obj.at(0).asInstanceOf[Ptr[Byte]]
-//   end Continuation
+  //   private[Continuations] def alloc(size: CUnsignedLong): Ptr[Byte] =
+  //     val obj = BlobArray.alloc(size.toInt) // round up the blob size
+  //     allocas += obj
+  //     obj.atUnsafe(0)
+  // end Continuation
 
 //   // STATIC FUNCTIONS THAT CALL PASSED-IN FUNCTION OBJECTS
 

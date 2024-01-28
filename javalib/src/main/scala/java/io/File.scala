@@ -10,9 +10,9 @@ import scala.annotation.tailrec
 import scala.scalanative.annotation.alwaysinline
 import scala.scalanative.libc._
 import scala.scalanative.libc.stdio._
-import scala.scalanative.libc.stdlib._
 import scala.scalanative.libc.string._
 import scala.scalanative.nio.fs.FileHelpers
+import scala.scalanative.posix.stdlib._
 import scala.scalanative.posix.sys.stat
 import scala.scalanative.posix.unistd._
 import scala.scalanative.posix.{limits, unistd, utime}
@@ -628,7 +628,7 @@ class File(_path: String) extends Serializable with Comparable[File] {
     }
   }
 
-  private[this] def checkWindowsAccess(
+  private def checkWindowsAccess(
       access: windows.DWord
   )(implicit zone: Zone): Boolean = {
     // based on this article https://blog.aaronballman.com/2011/08/how-to-check-access-rights/
@@ -886,7 +886,8 @@ object File {
       strncpy(part, path, i + `1U`)
 
       val resolved = resolveLink(part, resolveAbsolute = true)
-
+      // overlap can lead to undefined behaviour
+      if (resolved != part) strcpy(part, resolved)
       strcpy(part, resolved)
       strcat(part, path + i + `1U`)
 

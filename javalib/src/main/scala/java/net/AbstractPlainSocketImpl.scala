@@ -2,9 +2,7 @@ package java.net
 
 import scala.scalanative.unsigned._
 import scala.scalanative.unsafe._
-
 import scalanative.libc.string.memcpy
-
 import scala.scalanative.posix.arpa.inet
 // Import posix name errno as variable, not class or type.
 import scala.scalanative.posix.{errno => posixErrno}, posixErrno._
@@ -36,7 +34,7 @@ private[net] abstract class AbstractPlainSocketImpl extends SocketImpl {
 
   protected[net] var fd = new FileDescriptor
   protected[net] var localport = 0
-  protected[net] var address: InetAddress = null
+  protected[net] var address: InetAddress = _
   protected[net] var port = 0
 
   protected var timeout = 0
@@ -95,53 +93,6 @@ private[net] abstract class AbstractPlainSocketImpl extends SocketImpl {
     portOpt.map(inet.ntohs(_).toInt)
   }
 
-  /* Fill in the given sockaddr_in6 with the given InetAddress, either
-   * Inet4Address or Inet6Address, and the given port.
-   * Set the af_family for IPv6.  On return, the sockaddr_in6 should
-   * be ready to use in bind() or connect().
-   *
-   * By contract, all the bytes in sa6 are zero coming in.
-   */
-  private def prepareSockaddrIn6(
-      inetAddress: InetAddress,
-      port: Int,
-      sa6: Ptr[in.sockaddr_in6]
-  ): Unit = {
-
-    /* BEWARE: This is Unix-only code.
-     *   Currently (2022-08-27) execution on Windows never get here. IPv4Only
-     *   is forced on.  If that ever changes, this method may need
-     *   Windows code.
-     *
-     *   Having the complexity in one place, it should make adding
-     *   Windows support easier.
-     */
-
-    sa6.sin6_family = socket.AF_INET6.toUShort
-    sa6.sin6_port = inet.htons(port.toUShort)
-
-    val src = inetAddress.getAddress()
-
-    if (inetAddress.isInstanceOf[Inet6Address]) {
-      val from = src.asInstanceOf[scala.scalanative.runtime.Array[Byte]].at(0)
-      val dst = sa6.sin6_addr.at1.at(0).asInstanceOf[Ptr[Byte]]
-      memcpy(dst, from, 16.toUInt)
-    } else { // Use IPv4mappedIPv6 address
-      val dst = sa6.sin6_addr.toPtr.s6_addr
-
-      // By contract, the leading bytes are already zero already.
-      val FF = 255.toUByte
-      dst(10) = FF // set the IPv4mappedIPv6 indicator bytes
-      dst(11) = FF
-
-      // add the IPv4 trailing bytes, unrolling small loop
-      dst(12) = src(0).toUByte
-      dst(13) = src(1).toUByte
-      dst(14) = src(2).toUByte
-      dst(15) = src(3).toUByte
-    }
-  }
-
   private def bind4(addr: InetAddress, port: Int): Unit = {
     val hints = stackalloc[addrinfo]()
     val ret = stackalloc[Ptr[addrinfo]]()
@@ -176,7 +127,7 @@ private[net] abstract class AbstractPlainSocketImpl extends SocketImpl {
     val sa6 = stackalloc[in.sockaddr_in6]()
 
     // By contract, all the bytes in sa6 are zero going in.
-    prepareSockaddrIn6(addr, port, sa6)
+    SocketHelpers.prepareSockaddrIn6(addr, port, sa6)
 
     val bindRes = socket.bind(
       fd.fd,
@@ -215,44 +166,19 @@ private[net] abstract class AbstractPlainSocketImpl extends SocketImpl {
     if (timeout > 0)
       tryPollOnAccept()
 
-    val storage = stackalloc[Byte](sizeof[in.sockaddr_in6])
-    val len = stackalloc[socket.socklen_t]()
-    !len = sizeof[in.sockaddr_in6].toUInt
+    val storage = stackalloc[socket.sockaddr_storage]()
+    val address = storage.asInstanceOf[Ptr[socket.sockaddr]]
+    val addressLen = stackalloc[socket.socklen_t]()
+    !addressLen = sizeof[in.sockaddr_in6].toUInt
 
-    val newFd =
-      socket.accept(fd.fd, storage.asInstanceOf[Ptr[socket.sockaddr]], len)
+    val newFd = socket.accept(fd.fd, address, addressLen)
     if (newFd == -1) {
       throw new SocketException("Accept failed")
     }
-    val family =
-      storage.asInstanceOf[Ptr[socket.sockaddr_storage]].ss_family.toInt
-    val ipstr: Ptr[CChar] = stackalloc[CChar](in.INET6_ADDRSTRLEN)
 
-    val (srcPtr, port) = if (family == socket.AF_INET) {
-      val sa = storage.asInstanceOf[Ptr[in.sockaddr_in]]
-      val port = inet.ntohs(sa.sin_port).toInt
-      (sa.sin_addr.at1.asInstanceOf[Ptr[Byte]], port)
-    } else {
-      val sa = storage.asInstanceOf[Ptr[in.sockaddr_in6]]
-      val port = inet.ntohs(sa.sin6_port).toInt
-      (sa.sin6_addr.at1.at(0).asInstanceOf[Ptr[Byte]], port)
-    }
-
-    val ret = inet.inet_ntop(
-      family,
-      srcPtr,
-      ipstr,
-      in.INET6_ADDRSTRLEN.toUInt
-    )
-
-    if (ret == null) {
-      throw new IOException(
-        s"inet_ntop failed: ${fromCString(strerror(errno))}"
-      )
-    }
-
-    s.address = InetAddress.getByName(fromCString(ipstr))
-    s.port = port
+    val insAddr = SocketHelpers.sockaddrStorageToInetSocketAddress(address)
+    s.address = insAddr.getAddress
+    s.port = insAddr.getPort
     s.localport = this.localport
     s.fd = new FileDescriptor(newFd)
   }
@@ -332,7 +258,7 @@ private[net] abstract class AbstractPlainSocketImpl extends SocketImpl {
     val sa6 = stackalloc[in.sockaddr_in6]()
 
     // By contract, all the bytes in sa6 are zero going in.
-    prepareSockaddrIn6(insAddr.getAddress, insAddr.getPort, sa6)
+    SocketHelpers.prepareSockaddrIn6(insAddr.getAddress, insAddr.getPort, sa6)
 
     if (timeout != 0)
       setSocketFdBlocking(fd, blocking = false)
@@ -634,7 +560,7 @@ private[net] abstract class AbstractPlainSocketImpl extends SocketImpl {
     if (socket.setsockopt(fd.fd, level, optValue, opt, len) != 0) {
       throw new SocketException(
         "Exception while setting socket option with id: "
-          + optID + ", errno: " + lastError()
+          + optValue + ", errno: " + lastError()
       )
     }
   }

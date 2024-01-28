@@ -7,6 +7,7 @@ import core._
 import Contexts._
 
 import java.net.URI
+import java.nio.file.Path
 
 class GenNIR(settings: GenNIR.Settings) extends PluginPhase {
   val phaseName = GenNIR.name
@@ -29,11 +30,9 @@ object GenNIR {
        *  implementations of JDK classes.
        */
       genStaticForwardersForNonTopLevelObjects: Boolean = false,
-      /** Which source locations in source maps should be relativized (or where
-       *  should they be mapped to)?
-       */
-      sourceURIMaps: List[URIMap] = Nil
-  )
-  case class URIMap(from: URI, to: Option[URI])
 
+      /** List of paths usd for relativization of source file positions
+       */
+      positionRelativizationPaths: Seq[Path] = Nil
+  )
 }

@@ -229,13 +229,15 @@ object Lower {
           buf += inst
       }
 
-      implicit val pos: nir.Position = nir.Position.NoPosition
-      genNullPointerSlowPath(buf)
-      genDivisionByZeroSlowPath(buf)
-      genClassCastSlowPath(buf)
-      genUnreachableSlowPath(buf)
-      genOutOfBoundsSlowPath(buf)
-      genNoSuchMethodSlowPath(buf)
+      locally {
+        implicit val pos: nir.Position = nir.Position.NoPosition
+        genNullPointerSlowPath(buf)
+        genDivisionByZeroSlowPath(buf)
+        genClassCastSlowPath(buf)
+        genUnreachableSlowPath(buf)
+        genOutOfBoundsSlowPath(buf)
+        genNoSuchMethodSlowPath(buf)
+      }
 
       nullPointerSlowPath.clear()
       divisionByZeroSlowPath.clear()
@@ -380,12 +382,13 @@ object Lower {
             unwindHandler := slowPathUnwindHandler
           ) {
             val idx = nir.Val.Local(fresh(), nir.Type.Int)
+            val len = nir.Val.Local(fresh(), nir.Type.Int)
 
-            buf.label(slowPath, Seq(idx))
+            buf.label(slowPath, Seq(idx, len))
             buf.call(
               throwOutOfBoundsTy,
               throwOutOfBoundsVal,
-              Seq(nir.Val.Null, idx),
+              Seq(nir.Val.Null, idx, len),
               unwind
             )
             buf.unreachable(nir.Next.None)
@@ -557,7 +560,7 @@ object Lower {
       branch(
         inBounds,
         nir.Next(inBoundsL),
-        nir.Next.Label(outOfBoundsL, Seq(idx))
+        nir.Next.Label(outOfBoundsL, Seq(idx, len))
       )
       label(inBoundsL)
     }
@@ -591,10 +594,15 @@ object Lower {
           throw new LinkingException(s"Metadata for field '$name' not found")
       }
 
+      // No explicit memory order for load of final field,
+      // all final fields are loaded after a acquire fence
       val memoryOrder =
         if (field.attrs.isVolatile) nir.MemoryOrder.SeqCst
-        else if (field.attrs.isFinal) nir.MemoryOrder.Acquire
         else nir.MemoryOrder.Unordered
+
+      // Acquire memory fence before loading a final field
+      if (field.attrs.isFinal) buf.fence(nir.MemoryOrder.Acquire)
+
       val elem = genFieldElemOp(buf, genVal(buf, obj), name)
       genLoadOp(buf, n, nir.Op.Load(ty, elem, Some(memoryOrder)))
     }
@@ -740,6 +748,7 @@ object Lower {
       }
       private val multithreadingEnabled = meta.platform.isMultithreadingEnabled
       private val usesGCYieldPoints = multithreadingEnabled && supportedGC
+      private val useYieldPointTraps = platform.useGCYieldPointTraps
 
       def apply(defn: nir.Defn.Define): Boolean = {
         if (!usesGCYieldPoints) false
@@ -750,7 +759,12 @@ object Lower {
           lastResult = {
             // Exclude accessors and generated methods
             def mayContainLoops =
-              defn.insts.exists(_.isInstanceOf[nir.Inst.Jump])
+              defn.insts.exists {
+                case jmp: nir.Inst.Jump =>
+                  // might contain loops
+                  jmp.next.isInstanceOf[nir.Next.Label]
+                case _ => false
+              }
             !sig.isGenerated && (defn.insts.size > 4 || mayContainLoops)
           }
           lastResult
@@ -763,11 +777,12 @@ object Lower {
         scopeId: nir.ScopeId
     ): Unit = {
       if (shouldGenerateGCYieldPoints(currentDefn.get)) {
-        val handler = {
-          if (genUnwind && unwindHandler.isInitialized) unwind
-          else nir.Next.None
+        if (platform.useGCYieldPointTraps) {
+          val trap = buf.load(nir.Type.Ptr, GCYieldPointTrap, nir.Next.None)
+          buf.store(nir.Type.Int, trap, zero, nir.Next.None, memoryOrder = None)
+        } else {
+          buf.call(GCYieldSig, GCYield, Nil, nir.Next.None)
         }
-        buf.call(GCYieldSig, GCYield, Nil, handler)
       }
     }
 
@@ -1523,7 +1538,23 @@ object Lower {
           val func = arraySnapshot.getOrElse(ty, arraySnapshot(nir.Rt.Object))
           val module = genModuleOp(buf, fresh(), nir.Op.Module(func.owner))
           val len = nir.Val.Int(arrval.values.length)
-          val init = nir.Val.Const(arrval)
+          val init =
+            if (arrval.values.exists(!_.isCanonical)) {
+              // At least one of init values in non canonical (e.g. Val.Local), create a copy on stack
+              val alloc = buf.stackalloc(arrval.ty, one, unwind)
+              arrval.values.zipWithIndex.foreach {
+                case (value, idx) =>
+                  val innerPtr =
+                    buf.elem(
+                      arrval.ty,
+                      alloc,
+                      Seq(zero, nir.Val.Int(idx)),
+                      unwind
+                    )
+                  buf.store(arrval.elemty, innerPtr, genVal(buf, value), unwind)
+              }
+              alloc
+            } else nir.Val.Const(arrval)
           buf.let(
             n,
             nir.Op.Call(
@@ -1617,9 +1648,9 @@ object Lower {
             case nir.Val.Size(v) => nir.Val.Size(v * elemSize)
             case _ =>
               val asSize = sizeV.ty match {
-                case nir.Type.FixedSizeI(width, _) =>
-                  if (width == platform.sizeOfPtrBits) sizeV
-                  else if (width > platform.sizeOfPtrBits)
+                case i: nir.Type.FixedSizeI =>
+                  if (i.width == platform.sizeOfPtrBits) sizeV
+                  else if (i.width > platform.sizeOfPtrBits)
                     buf.conv(nir.Conv.Trunc, nir.Type.Size, sizeV, unwind)
                   else
                     buf.conv(nir.Conv.Zext, nir.Type.Size, sizeV, unwind)
@@ -1757,10 +1788,10 @@ object Lower {
   def allocSig(clsType: nir.Type.RefKind): nir.Type.Function =
     allocSig.copy(ret = clsType)
 
-  val allocSmallName = extern("scalanative_alloc_small")
+  val allocSmallName = extern("scalanative_GC_alloc_small")
   val alloc = nir.Val.Global(allocSmallName, allocSig)
 
-  val largeAllocName = extern("scalanative_alloc_large")
+  val largeAllocName = extern("scalanative_GC_alloc_large")
   val largeAlloc = nir.Val.Global(largeAllocName, allocSig)
 
   val SafeZone =
@@ -1984,11 +2015,17 @@ object Lower {
     nir.Val.Global(throwUndefined, nir.Type.Ptr)
 
   val throwOutOfBoundsTy =
-    nir.Type.Function(Seq(nir.Type.Ptr, nir.Type.Int), nir.Type.Nothing)
+    nir.Type.Function(
+      Seq(nir.Type.Ptr, nir.Type.Int, nir.Type.Int),
+      nir.Type.Nothing
+    )
   val throwOutOfBounds =
     nir.Global.Member(
       nir.Rt.Runtime.name,
-      nir.Sig.Method("throwOutOfBounds", Seq(nir.Type.Int, nir.Type.Nothing))
+      nir.Sig.Method(
+        "throwOutOfBounds",
+        Seq(nir.Type.Int, nir.Type.Int, nir.Type.Nothing)
+      )
     )
   val throwOutOfBoundsVal =
     nir.Val.Global(throwOutOfBounds, nir.Type.Ptr)
@@ -2005,14 +2042,18 @@ object Lower {
 
   val GC = nir.Global.Top("scala.scalanative.runtime.GC$")
   val GCYieldName =
-    GC.member(nir.Sig.Extern("scalanative_gc_yield"))
+    GC.member(nir.Sig.Extern("scalanative_GC_yield"))
   val GCYieldSig = nir.Type.Function(Nil, nir.Type.Unit)
   val GCYield = nir.Val.Global(GCYieldName, nir.Type.Ptr)
+
+  val GCYieldPointTrapName =
+    GC.member(nir.Sig.Extern("scalanative_GC_yieldpoint_trap"))
+  val GCYieldPointTrap = nir.Val.Global(GCYieldPointTrapName, nir.Type.Ptr)
 
   val GCSetMutatorThreadStateSig =
     nir.Type.Function(Seq(nir.Type.Int), nir.Type.Unit)
   val GCSetMutatorThreadState = nir.Val.Global(
-    GC.member(nir.Sig.Extern("scalanative_gc_set_mutator_thread_state")),
+    GC.member(nir.Sig.Extern("scalanative_GC_set_mutator_thread_state")),
     nir.Type.Ptr
   )
 
@@ -2076,6 +2117,7 @@ object Lower {
     buf += RuntimeNothing.name
     if (platform.isMultithreadingEnabled) {
       buf += GCYield.name
+      if (platform.useGCYieldPointTraps) buf += GCYieldPointTrap.name
       buf += GCSetMutatorThreadState.name
     }
     buf.toSeq

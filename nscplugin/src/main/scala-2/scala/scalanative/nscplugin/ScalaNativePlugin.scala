@@ -3,8 +3,7 @@ package nscplugin
 
 import scala.tools.nsc._
 import scala.tools.nsc.plugins._
-import java.net.URI
-import java.net.URISyntaxException
+import java.nio.file.{Path, Paths}
 
 class ScalaNativePlugin(val global: Global) extends Plugin {
   val name = "scalanative"
@@ -24,11 +23,9 @@ class ScalaNativePlugin(val global: Global) extends Plugin {
   object nirAddons extends NirGlobalAddonsEarlyInit[global.type](global)
 
   object scalaNativeOpts extends ScalaNativeOptions {
-    import ScalaNativeOptions.URIMap
-
     var genStaticForwardersForNonTopLevelObjects: Boolean = false
-    lazy val sourceURIMaps: List[URIMap] = _sourceURIMaps.reverse
-    var _sourceURIMaps: List[URIMap] = Nil
+
+    var positionRelativizationPaths: Seq[Path] = Nil
   }
 
   object prepNativeInterop extends PrepNativeInterop[global.type](global) {
@@ -49,25 +46,24 @@ class ScalaNativePlugin(val global: Global) extends Plugin {
 
   override def init(options: List[String], error: String => Unit): Boolean = {
     import scalaNativeOpts._
-    import ScalaNativeOptions.URIMap
     options.foreach {
       case "genStaticForwardersForNonTopLevelObjects" =>
         genStaticForwardersForNonTopLevelObjects = true
-      case opt if opt.startsWith("mapSourceURI:") =>
-        val uris = opt.stripPrefix("mapSourceURI:").split("->")
-        if (uris.length != 1 && uris.length != 2) {
-          error("mapSourceURI needs one or two URIs as argument.")
-        } else {
-          try {
-            val from = new URI(uris.head)
-            val to = uris.lift(1).map(str => new URI(str))
-            _sourceURIMaps ::= URIMap(from, to)
-          } catch {
-            case e: URISyntaxException =>
-              error(s"${e.getInput} is not a valid URI")
-          }
-        }
 
+      case opt if opt.startsWith("positionRelativizationPaths:") =>
+        positionRelativizationPaths = {
+          positionRelativizationPaths ++ opt
+            .stripPrefix("positionRelativizationPaths:")
+            .split(';')
+            .map(Paths.get(_))
+            .filter(_.isAbsolute())
+        }.distinct.sortBy(-_.getNameCount())
+
+      case opt if opt.startsWith("mapSourceURI:") =>
+        global.reporter.warning(
+          global.NoPosition,
+          "'mapSourceURI' is deprecated, it is ignored"
+        )
       case option =>
         error("Option not understood: " + option)
     }
@@ -76,15 +72,16 @@ class ScalaNativePlugin(val global: Global) extends Plugin {
   }
 
   override val optionsHelp: Option[String] = Some(s"""
-      |  -P:$name:mapSourceURI:FROM_URI[->TO_URI]
-      |     Change the location the source URIs in the emitted IR point to
-      |     - strips away the prefix FROM_URI (if it matches)
-      |     - optionally prefixes the TO_URI, where stripping has been performed
-      |     - any number of occurrences are allowed. Processing is done on a first match basis.
       |  -P:$name:genStaticForwardersForNonTopLevelObjects
       |     Generate static forwarders for non-top-level objects.
       |     This option should be used by codebases that implement JDK classes.
       |     When used together with -Xno-forwarders, this option has no effect.
+      |  -P:$name:positionRelativizationPaths
+      |     Change the source file positions in generated outputs based on list of provided paths.
+      |     It would strip the prefix of the source file if it matches given path.
+      |     Non-absolute paths would be ignored.
+      |     Multiple paths should be seperated by a single semicolon ';' character.
+      |     If none of the patches matches path would be relative to -sourcepath if defined or -sourceroot otherwise.
       """.stripMargin)
 
 }

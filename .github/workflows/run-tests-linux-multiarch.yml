@@ -13,6 +13,7 @@ jobs:
   # Build testing image that would be used to build and run against different platforms
   # Currently only Linux x64 is tested
   build-image:
+    if: "github.event_name == 'pull_request' || ((github.event_name == 'schedule' || github.event_name == 'workflow_call') && github.repository == 'scala-native/scala-native')"
     name: Build image
     runs-on: ubuntu-22.04
     outputs:
@@ -22,7 +23,7 @@ jobs:
         arch: [linux-arm64, linux-x86]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       # In order to minimize time spend in image build loading we're caching directory of local repository
       # Starting local registry from cache is faster then loading image tars
       # https://dev.to/dtinth/caching-docker-builds-in-github-actions-which-approach-is-the-fastest-a-research-18ei
@@ -32,7 +33,7 @@ jobs:
       # Cache automatically saves content specified paths after executing all steps defined after this one.
       # It will not update cache on hit.
       - name: Cache docker
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: /tmp/docker-registry
           key: docker-registry-${{ hashFiles('ci-docker/Dockerfile') }}-${{matrix.arch}}
@@ -72,6 +73,7 @@ jobs:
   #It can be extended to test against different OS and Arch settings
   test-runtime:
     name: Test runtime
+    if: "github.event_name == 'pull_request' || ((github.event_name == 'schedule' || github.event_name == 'workflow_call') && github.repository == 'scala-native/scala-native')"
     runs-on: ubuntu-22.04
     needs: build-image
     env:
@@ -118,12 +120,12 @@ jobs:
           - scala: 3-next
             gc: commix
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/linux-setup-env
         with:
           scala-version: ${{matrix.scala}}
       - name: Cache docker
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: /tmp/docker-registry
           key: docker-registry-${{ hashFiles('ci-docker/Dockerfile') }}-${{matrix.arch}}

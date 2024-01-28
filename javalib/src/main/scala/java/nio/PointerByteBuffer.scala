@@ -14,7 +14,7 @@ private[nio] final class PointerByteBuffer private (
   position(_initialPosition)
   limit(_initialLimit)
 
-  private[this] implicit def newPointerByteBuffer
+  private implicit def newPointerByteBuffer
       : GenPointerBuffer.NewPointerBuffer[ByteBuffer] =
     PointerByteBuffer.NewPointerByteBuffer
 
@@ -24,6 +24,10 @@ private[nio] final class PointerByteBuffer private (
   @noinline
   def slice(): ByteBuffer =
     GenPointerBuffer[ByteBuffer](this).generic_slice()
+
+  @noinline
+  def slice(index: Int, length: Int): ByteBuffer =
+    GenPointerBuffer[ByteBuffer](this).generic_slice(index, length)
 
   @noinline
   def duplicate(): ByteBuffer =

@@ -2,11 +2,13 @@ package scala.scalanative
 package util
 
 import language.implicitConversions
+import scala.annotation.nowarn
 
 class ScopedVar[A] {
   import ScopedVar.Assignment
 
   private var init = false
+  @nowarn("msg=`= _` has been deprecated")
   private var value: A = _
 
   def get: A = if (!init) throw ScopedVar.Unitialized() else value
@@ -39,9 +41,19 @@ object ScopedVar {
 
   implicit def toValue[T](scVar: ScopedVar[T]): T = scVar.get
 
+  @nowarn("msg=`_` is deprecated for wildcard arguments of types")
   def scoped[T](ass: Assignment[_]*)(body: => T): T = {
     val stack = ass.map(_.push())
     try body
     finally stack.reverse.foreach(_.pop())
+  }
+  // @nowarn("msg=The syntax `x: _\\*` is no longer supported for vararg splices")
+  // @nowarn("msg=`_` is deprecated for wildcard arguments of types")
+  @nowarn() // Cannot define multiple @nowarn annottations in Scala 2.12
+  def scopedPushIf[T](
+      shouldPushAssignments: Boolean
+  )(lazyAssignments: => Seq[Assignment[_]])(body: => T): T = {
+    if (shouldPushAssignments) scoped(lazyAssignments: _*)(body)
+    else body
   }
 }

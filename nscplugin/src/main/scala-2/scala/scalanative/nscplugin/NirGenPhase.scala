@@ -1,7 +1,7 @@
 package scala.scalanative
 package nscplugin
 
-import java.nio.file.{Path => JPath}
+import java.nio.file.{Path => JPath, Paths => JPaths}
 import java.util.stream.{Stream => JStream}
 import java.util.function.{Consumer => JConsumer}
 import scala.collection.mutable
@@ -10,6 +10,8 @@ import nir.Defn.Define.DebugInfo
 import scala.scalanative.util.ScopedVar.scoped
 import scala.tools.nsc.plugins._
 import scala.tools.nsc.{Global, util => _, _}
+import scala.reflect.internal.util.{SourceFile => CompilerSourceFile}
+import scala.tools.nsc
 
 abstract class NirGenPhase[G <: Global with Singleton](override val global: G)
     extends NirPhase[G](global)
@@ -43,7 +45,6 @@ abstract class NirGenPhase[G <: Global with Singleton](override val global: G)
   protected val curStatBuffer = new util.ScopedVar[StatBuffer]
   protected val cachedMethodSig =
     collection.mutable.Map.empty[(Symbol, Boolean), nir.Type.Function]
-  protected var curMethodUsesLinktimeResolvedValues = false
 
   protected var curScopes =
     new util.ScopedVar[mutable.Set[DebugInfo.LexicalScope]]
@@ -177,7 +178,7 @@ abstract class NirGenPhase[G <: Global with Singleton](override val global: G)
     }
   }
 
-  protected implicit def toNirPosition(pos: Position): nir.Position = {
+  protected implicit def toNirPosition(pos: global.Position): nir.Position = {
     if (!pos.isDefined) nir.Position.NoPosition
     else
       nir.Position(
@@ -189,10 +190,10 @@ abstract class NirGenPhase[G <: Global with Singleton](override val global: G)
 
   private[this] object nirPositionCachedConverter {
     import scala.reflect.internal.util._
-    private[this] var lastNscSource: SourceFile = _
-    private[this] var lastNIRSource: nir.Position.SourceFile = _
+    private[this] var lastNscSource: CompilerSourceFile = _
+    private[this] var lastNIRSource: nir.SourceFile = _
 
-    def toNIRSource(nscSource: SourceFile): nir.Position.SourceFile = {
+    def toNIRSource(nscSource: CompilerSourceFile): nir.SourceFile = {
       if (nscSource != lastNscSource) {
         lastNIRSource = convert(nscSource)
         lastNscSource = nscSource
@@ -200,27 +201,46 @@ abstract class NirGenPhase[G <: Global with Singleton](override val global: G)
       lastNIRSource
     }
 
-    private[this] def convert(
-        nscSource: SourceFile
-    ): nir.Position.SourceFile = {
-      nscSource.file.file match {
-        case null =>
-          new java.net.URI(
-            "virtualfile", // Pseudo-Scheme
-            nscSource.file.path, // Scheme specific part
-            null // Fragment
-          )
-        case file =>
-          val srcURI = file.toURI
-          def matches(pat: java.net.URI) = pat.relativize(srcURI) != srcURI
+    /** Returns the relative path of `source` within the `reference` path
+     *
+     *  It returns the absolute path of `source` if it is not contained in
+     *  `reference`.
+     */
+    def relativePath(source: CompilerSourceFile, reference: JPath): String = {
+      val file = source.file
+      val jfile = file.file
+      if (jfile eq null)
+        file.path // repl and other custom tests use abstract files with no path
+      else {
+        val sourcePath = jfile.toPath.toAbsolutePath.normalize
+        val refPath = reference.normalize
+        if (sourcePath.startsWith(refPath)) {
+          val path = refPath.relativize(sourcePath)
+          import scala.collection.JavaConverters._
+          path.iterator.asScala.mkString("/"): @scala.annotation.nowarn
+        } else sourcePath.toString
+      }
+    }
 
-          scalaNativeOpts.sourceURIMaps
-            .collectFirst {
-              case ScalaNativeOptions.URIMap(from, to) if matches(from) =>
-                val relURI = from.relativize(srcURI)
-                to.fold(relURI)(_.resolve(relURI))
-            }
-            .getOrElse(srcURI)
+    private val sourceRoot = JPaths
+      .get {
+        val sourcePath = settings.sourcepath.value
+        if (sourcePath.isEmpty) settings.rootdir.value
+        else sourcePath
+      }
+      .toAbsolutePath()
+
+    private[this] def convert(
+        nscSource: CompilerSourceFile
+    ): nir.SourceFile = {
+      if (nscSource.file.isVirtual) nir.SourceFile.Virtual
+      else {
+        val absSourcePath = nscSource.file.absolute.file.toPath()
+        val relativeTo = scalaNativeOpts.positionRelativizationPaths
+          .find(absSourcePath.startsWith(_))
+          .map(_.toAbsolutePath())
+          .getOrElse(sourceRoot)
+        nir.SourceFile.Relative(relativePath(nscSource, relativeTo))
       }
     }
   }

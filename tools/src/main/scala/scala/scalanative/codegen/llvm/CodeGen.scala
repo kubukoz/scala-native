@@ -30,7 +30,7 @@ object CodeGen {
     implicit def logger: build.Logger = config.logger
     implicit val platform: PlatformInfo = PlatformInfo(config)
     implicit val meta: CodeGenMetadata =
-      new CodeGenMetadata(analysis, config.compilerConfig, proxies)
+      new CodeGenMetadata(analysis, config, proxies)
 
     val generated = Generate(encodedMainClass(config), defns ++ proxies)
     val embedded = ResourceEmbedder(config)
@@ -71,22 +71,22 @@ object CodeGen {
       val outputDirPath = config.workDir.resolve("generated")
       Files.createDirectories(outputDirPath)
       val outputDir = VirtualDirectory.real(outputDirPath)
+      val sourceCodeCache = new SourceCodeCache(config)
 
-      def sourceDirOf(defn: nir.Defn): String = {
-        if (defn.pos == null) EmptyPath
-        else defn.pos.dir.getOrElse(EmptyPath)
-      }
+      def outputFileId(defn: nir.Defn): String =
+        defn.pos.source.directory
+          .getOrElse(EmptyPath)
 
       // Partition into multiple LLVM IR files proportional to number
       // of available processesors. This prevents LLVM from optimizing
       // across IR module boundary unless LTO is turned on.
       def separate(): Future[Seq[Path]] =
         Future
-          .traverse(partitionBy(assembly, procs)(sourceDirOf).toSeq) {
+          .traverse(partitionBy(assembly, procs)(outputFileId).toSeq) {
             case (id, defns) =>
               Future {
                 val sorted = defns.sortBy(_.name)
-                Impl(env, sorted).gen(id.toString, outputDir)
+                Impl(env, sorted, sourceCodeCache).gen(id.toString(), outputDir)
               }
           }
 
@@ -112,10 +112,10 @@ object CodeGen {
         // This will ensure that each LLVM IR file only references a single Scala source file,
         // which will prevent the Darwin linker failing to generate N_OSO symbols.
         Future
-          .traverse(assembly.groupBy(sourceDirOf).toSeq) {
-            case (dir, defns) =>
+          .traverse(assembly.groupBy(outputFileId).toSeq) {
+            case (id, defns) =>
               Future {
-                val hash = dir.hashCode().toHexString
+                val hash = id.hashCode().toHexString
                 val outFile = outputDirPath.resolve(s"$hash.ll")
                 val ownerDirectory = outFile.getParent()
 
@@ -124,11 +124,11 @@ object CodeGen {
                   val sorted = defns.sortBy(_.name)
                   if (!Files.exists(ownerDirectory))
                     Files.createDirectories(ownerDirectory)
-                  Impl(env, sorted).gen(hash, outputDir)
+                  Impl(env, sorted, sourceCodeCache).gen(hash, outputDir)
                 } else {
                   assert(ownerDirectory.toFile.exists())
                   config.logger.debug(
-                    s"Content of directory in $dir has not changed, skiping generation of $hash.ll"
+                    s"Content of definitions in chunk '$id' has not changed, skipping generation of $hash.ll"
                   )
                   outFile
                 }
@@ -151,14 +151,20 @@ object CodeGen {
     import scala.scalanative.codegen.llvm.AbstractCodeGen
     import scala.scalanative.codegen.llvm.compat.os._
 
-    def apply(env: Map[nir.Global, nir.Defn], defns: Seq[nir.Defn])(implicit
+    def apply(
+        env: Map[nir.Global, nir.Defn],
+        defns: Seq[nir.Defn],
+        sourcesCache: SourceCodeCache
+    )(implicit
         meta: CodeGenMetadata
     ): AbstractCodeGen = {
+
       new AbstractCodeGen(env, defns) {
         override val os: OsCompat = {
           if (this.meta.platform.targetsWindows) new WindowsCompat(this)
           else new UnixCompat(this)
         }
+        override def sourceCodeCache: SourceCodeCache = sourcesCache
       }
     }
   }

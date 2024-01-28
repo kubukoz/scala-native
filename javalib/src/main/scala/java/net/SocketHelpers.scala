@@ -3,13 +3,16 @@ package java.net
 import scala.scalanative.unsigned._
 import scala.scalanative.unsafe._
 
+import java.io.IOException
+
+import scala.scalanative.posix.arpa.inet
 import scala.scalanative.posix.{netdb, netdbOps}, netdb._, netdbOps._
-import scala.scalanative.posix.netinet.in
-import scala.scalanative.posix.netinet.inOps._
+import scala.scalanative.posix.netinet.{in, inOps}, in._, inOps._
 import scala.scalanative.posix.sys.socket._
 import scala.scalanative.posix.sys.socketOps._
 import scala.scalanative.posix.string.memcpy
 
+import scala.scalanative.meta.LinktimeInfo
 import scala.scalanative.meta.LinktimeInfo.isWindows
 
 import scala.scalanative.windows.WinSocketApiOps
@@ -117,7 +120,7 @@ object SocketHelpers {
   private[net] def getIPPROTO(): Int = stackIpproto
 
   private lazy val trafficClassSocketOption: Int =
-    if (getUseIPv4Stack()) in.IP_TOS else in6.IPV6_TCLASS
+    if (getUseIPv4Stack()) in.IP_TOS else ip6.IPV6_TCLASS
 
   private[net] def getTrafficClassSocketOption(): Int =
     trafficClassSocketOption
@@ -131,29 +134,191 @@ object SocketHelpers {
     }
   }
 
-  private[net] def sockaddrToByteArray(sockAddr: Ptr[sockaddr]): Array[Byte] = {
+  private[net] def isIPv4MappedAddress(pb: Ptr[Byte]): Boolean = {
+    val ptrInt = pb.asInstanceOf[Ptr[Int]]
+    val ptrLong = pb.asInstanceOf[Ptr[Long]]
+    (ptrInt(2) == 0xffff0000) && (ptrLong(0) == 0x0L)
+  }
 
-    val (src, byteArraySize) = {
-      val af = sockAddr.sa_family.toInt
-      if (af == AF_INET6) {
-        val v6addr = sockAddr.asInstanceOf[Ptr[in.sockaddr_in6]]
-        val sin6Addr = v6addr.sin6_addr.at1.asInstanceOf[Ptr[Byte]]
-        val arraySize = 16
-        (sin6Addr, arraySize)
-      } else if (af == AF_INET) {
-        val v4addr = sockAddr.asInstanceOf[Ptr[in.sockaddr_in]]
-        val sin4Addr = v4addr.sin_addr.at1.asInstanceOf[Ptr[Byte]]
-        val arraySize = 4
-        (sin4Addr, arraySize)
+  /* Fill in the given sockaddr_in6 with the given InetAddress, either
+   * Inet4Address or Inet6Address, and the given port.
+   * Set the af_family for IPv6.  On return, the sockaddr_in6 should
+   * be ready to use in bind() or connect().
+   *
+   * By contract, all the bytes in sa6 are zero coming in.
+   */
+  private[net] def prepareSockaddrIn6(
+      inetAddress: InetAddress,
+      port: Int,
+      sa6: Ptr[in.sockaddr_in6]
+  ): Unit = {
+
+    /* BEWARE: This is Unix-only code.
+     *   Currently (2022-08-27) execution on Windows never get here. IPv4Only
+     *   is forced on.  If that ever changes, this method may need
+     *   Windows code.
+     *
+     *   Having the complexity in one place, it should make adding
+     *   Windows support easier.
+     */
+
+    sa6.sin6_family = AF_INET6.toUShort
+    sa6.sin6_port = inet.htons(port.toUShort)
+
+    val src = inetAddress.getAddress()
+
+    if (inetAddress.isInstanceOf[Inet6Address]) {
+      val from = src.asInstanceOf[scala.scalanative.runtime.Array[Byte]].at(0)
+      val dst = sa6.sin6_addr.at1.at(0).asInstanceOf[Ptr[Byte]]
+      memcpy(dst, from, 16.toUInt)
+
+      sa6.sin6_scope_id = inetAddress
+        .asInstanceOf[Inet6Address]
+        .getScopeId()
+        .toUShort
+    } else { // Use IPv4mappedIPv6 address
+      // IPv4 addresses do not have a scope_id, so leave at current value 0
+
+      val dst = sa6.sin6_addr.toPtr.s6_addr
+
+      // By contract, the leading bytes are already zero already.
+      val FF = 255.toUByte
+      dst(10) = FF // set the IPv4mappedIPv6 indicator bytes
+      dst(11) = FF
+
+      // add the IPv4 trailing bytes, unrolling small loop
+      dst(12) = src(0).toUByte
+      dst(13) = src(1).toUByte
+      dst(14) = src(2).toUByte
+      dst(15) = src(3).toUByte
+    }
+  }
+
+  private[net] def sockaddrToByteArray(sockAddr: Ptr[sockaddr]): Array[Byte] = {
+    val af = sockAddr.sa_family.toInt
+    val (src, size) = if (af == AF_INET6) {
+      val v6addr = sockAddr.asInstanceOf[Ptr[in.sockaddr_in6]]
+      val sin6Addr = v6addr.sin6_addr.at1.asInstanceOf[Ptr[Byte]]
+      // Scala JVM down-converts even when preferIPv6Addresses is "true"
+      if (isIPv4MappedAddress(sin6Addr)) {
+        (sin6Addr + 12, 4)
       } else {
-        throw new SocketException(s"Unsupported address family: ${af}")
+        (sin6Addr, 16)
       }
+    } else if (af == AF_INET) {
+      val v4addr = sockAddr.asInstanceOf[Ptr[in.sockaddr_in]]
+      val sin4Addr = v4addr.sin_addr.at1.asInstanceOf[Ptr[Byte]]
+      (sin4Addr, 4)
+    } else {
+      throw new SocketException(s"Unsupported address family: ${af}")
     }
 
-    val byteArray = new Array[Byte](byteArraySize)
-    memcpy(byteArray.at(0), src, byteArraySize.toUInt)
+    val byteArray = new Array[Byte](size)
+    memcpy(byteArray.at(0), src, size.toUInt)
 
     byteArray
+  }
+
+  private def sockddrToPort(sockAddr: Ptr[sockaddr]): Int = {
+    val af = sockAddr.sa_family.toInt
+    val inPort = if (af == AF_INET6) {
+      sockAddr.asInstanceOf[Ptr[in.sockaddr_in6]].sin6_port
+    } else if (af == AF_INET) {
+      sockAddr.asInstanceOf[Ptr[in.sockaddr_in]].sin_port
+    } else {
+      throw new SocketException(s"Unsupported address family: ${af}")
+    }
+    inet.ntohs(inPort).toInt
+  }
+
+  private def extractIP4Bytes(pb: Ptr[Byte]): Array[Byte] = {
+    val buf = new Array[Byte](4)
+    buf(0) = pb(12)
+    buf(1) = pb(13)
+    buf(2) = pb(14)
+    buf(3) = pb(15)
+    buf
+  }
+
+  /* The goal is to have a single implementation of InetAddress class &
+   * subclass creation that can be used by InetAddress.scala and
+   * NetworkInterface.scala, by way of sockaddrStorageToInetSocketAddress().
+   *
+   * One would expect such a routine to be in InetAddress.scala
+   * to make the creation of Inet4Address & Inet6Address instances
+   * simpler and have better performance.
+   *
+   * test-runtime compiles & executes across many versions using that
+   * scheme.  Unfortunately, test-scripted on Scala 2.12 (and possibly
+   * other versions) fails to compile the java-net-socket test.
+   * Good design wrecked upon the rocks of hard reality.
+   */
+
+  private[net] def sockaddrToInetAddress(
+      sin: Ptr[sockaddr],
+      host: String
+  ): InetAddress = {
+
+    if (sin.sa_family == AF_INET) {
+      InetAddress.getByAddress(host, SocketHelpers.sockaddrToByteArray(sin))
+    } else if (sin.sa_family == AF_INET6) {
+      val sin6 = sin.asInstanceOf[Ptr[sockaddr_in6]]
+      val addrBytes = sin6.sin6_addr.at1.at(0).asInstanceOf[Ptr[Byte]]
+
+      // Scala JVM down-converts even when preferIPv6Addresses is "true"
+      /* 2024-01-21 10:16 -0500
+       * Yes this is still astonishing but true. Not just a trick of
+       * output formatting.
+       *
+       * Using scala.cli
+       *
+       * scala> import
+       * scala> val ia1 = InetAddress.getByName("::FFFF:127.0.0.1")
+       * val ia1: java.net.InetAddress = /127.0.0.1
+       * scala> ia1.isInstanceOf[Inet4Address]
+       * val res0: Boolean = true
+       */
+      if (isIPv4MappedAddress(addrBytes)) {
+        InetAddress.getByAddress(host, extractIP4Bytes(addrBytes))
+      } else {
+        /* Yes, Java specifies Int for scope_id in a way which disallows
+         * some values POSIX/IEEE/IETF allows.
+         */
+
+        val scope_id = sin6.sin6_scope_id.toInt
+
+        /* Be aware some trickiness here.
+         * Java treats a 0 scope_id (qua NetworkInterface index)
+         * as having been not supplied.
+         * Exactly the same 0 scope_id explicitly passed to
+         * Inet6Address.getByAddress() is considered supplied and
+         * displayed as such.
+         */
+
+        // Keep address bytes passed in immutable, get new Array.
+        val clonedBytes = SocketHelpers.sockaddrToByteArray(sin)
+        if (scope_id == 0)
+          InetAddress.getByAddress(host, clonedBytes)
+        else
+          Inet6Address.getByAddress(
+            host,
+            clonedBytes,
+            scope_id
+          )
+      }
+    } else {
+      throw new IOException(
+        s"The requested address family is not supported: ${sin.sa_family}."
+      )
+    }
+  }
+
+  private[net] def sockaddrStorageToInetSocketAddress(
+      sockAddr: Ptr[sockaddr]
+  ): InetSocketAddress = {
+    val addr = sockaddrToInetAddress(sockAddr, "")
+    val port = sockddrToPort(sockAddr)
+    new InetSocketAddress(addr, port)
   }
 
   // Create copies of loopback & wildcard, so that originals never get changed
@@ -210,12 +375,73 @@ object SocketHelpers {
     else wildcardIPv4()
   }
 
+  /* Return the wildcard address corresponding directly to the IP stack in use.
+   * This address has not been selected by getPreferIPv6Addresses().
+   *
+   * This section will need to be revisited as more robust FreeBSD support
+   * is added.  The assumption here is that FreeBSD always returns the
+   * IPv4 wildcard. That assumption/guess needs to be verified.
+   * FreeBSD & NetBSD are reported to separate IPv4 & IPv6 stacks.
+   */
+
+  private[net] def getWildcardAddressForBind(): InetAddress = {
+    if (LinktimeInfo.isFreeBSD) wildcardIPv4()
+    else if (useIPv4Stack) wildcardIPv4()
+    else wildcardIPv6()
+  }
+
 }
 
-/* Normally 'object in6' would be in a separate file.
+/* Normally objects 'ip' and 'ip6' would be in a separate file.
  * The way that Scala Native javalib gets built means that can not be
  * easily done here.
  */
+
+/* As of this writing, there is no good home for this object in Scala Native.
+ * Those definitions are not POSIX
+ */
+@extern
+private[net] object ip {
+  type ip_mreq = CStruct2[
+    in_addr, // imr_multiaddr
+    in_addr // imr_address
+  ]
+
+  // Linux only
+  type ip_mreqn = CStruct3[
+    in_addr, // imr_multiaddr
+    in_addr, // imr_address
+    CInt // imr_ifindex
+  ]
+
+  @name("scalanative_ip_multicast_ttl")
+  def IP_MULTICAST_TTL: CInt = extern
+
+  @name("scalanative_ip_add_membership")
+  def IP_ADD_MEMBERSHIP: CInt = extern
+
+  @name("scalanative_ip_drop_membership")
+  def IP_DROP_MEMBERSHIP: CInt = extern
+}
+
+private[net] object ipOps {
+  import ip._
+  implicit class ip_mreqOps(val ptr: Ptr[ip_mreq]) extends AnyVal {
+    def imr_multiaddr: in_addr = ptr._1
+    def imr_address: in_addr = ptr._2
+    def imr_multiaddr_=(v: in_addr): Unit = ptr._1 = v
+    def imr_address_=(v: in_addr): Unit = ptr._2 = v
+  }
+
+  implicit class mip_mreqnOps(val ptr: Ptr[ip_mreqn]) extends AnyVal {
+    def imr_multiaddr: in_addr = ptr._1
+    def imr_address: in_addr = ptr._2
+    def imr_ifindex: CInt = ptr._3
+    def imr_multiaddr_=(v: in_addr): Unit = ptr._1 = v
+    def imr_address_=(v: in_addr): Unit = ptr._2 = v
+    def imr_ifindex_=(v: CInt): Unit = ptr._3 = v
+  }
+}
 
 /* As of this writing, there is no good home for this object in Scala Native.
  * This is and its matching C code are the Scala Native rendition of
@@ -233,7 +459,10 @@ object SocketHelpers {
  * can and should be moved there.
  */
 @extern
-private[net] object in6 {
+private[net] object ip6 {
   @name("scalanative_ipv6_tclass")
   def IPV6_TCLASS: CInt = extern
+
+  @name("scalanative_ipv6_multicast_hops")
+  def IPV6_MULTICAST_HOPS: CInt = extern
 }

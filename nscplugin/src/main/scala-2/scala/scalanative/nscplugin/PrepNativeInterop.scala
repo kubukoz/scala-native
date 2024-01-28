@@ -78,8 +78,11 @@ abstract class PrepNativeInterop[G <: Global with Singleton](
 
     override def transform(tree: Tree): Tree = {
       // Recursivly widen and dealias all nested types (compler dealiases only top-level)
-      def widenDealiasType(tpe: Type): Type = {
-        val widened = tpe.dealias.map(_.dealias)
+      def widenDealiasType(tpe0: Type): Type = {
+        val tpe =
+          if (tpe0.typeSymbol.isAbstract) tpe0.upperBound
+          else tpe0
+        val widened = tpe.dealiasWiden.map(_.dealiasWiden)
         if (widened != tpe) widened.map(widenDealiasType(_))
         else widened
       }
@@ -140,6 +143,14 @@ abstract class PrepNativeInterop[G <: Global with Singleton](
               s"Stackalloc requires concrete type, but ${show(tpe)} found"
             )
           tree.updateAttachment(NonErasedType(tpe))
+
+        case Apply(fun, args)
+            if isExternType(fun.symbol.owner) &&
+              fun.tpe.paramss.exists(isScalaVarArgs(_)) =>
+          args.foreach { arg =>
+            arg.updateAttachment(NonErasedType(widenDealiasType(arg.tpe)))
+          }
+          tree
 
         // Catch the definition of scala.Enumeration itself
         case cldef: ClassDef if cldef.symbol == EnumerationClass =>
