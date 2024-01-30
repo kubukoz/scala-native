@@ -323,7 +323,7 @@ void Heap_Grow(Heap *heap, uint32_t incrementInBlocks) {
 
 #ifdef DEBUG_PRINT
     char str[100];
-    sprintf(str, "Growing small heap by %zu bytes, to %zu bytes\n",
+    sprintf(str, "Growing heap by %zu bytes, to %zu bytes\n",
             incrementInBytes, heap->heapSize + incrementInBytes);
     pd_log_error(str);
 #endif
