@@ -94,9 +94,7 @@ size_t getMemorySize() {
 #endif /* sysctl and sysconf variants */
 
 #elif defined(TARGET_PLAYDATE)
-    // Games have up to 8MB of memory
-    // but let's stick to 4 for now
-    return (size_t)4 * 1024 * 1024;
+    return (size_t)8 * 1024 * 1024;
 #else
     return 0L; /* Unknown OS. */
 #endif
