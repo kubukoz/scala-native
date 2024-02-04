@@ -197,7 +197,7 @@ void Heap_Collect(Heap *heap, Stack *stack) {
     WeakRefStack_CallHandlers();
 #endif
 #ifdef DEBUG_PRINT
-    printf("End collect\n");
+    pd_log_error("End collect\n");
 #endif
 }
 
