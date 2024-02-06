@@ -16,7 +16,7 @@ extern void assertOr(int condition, char *message);
 
 word_t *Object_LastWord(Object *object) {
     size_t size = Object_Size(object);
-    assert(size < LARGE_BLOCK_SIZE);
+    assertOr(size < LARGE_BLOCK_SIZE, "size < LARGE_BLOCK_SIZE");
     word_t *last =
         (word_t *)((ubyte_t *)object + size) - ALLOCATION_ALIGNMENT_WORDS;
     return last;
@@ -90,13 +90,14 @@ void Object_Mark(Heap *heap, Object *object, ObjectMeta *objectMeta) {
 
         if (blockMeta != Block_GetBlockMeta(heap->blockMetaStart,
                                             heap->heapStart, lastWord)) {
+
 #ifdef PD_DEBUG
             pd_log_error("blockMeta LHS: %p, RHS: %p", blockMeta,
                          Block_GetBlockMeta(heap->blockMetaStart,
                                             heap->heapStart, lastWord));
-            pd_log_error("class %p, size %d, name %p, fields: %d",
+            pd_log_error("class %p, size %d, name %p, field count: %d",
                          object->rtti->rt.cls, object->rtti->size,
-                         object->rtti->rt.name, sizeof(object->fields));
+                         object->rtti->rt.name, Object_Size(object));
 #endif
         }
 
