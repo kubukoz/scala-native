@@ -222,7 +222,7 @@ NOINLINE word_t *Allocator_allocSlow(Allocator *allocator, Heap *heap,
 #ifdef PD_DEBUG
         pd_log_error("Allocator_allocSlow: after collect");
 #endif
-            object = Allocator_tryAlloc(allocator, size);
+        object = Allocator_tryAlloc(allocator, size);
 
         if (object != NULL)
             goto done;
