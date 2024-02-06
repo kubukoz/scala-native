@@ -126,6 +126,9 @@ void Marker_Mark(Heap *heap, Stack *stack) {
         const int objectId = object->rtti->rt.id;
         if (Object_IsArray(object)) {
             ArrayHeader *arrayHeader = (ArrayHeader *)object;
+            #ifdef PD_DEBUG
+            pd_log_error("this is an array: %d, its size is %d", objectId, arrayHeader->length);
+            #endif
             if (objectId == __object_array_id) {
                 const size_t length = arrayHeader->length;
                 word_t **fields = (word_t **)(arrayHeader + 1);

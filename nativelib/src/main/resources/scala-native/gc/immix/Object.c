@@ -94,9 +94,9 @@ void Object_Mark(Heap *heap, Object *object, ObjectMeta *objectMeta) {
             pd_log_error("blockMeta LHS: %p, RHS: %p", blockMeta,
                          Block_GetBlockMeta(heap->blockMetaStart,
                                             heap->heapStart, lastWord));
-            pd_log_error("class %i, size %i, name %i, fields: %i",
-                         sizeof(object->rtti->rt.cls), object->rtti->size,
-                         sizeof(object->rtti->rt.name), sizeof(object->fields));
+            pd_log_error("class %p, size %d, name %p, fields: %d",
+                         object->rtti->rt.cls, object->rtti->size,
+                         object->rtti->rt.name, sizeof(object->fields));
 #endif
         }
 
