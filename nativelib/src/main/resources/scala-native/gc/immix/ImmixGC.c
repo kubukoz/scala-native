@@ -22,7 +22,9 @@ void scalanative_GC_collect();
 
 void scalanative_afterexit() { Stats_OnExit(heap.stats); }
 
-extern void pd_log_error(char *str);
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
 
 NOINLINE void scalanative_GC_init() {
     volatile word_t dummy = 0;
@@ -75,7 +77,12 @@ INLINE void *scalanative_GC_alloc_atomic(void *info, size_t size) {
     return scalanative_GC_alloc(info, size);
 }
 
-INLINE void scalanative_GC_collect() { Heap_Collect(&heap, &stack); }
+INLINE void scalanative_GC_collect() {
+    Heap_Collect(&heap, &stack);
+#ifdef PD_DEBUG
+    pd_log_error("scalanative_GC_collect: after collect");
+#endif
+}
 
 INLINE void scalanative_GC_register_weak_reference_handler(void *handler) {
     WeakRefStack_SetHandler(handler);

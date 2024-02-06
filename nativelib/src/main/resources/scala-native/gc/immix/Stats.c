@@ -10,10 +10,14 @@
 #include <inttypes.h>
 
 void Stats_writeToFile(Stats *stats);
-extern void pd_log_error(char *str);
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
 
 void Stats_Init(Stats *stats, const char *statsFile) {
+#ifdef PD_DEBUG
     pd_log_error("mark_time_ns,nullify_time_ns,sweep_time_ns\n");
+#endif
     stats->collections = 0;
 }
 
@@ -31,17 +35,17 @@ void Stats_RecordCollection(Stats *stats, uint64_t start_ns,
 }
 
 void Stats_writeToFile(Stats *stats) {
-    char str[100];
     uint64_t collections = stats->collections;
     uint64_t remainder = collections % STATS_MEASUREMENTS;
     if (remainder == 0) {
         remainder = STATS_MEASUREMENTS;
     }
     for (uint64_t i = 0; i < remainder; i++) {
-        sprintf(str, "%" PRIu64 ",%" PRIu64 ",%" PRIu64 "\n",
-                stats->mark_time_ns[i], stats->nullify_time_ns[i],
-                stats->sweep_time_ns[i]);
-        pd_log_error(str);
+#ifdef PD_DEBUG
+        pd_log_error("%" PRIu64 ",%" PRIu64 ",%" PRIu64 "\n",
+                     stats->mark_time_ns[i], stats->nullify_time_ns[i],
+                     stats->sweep_time_ns[i]);
+#endif
     }
 }
 

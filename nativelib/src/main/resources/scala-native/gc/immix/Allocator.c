@@ -11,6 +11,10 @@ bool Allocator_getNextLine(Allocator *allocator);
 bool Allocator_newBlock(Allocator *allocator);
 bool Allocator_newOverflowBlock(Allocator *allocator);
 
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
+
 void Allocator_Init(Allocator *allocator, BlockAllocator *blockAllocator,
                     Bytemap *bytemap, word_t *blockMetaStart,
                     word_t *heapStart) {
@@ -43,9 +47,12 @@ void Allocator_InitCursors(Allocator *allocator, bool canCollect) {
              Allocator_newOverflowBlock(allocator))) {
         if (Heap_isGrowingPossible(&heap, 2))
             Heap_Grow(&heap, 2);
-        else if (canCollect)
+        else if (canCollect) {
             Heap_Collect(&heap, &stack);
-        else
+#ifdef PD_DEBUG
+            pd_log_error("Allocator_InitCursors: after collect");
+#endif
+        } else
             Heap_exitWithOutOfMemory(
                 "Not enough memory to allocate GC mutator thread allocator");
     }
@@ -212,7 +219,10 @@ NOINLINE word_t *Allocator_allocSlow(Allocator *allocator, Heap *heap,
             return object;
         }
         Heap_Collect(heap, &stack);
-        object = Allocator_tryAlloc(allocator, size);
+#ifdef PD_DEBUG
+        pd_log_error("Allocator_allocSlow: after collect");
+#endif
+            object = Allocator_tryAlloc(allocator, size);
 
         if (object != NULL)
             goto done;

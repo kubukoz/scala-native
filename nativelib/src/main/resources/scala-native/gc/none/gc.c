@@ -39,10 +39,14 @@ static size_t CHUNK;
 static size_t TO_NORMAL_MMAP = 1L;
 static size_t DO_PREALLOC = 0L; // No Preallocation.
 
-extern void pd_log_error(char *str);
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
 
 static void exitWithOutOfMemory() {
+#ifdef PD_DEBUG
     pd_log_error("Out of heap space\n");
+#endif
     exit(1);
 }
 

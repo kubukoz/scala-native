@@ -10,6 +10,10 @@
 #include "immix/State.h"
 #include "immix_commix/headers/ObjectHeader.h"
 
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
+
 inline static int LargeAllocator_sizeToLinkedListIndex(size_t size) {
     assert(size >= MIN_BLOCK_SIZE);
     assert(size % MIN_BLOCK_SIZE == 0);
@@ -221,6 +225,9 @@ word_t *LargeAllocator_Alloc(Heap *heap, uint32_t size) {
     }
 
     Heap_Collect(heap, &stack);
+#ifdef PD_DEBUG
+    pd_log_error("LargeAllocator_Alloc: after collect");
+#endif
 
     object = LargeAllocator_tryAlloc(largeAllocator, size);
     if (object != NULL)

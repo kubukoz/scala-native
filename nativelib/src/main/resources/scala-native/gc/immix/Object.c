@@ -6,6 +6,13 @@
 #include "Block.h"
 #include "immix_commix/Log.h"
 #include "immix_commix/utils/MathUtils.h"
+#include <string.h>
+
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
+
+extern void assertOr(int condition, char *message);
 
 word_t *Object_LastWord(Object *object) {
     size_t size = Object_Size(object);
@@ -79,11 +86,28 @@ void Object_Mark(Heap *heap, Object *object, ObjectMeta *objectMeta) {
         // Mark all Lines
         word_t *lastWord = Object_LastWord(object);
 
-        assert(blockMeta == Block_GetBlockMeta(heap->blockMetaStart,
-                                               heap->heapStart, lastWord));
+        // THIS IS FAILING!
+
+        if (blockMeta != Block_GetBlockMeta(heap->blockMetaStart,
+                                            heap->heapStart, lastWord)) {
+#ifdef PD_DEBUG
+            pd_log_error("blockMeta LHS: %p, RHS: %p", blockMeta,
+                         Block_GetBlockMeta(heap->blockMetaStart,
+                                            heap->heapStart, lastWord));
+            pd_log_error("class %i, size %i, name %i, fields: %i",
+                         sizeof(object->rtti->rt.cls), object->rtti->size,
+                         sizeof(object->rtti->rt.name), sizeof(object->fields));
+#endif
+        }
+
+        assertOr(blockMeta == Block_GetBlockMeta(heap->blockMetaStart,
+                                                 heap->heapStart, lastWord),
+                 "blockMeta == Block_GetBlockMeta(heap->blockMetaStart, "
+                 "heap->heapStart, lastWord)");
         LineMeta *firstLineMeta = Heap_LineMetaForWord(heap, (word_t *)object);
         LineMeta *lastLineMeta = Heap_LineMetaForWord(heap, lastWord);
-        assert(firstLineMeta <= lastLineMeta);
+        assertOr(firstLineMeta <= lastLineMeta,
+                 "firstLineMeta <= lastLineMeta");
         for (LineMeta *lineMeta = firstLineMeta; lineMeta <= lastLineMeta;
              lineMeta++) {
             Line_Mark(lineMeta);

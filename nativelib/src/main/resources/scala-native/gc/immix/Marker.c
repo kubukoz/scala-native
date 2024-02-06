@@ -1,5 +1,6 @@
 #if defined(SCALANATIVE_GC_IMMIX)
 #include <stdint.h>
+#include <string.h>
 #include <stdio.h>
 #include <setjmp.h>
 #include "Marker.h"
@@ -19,15 +20,29 @@ extern int __modules_size;
 
 #define LAST_FIELD_OFFSET -1
 
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
+
 static inline void Marker_markLockWords(Heap *heap, Stack *stack,
                                         Object *object);
 static void Marker_markRange(Heap *heap, Stack *stack, word_t **from,
                              word_t **to);
 
+void assertOr(int condition, char *message) {
+    if (!condition) {
+#ifdef PD_DEBUG
+        pd_log_error(message);
+#endif
+        exit(21);
+    }
+}
+
 void Marker_markObject(Heap *heap, Stack *stack, Bytemap *bytemap,
                        Object *object, ObjectMeta *objectMeta) {
-    assert(ObjectMeta_IsAllocated(objectMeta));
-    assert(object->rtti != NULL);
+    assertOr(ObjectMeta_IsAllocated(objectMeta),
+             "ObjectMeta_IsAllocated(objectMeta)");
+    assertOr(object->rtti != NULL, "object->rtti != NULL");
 
     Marker_markLockWords(heap, stack, object);
     if (Object_IsWeakReference(object)) {
@@ -35,7 +50,7 @@ void Marker_markObject(Heap *heap, Stack *stack, Bytemap *bytemap,
         Stack_Push(&weakRefStack, object);
     }
 
-    assert(Object_Size(object) != 0);
+    assertOr(Object_Size(object) != 0, "Object_Size(object) != 0");
     Object_Mark(heap, object, objectMeta);
     Stack_Push(stack, object);
 }
@@ -72,7 +87,8 @@ static inline void Marker_markLockWords(Heap *heap, Stack *stack,
 }
 
 void Marker_markConservative(Heap *heap, Stack *stack, word_t *address) {
-    assert(Heap_IsWordInHeap(heap, address));
+    assertOr(Heap_IsWordInHeap(heap, address),
+             "Heap_IsWordInHeap(heap, address)");
     if (Bytemap_isPtrAligned(address)) {
         Object *object = Object_GetUnmarkedObject(heap, address);
         Bytemap *bytemap = heap->bytemap;
@@ -86,9 +102,27 @@ void Marker_markConservative(Heap *heap, Stack *stack, word_t *address) {
 }
 
 void Marker_Mark(Heap *heap, Stack *stack) {
+#ifdef PD_DEBUG
+    pd_log_error("Marker_Mark start");
+#endif
+
     Bytemap *bytemap = heap->bytemap;
+
+#ifdef PD_DEBUG
+    pd_log_error("Marker_Mark before loop");
+#endif
+    bool ranLoop = false;
     while (!Stack_IsEmpty(stack)) {
+        if (!ranLoop) {
+            ranLoop = true;
+#ifdef PD_DEBUG
+            pd_log_error("Marker_Mark in loop");
+#endif
+        }
         Object *object = Stack_Pop(stack);
+        assertOr(object != NULL, "object != NULL");
+        assertOr(object->rtti != NULL, "object->rtti != NULL");
+
         const int objectId = object->rtti->rt.id;
         if (Object_IsArray(object)) {
             ArrayHeader *arrayHeader = (ArrayHeader *)object;
@@ -120,12 +154,15 @@ void Marker_Mark(Heap *heap, Stack *stack) {
             }
         }
     }
+#ifdef PD_DEBUG
+    pd_log_error("Marker_Mark end");
+#endif
 }
 
 NO_SANITIZE static void Marker_markRange(Heap *heap, Stack *stack,
                                          word_t **from, word_t **to) {
-    assert(from != NULL);
-    assert(to != NULL);
+    assertOr(from != NULL, "from != NULL");
+    assertOr(to != NULL, "to != NULL");
     for (word_t **current = from; current <= to; current += 1) {
         word_t *addr = *current;
         if (Heap_IsWordInHeap(heap, addr)) {
@@ -170,16 +207,54 @@ void Marker_markCustomRoots(Heap *heap, Stack *stack, GC_Roots *roots) {
 }
 
 void Marker_MarkRoots(Heap *heap, Stack *stack) {
+#ifdef PD_DEBUG
+    pd_log_error("before atomic_thread_fence");
+#endif
     atomic_thread_fence(memory_order_seq_cst);
+#ifdef PD_DEBUG
+    pd_log_error("after atomic_thread_fence");
+#endif
 
     MutatorThreadNode *head = mutatorThreads;
+#ifdef PD_DEBUG
+    pd_log_error("before MutatorThreads_foreach");
+#endif
     MutatorThreads_foreach(mutatorThreads, node) {
         MutatorThread *thread = node->value;
+#ifdef PD_DEBUG
+        pd_log_error("before Marker_markProgramStack");
+#endif
         Marker_markProgramStack(thread, heap, stack);
+#ifdef PD_DEBUG
+        pd_log_error("after Marker_markProgramStack");
+#endif
     }
+#ifdef PD_DEBUG
+    pd_log_error("after MutatorThreads_foreach");
+#endif
+#ifdef PD_DEBUG
+    pd_log_error("before Marker_markModules");
+#endif
     Marker_markModules(heap, stack);
+#ifdef PD_DEBUG
+    pd_log_error("after Marker_markModules");
+#endif
+
+#ifdef PD_DEBUG
+    pd_log_error("before Marker_markCustomRoots");
+#endif
     Marker_markCustomRoots(heap, stack, customRoots);
+#ifdef PD_DEBUG
+    pd_log_error("after Marker_markCustomRoots");
+#endif
+
+#ifdef PD_DEBUG
+    pd_log_error("before Marker_Mark");
+#endif
     Marker_Mark(heap, stack);
+#ifdef PD_DEBUG
+    pd_log_error("after Marker_Mark");
+#endif
 }
 
 #endif

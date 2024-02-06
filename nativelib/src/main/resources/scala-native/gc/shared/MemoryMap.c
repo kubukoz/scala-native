@@ -38,7 +38,9 @@
 #define HEAP_MEM_FD_OFFSET 0
 #endif // Unix
 
-extern void pd_log_error(char *str);
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
 
 word_t *memoryMap(size_t memorySize) {
 #ifdef _WIN32
@@ -51,13 +53,18 @@ word_t *memoryMap(size_t memorySize) {
     // return mmap(NULL, memorySize, HEAP_MEM_PROT, HEAP_MEM_FLAGS, HEAP_MEM_FD,
     //             HEAP_MEM_FD_OFFSET);
 
-    char str[100];
-    sprintf(str, "Trying to map %d bytes of memory\n", memorySize);
-    pd_log_error(str);
+#ifdef PD_DEBUG
+    pd_log_error("Trying to map %d bytes of memory\n", memorySize);
+#endif
     word_t *result = malloc(memorySize);
-    if(result == NULL)
-    {
+#ifdef PD_DEBUG
+    pd_log_error("Mapped %d bytes of memory to %p\n", memorySize, result);
+#endif
+
+    if (result == NULL) {
+#ifdef PD_DEBUG
         pd_log_error("Failed to map memory\n");
+#endif
     }
     return result;
 #endif
@@ -80,7 +87,8 @@ word_t *memoryMapPrealloc(size_t memorySize, size_t doPrealloc) {
         return memoryMap(memorySize);
     }
     word_t *res = malloc(memorySize);
-    // word_t *res = mmap(NULL, memorySize, HEAP_MEM_PROT, HEAP_MEM_FLAGS_PREALLOC,
+    // word_t *res = mmap(NULL, memorySize, HEAP_MEM_PROT,
+    // HEAP_MEM_FLAGS_PREALLOC,
     //                    HEAP_MEM_FD, HEAP_MEM_FD_OFFSET);
 #ifndef __linux__
     // if we are not on linux the next best thing we can do is to mark the pages
@@ -104,8 +112,10 @@ bool memoryCommit(void *ref, size_t memorySize) {
 #include <stdlib.h>
 
 static void exitWithOutOfMemory() {
-    fprintf(stderr, "Out of heap space\n");
-    exit(1);
+#ifdef PD_DEBUG
+    pd_log_error("Out of heap space\n");
+#endif
+    exit(137);
 }
 
 word_t *memoryMapOrExitOnError(size_t memorySize) {
@@ -122,8 +132,11 @@ word_t *memoryMapOrExitOnError(size_t memorySize) {
 }
 
 static void exitWithFailToUnmapMemory() {
-    fprintf(stderr, "Fail to unmap memory.\n");
-    exit(1);
+    // fprintf(stderr, "Fail to unmap memory.\n");
+#ifdef PD_DEBUG
+    pd_log_error("Fail to unmap memory.\n");
+#endif
+    exit(138);
 }
 
 void memoryUnmapOrExitOnError(void *address, size_t memorySize) {

@@ -80,14 +80,14 @@ package object runtime {
     args
   }
 
-  @extern def pd_log_error(msg: CString): Unit = extern
+  // @extern def pd_log_error(msg: CString): Unit = extern
 
   private[scalanative] final def executeUncaughtExceptionHandler(
       handler: Thread.UncaughtExceptionHandler,
       thread: Thread,
       throwable: Throwable
   ): Unit = {
-    pd_log_error(c"Uncaught exception!")
+    // pd_log_error(c"Uncaught exception!")
     System.exit(998)
     // try
     // handler.uncaughtException(thread, throwable)
