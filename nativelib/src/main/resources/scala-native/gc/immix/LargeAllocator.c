@@ -13,12 +13,13 @@
 #ifdef PD_DEBUG
 extern void pd_log_error(char *str, ...);
 #endif
+extern void assertOr(int condition, char *message);
 
 inline static int LargeAllocator_sizeToLinkedListIndex(size_t size) {
-    assert(size >= MIN_BLOCK_SIZE);
-    assert(size % MIN_BLOCK_SIZE == 0);
+    assertOr(size >= MIN_BLOCK_SIZE, "size >= MIN_BLOCK_SIZE");
+    assertOr(size % MIN_BLOCK_SIZE == 0, "size % MIN_BLOCK_SIZE == 0");
     int index = size / MIN_BLOCK_SIZE - 1;
-    assert(index < FREE_LIST_COUNT);
+    assertOr(index < FREE_LIST_COUNT, "index < FREE_LIST_COUNT");
     return index;
 }
 
@@ -67,9 +68,9 @@ void LargeAllocator_Init(LargeAllocator *allocator,
 
 void LargeAllocator_AddChunk(LargeAllocator *allocator, Chunk *chunk,
                              size_t total_block_size) {
-    assert(total_block_size >= MIN_BLOCK_SIZE);
-    assert(total_block_size < BLOCK_TOTAL_SIZE);
-    assert(total_block_size % MIN_BLOCK_SIZE == 0);
+    assertOr(total_block_size >= MIN_BLOCK_SIZE, "total_block_size >= MIN_BLOCK_SIZE");
+    assertOr(total_block_size < BLOCK_TOTAL_SIZE, "total_block_size < BLOCK_TOTAL_SIZE");
+    assertOr(total_block_size % MIN_BLOCK_SIZE == 0, "total_block_size % MIN_BLOCK_SIZE == 0");
 
     int listIndex = LargeAllocator_sizeToLinkedListIndex(total_block_size);
     chunk->nothing = NULL;
@@ -125,7 +126,7 @@ word_t *LargeAllocator_tryAlloc(LargeAllocator *allocator,
     }
 
     size_t chunkSize = chunk->size;
-    assert(chunkSize >= MIN_BLOCK_SIZE);
+    assertOr(chunkSize >= MIN_BLOCK_SIZE, "chunkSize >= MIN_BLOCK_SIZE");
 
     if (chunkSize - MIN_BLOCK_SIZE >= actualBlockSize) {
         Chunk *remainingChunk =
@@ -160,7 +161,7 @@ void LargeAllocator_Sweep(LargeAllocator *allocator, BlockMeta *blockMeta,
     word_t *blockEnd = blockStart + WORDS_IN_BLOCK * superblockSize;
 
     ObjectMeta *firstObject = Bytemap_Get(heap.bytemap, blockStart);
-    assert(!ObjectMeta_IsFree(firstObject));
+    assertOr(!ObjectMeta_IsFree(firstObject), "!ObjectMeta_IsFree(firstObject)");
     BlockMeta *lastBlock = blockMeta + superblockSize - 1;
     if (superblockSize > 1 && !ObjectMeta_IsMarked(firstObject)) {
         // release free superblock starting from the first object
@@ -213,14 +214,14 @@ void LargeAllocator_Sweep(LargeAllocator *allocator, BlockMeta *blockMeta,
 }
 
 word_t *LargeAllocator_Alloc(Heap *heap, uint32_t size) {
-    assert(size % ALLOCATION_ALIGNMENT == 0);
-    assert(size >= MIN_BLOCK_SIZE);
+    assertOr(size % ALLOCATION_ALIGNMENT == 0, "size % ALLOCATION_ALIGNMENT == 0");
+    assertOr(size >= MIN_BLOCK_SIZE, "size >= MIN_BLOCK_SIZE");
     LargeAllocator *largeAllocator = &currentMutatorThread->largeAllocator;
     word_t *object = LargeAllocator_tryAlloc(largeAllocator, size);
     if (object != NULL) {
     done:
-        assert(object != NULL);
-        assert(Heap_IsWordInHeap(heap, (word_t *)object));
+        assertOr(object != NULL, "object != NULL");
+        assertOr(Heap_IsWordInHeap(heap, (word_t *)object), "Heap_IsWordInHeap(heap, (word_t *)object)");
         return object;
     }
 

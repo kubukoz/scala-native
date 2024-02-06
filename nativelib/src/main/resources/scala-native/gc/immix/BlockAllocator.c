@@ -7,6 +7,8 @@
 #include "shared/ThreadUtil.h"
 #include <stdatomic.h>
 
+extern void assertOr(int condition, char *message);
+
 void BlockAllocator_addFreeBlocksInternal(BlockAllocator *blockAllocator,
                                           BlockMeta *block, uint32_t count);
 
@@ -34,8 +36,8 @@ INLINE void BlockAllocator_Release(BlockAllocator *blockAllocator) {
 
 inline static int BlockAllocator_sizeToLinkedListIndex(uint32_t size) {
     int result = MathUtils_Log2Floor((size_t)size);
-    assert(result >= 0);
-    assert(result < SUPERBLOCK_LIST_SIZE);
+    assertOr(result >= 0, "result >= 0");
+    assertOr(result < SUPERBLOCK_LIST_SIZE, "result < SUPERBLOCK_LIST_SIZE");
     return result;
 }
 
@@ -49,7 +51,7 @@ BlockAllocator_pollSuperblock(BlockAllocator *blockAllocator, int first) {
         BlockMeta *superblock =
             BlockList_Poll(&blockAllocator->freeSuperblocks[i]);
         if (superblock != NULL) {
-            assert(BlockMeta_SuperblockSize(superblock) > 0);
+            assertOr(BlockMeta_SuperblockSize(superblock) > 0, "BlockMeta_SuperblockSize(superblock) > 0");
             return superblock;
         } else {
             blockAllocator->minNonEmptyIndex = i + 1;
@@ -170,7 +172,7 @@ void BlockAllocator_addFreeBlocksInternal(BlockAllocator *blockAllocator,
 void BlockAllocator_AddFreeBlocks(BlockAllocator *blockAllocator,
                                   BlockMeta *block, uint32_t count) {
     // Executed during StopTheWorld, no need for synchronization
-    assert(count > 0);
+    assertOr(count > 0, "count > 0");
     if (blockAllocator->coalescingSuperblock.first == NULL) {
         blockAllocator->coalescingSuperblock.first = block;
         blockAllocator->coalescingSuperblock.limit = block + count;

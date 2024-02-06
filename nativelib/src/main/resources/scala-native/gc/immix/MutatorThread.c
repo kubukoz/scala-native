@@ -7,6 +7,8 @@
 #include "shared/ThreadUtil.h"
 #include <assert.h>
 
+extern void assertOr(int condition, char *message);
+
 static mutex_t threadListsModificationLock;
 
 void MutatorThread_init(Field_t *stackbottom) {
@@ -59,13 +61,13 @@ INLINE static stackptr_t MutatorThread_approximateStackTop() {
     sp = (word_t)&sp;
     /* Also force stack to grow if necessary. Otherwise the later accesses might
      * cause the kernel to think we're doing something wrong. */
-    assert(sp > 0);
+    assertOr(sp > 0, "sp > 0");
     return (stackptr_t)sp;
 }
 
 INLINE void MutatorThread_switchState(MutatorThread *self,
                                       GC_MutatorThreadState newState) {
-    assert(self != NULL);
+    assertOr(self != NULL, "self != NULL");
     switch (newState) {
     case GC_MutatorThreadState_Unmanaged:
         RegistersCapture(self->registersBuffer);

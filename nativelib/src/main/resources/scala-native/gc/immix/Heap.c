@@ -21,6 +21,8 @@
 extern void pd_log_error(char *str, ...);
 #endif
 
+extern void assertOr(int condition, char *message);
+
 void Heap_exitWithOutOfMemory(const char *details) {
 #ifdef PD_DEBUG
     pd_log_error("Out of heap space %s\n", details);
@@ -47,7 +49,7 @@ size_t Heap_getMemoryLimit() {
  * `alignement` mask
  */
 word_t *Heap_mapAndAlign(size_t memoryLimit, size_t alignmentSize) {
-    assert(alignmentSize % WORD_SIZE == 0);
+    assertOr(alignmentSize % WORD_SIZE == 0, "alignmentSize % WORD_SIZE == 0");
     word_t *heapStart = memoryMap(memoryLimit);
     size_t alignmentMask = ~(alignmentSize - 1);
     // Heap start not aligned on
@@ -115,8 +117,8 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
         (size_t)maxNumberOfBlocks * LINE_COUNT * LINE_METADATA_SIZE;
     word_t *lineMetaStart = Heap_mapAndAlign(lineMetaSpaceSize, WORD_SIZE);
     heap->lineMetaStart = lineMetaStart;
-    assert(LINE_COUNT * LINE_SIZE == BLOCK_TOTAL_SIZE);
-    assert(LINE_COUNT * LINE_METADATA_SIZE % WORD_SIZE == 0);
+    assertOr(LINE_COUNT * LINE_SIZE == BLOCK_TOTAL_SIZE, "LINE_COUNT * LINE_SIZE == BLOCK_TOTAL_SIZE");
+    assertOr(LINE_COUNT * LINE_METADATA_SIZE % WORD_SIZE == 0, "LINE_COUNT * LINE_METADATA_SIZE % WORD_SIZE == 0");
     heap->lineMetaEnd = lineMetaStart + initialBlockCount * LINE_COUNT *
                                             LINE_METADATA_SIZE / WORD_SIZE;
 
@@ -260,7 +262,7 @@ void Heap_Recycle(Heap *heap) {
     while ((word_t *)current < end) {
         int size = 1;
 
-        assert(!BlockMeta_IsSuperblockMiddle(current));
+        assertOr(!BlockMeta_IsSuperblockMiddle(current), "!BlockMeta_IsSuperblockMiddle(current)");
         if (BlockMeta_IsSimpleBlock(current)) {
             MutatorThread *recycleBlocksTo = NextMutatorThread();
             Block_Recycle(&recycleBlocksTo->allocator, current,
@@ -271,10 +273,10 @@ void Heap_Recycle(Heap *heap) {
             LargeAllocator_Sweep(&recycleBlocksTo->largeAllocator, current,
                                  currentBlockStart);
         } else {
-            assert(BlockMeta_IsFree(current));
+            assertOr(BlockMeta_IsFree(current), "BlockMeta_IsFree(current)");
             BlockAllocator_AddFreeBlocks(&blockAllocator, current, 1);
         }
-        assert(size > 0);
+        assertOr(size > 0, "size > 0");
         current += size;
         currentBlockStart += WORDS_IN_BLOCK * size;
         lineMetas += LINE_COUNT * size;
