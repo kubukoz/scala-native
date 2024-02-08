@@ -1,5 +1,6 @@
 #if defined(SCALANATIVE_GC_IMMIX)
 
+#include <stdlib.h>
 #include <stddef.h>
 #include <stdio.h>
 #include "Object.h"
@@ -16,12 +17,18 @@ extern void assertOr(int condition, char *message);
 
 word_t *Object_LastWord(Object *object) {
     size_t size = Object_Size(object);
-    #ifdef PD_DEBUG
-    if(size >= LARGE_BLOCK_SIZE) {
+#ifdef PD_DEBUG
+    if (size >= LARGE_BLOCK_SIZE) {
         int isArray = Object_IsArray(object);
-        pd_log_error("size >= LARGE_BLOCK_SIZE: %d vs %d. array? %d", size, LARGE_BLOCK_SIZE, isArray);
+        wchar_t *str = Object_nameWString(object);
+        pd_log_error("size >= LARGE_BLOCK_SIZE: %d vs %d. array? %d, class name? %ls", size,
+                     LARGE_BLOCK_SIZE, isArray, str);
+        free(str);
+
     }
-    #endif
+#endif
+
+    // THIS IS FAILING!
     assertOr(size < LARGE_BLOCK_SIZE, "size < LARGE_BLOCK_SIZE");
     word_t *last =
         (word_t *)((ubyte_t *)object + size) - ALLOCATION_ALIGNMENT_WORDS;
@@ -89,10 +96,12 @@ void Object_Mark(Heap *heap, Object *object, ObjectMeta *objectMeta) {
         word_t *blockStart = Block_GetBlockStartForWord((word_t *)object);
         BlockMeta_Mark(blockMeta);
 
+        // here's the thing: our object is an array. Shouldn't it be handled
+        // elsewhere?
+        // we're definitely getting here with an array.
+
         // Mark all Lines
         word_t *lastWord = Object_LastWord(object);
-
-        // THIS IS FAILING!
 
         if (blockMeta != Block_GetBlockMeta(heap->blockMetaStart,
                                             heap->heapStart, lastWord)) {
