@@ -213,7 +213,7 @@ NOINLINE word_t *Allocator_allocSlow(Allocator *allocator, Heap *heap,
 
         if (object != NULL) {
         done:
-            assertOr(Heap_IsWordInHeap(heap, object), "Heap_IsWordInHeap(heap, object)");
+            assertOr(Heap_IsWordInHeap(heap, object), "Heap_IsWordInHeap(heap, object) in Allocator_allocSlow");
             assertOr(object != NULL, "object != NULL");
             memset(object, 0, size);
             ObjectMeta *objectMeta = Bytemap_Get(allocator->bytemap, object);
@@ -266,7 +266,7 @@ INLINE word_t *Allocator_Alloc(Heap *heap, uint32_t size) {
     // caches as possible
     __builtin_prefetch(object + 36, 0, 3);
 
-    assertOr(Heap_IsWordInHeap(heap, object), "Heap_IsWordInHeap(heap, object)");
+    assertOr(Heap_IsWordInHeap(heap, object), "Heap_IsWordInHeap(heap, object) in Allocator_Aloc");
     return object;
 }
 

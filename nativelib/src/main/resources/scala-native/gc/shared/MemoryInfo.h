@@ -94,7 +94,7 @@ size_t getMemorySize() {
 #endif /* sysctl and sysconf variants */
 
 #elif defined(TARGET_PLAYDATE)
-    return (size_t)14 * 1024 * 1024;
+    return (size_t)10 * 1024 * 1024;
 #else
     return 0L; /* Unknown OS. */
 #endif

@@ -34,7 +34,7 @@ void assertOr(int condition, char *message) {
 #ifdef PD_DEBUG
         pd_log_error(message);
 #endif
-        exit(21);
+        exit(29);
     }
 }
 
