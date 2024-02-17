@@ -1,21 +1,113 @@
 package org.scalanative.testsuite.javalib.nio.channels
 
-import java.nio.channels._
-
-import java.nio.ByteBuffer
-import java.nio.file.{Files, Path, StandardOpenOption}
-import java.nio.file.AccessDeniedException
-import java.io.File
-
 import org.junit.Test
 import org.junit.Assert._
+import org.junit.Assume._
+import org.junit.BeforeClass
+import org.junit.Ignore
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
+import org.scalanative.testsuite.utils.Platform
 
+import java.{lang => jl}
+
+import java.io.File
 import java.io.{FileInputStream, FileOutputStream}
 import java.io.RandomAccessFile
 
+import java.nio.ByteBuffer
+
+import java.nio.channels._
+
+import java.nio.file.AccessDeniedException
+import java.nio.file.{Files, StandardOpenOption}
+import java.nio.file.{Path, Paths}
+
+object FileChannelTest {
+
+  private var fileChannelTestDirString: String = _
+
+  /* Magic value from external reality, not from SN software ecology.
+   * Must match OS size for inOutFileName and be kept in sync manually.
+   */
+  private final val expectedFileSize = 655
+  private val inOutFileName = "FileChannelsTestData.jar"
+
+  private def makeFileChannelTestDirs(): String = {
+    val orgDir = Files.createTempDirectory("scala-native-testsuite")
+    val javalibDir = orgDir.resolve("javalib")
+    val testDirRootPath = javalibDir
+      .resolve("java")
+      .resolve("nio")
+      .resolve("channels")
+      .resolve("FileChannelTest")
+
+    val testDirSrcPath = testDirRootPath.resolve("src")
+    val testDirDstPath = testDirRootPath.resolve("dst")
+
+    Files.createDirectories(testDirRootPath)
+
+    Files.createDirectory(testDirSrcPath)
+    Files.createDirectory(testDirDstPath)
+
+    testDirRootPath.toString()
+  }
+
+  private def provisionFileChannelTestData(fcTestDir: String): Unit = {
+    // In JVM, cwd is set to unit-tests/jvm/[scala-version]
+    val inputRootDir =
+      if (Platform.executingInJVM) "../.."
+      else "unit-tests"
+
+    val inputSubDirs =
+      s"shared/src/test/resources/testsuite/javalib/java/nio/channels/"
+
+    val inputDir = s"${inputRootDir}/${inputSubDirs}"
+
+    val inputFileName = s"${inputDir}/${inOutFileName}"
+
+    val outputFileName = s"${fcTestDir}/src/${inOutFileName}"
+
+    Files.copy(Paths.get(inputFileName), Paths.get(outputFileName))
+  }
+
+  private def filesHaveSameContents(file1: String, file2: String): Boolean = {
+    val raf1 = new RandomAccessFile(file1, "r")
+    try {
+      val raf2 = new RandomAccessFile(file2, "r")
+      try {
+        val ch1 = raf1.getChannel()
+        val ch2 = raf2.getChannel()
+        val commonSize = ch1.size()
+
+        if (commonSize != ch2.size()) {
+          false
+        } else {
+          val m1 = ch1.map(FileChannel.MapMode.READ_ONLY, 0L, commonSize)
+          val m2 = ch2.map(FileChannel.MapMode.READ_ONLY, 0L, commonSize)
+
+          m1.equals(m2)
+        }
+      } finally {
+        raf2.close()
+      }
+    } finally {
+      raf1.close()
+    }
+  }
+
+  @BeforeClass
+  def beforeClass(): Unit = {
+
+    fileChannelTestDirString = makeFileChannelTestDirs()
+
+    provisionFileChannelTestData(fileChannelTestDirString)
+  }
+}
+
 class FileChannelTest {
+  import FileChannelTest._
+
   def withTemporaryDirectory(fn: Path => Unit): Unit = {
     val file = File.createTempFile("test", ".tmp")
     assertTrue(file.delete())
@@ -551,7 +643,7 @@ class FileChannelTest {
         val mappedChan = channel.map(FileChannel.MapMode.READ_WRITE, 0, 0)
 
         assertThrows(
-          classOf[java.lang.IndexOutOfBoundsException],
+          classOf[jl.IndexOutOfBoundsException],
           mappedChan.get(0)
         )
 
@@ -709,6 +801,217 @@ class FileChannelTest {
       } finally {
         channel.close()
       }
+    }
+  }
+
+  @Test def canTransferFrom(): Unit = {
+    val src =
+      s"${fileChannelTestDirString}/src/FileChannelsTestData.jar"
+
+    val dst =
+      s"${fileChannelTestDirString}/dst/transferFromResult.jar"
+
+    var srcChannel: FileChannel = null
+    var dstChannel: FileChannel = null
+
+    try {
+      srcChannel = new FileInputStream(src).getChannel()
+      val srcSize = srcChannel.size()
+      assertTrue("src size <= 0", srcSize > 0)
+
+      try {
+        dstChannel = new FileOutputStream(dst).getChannel()
+        val dstBeforePosition = dstChannel.position()
+
+        val nTransferred = dstChannel.transferFrom(srcChannel, 0, srcSize)
+
+        assertEquals("source size", expectedFileSize, srcSize)
+        assertEquals("number of bytes transferred", srcSize, nTransferred)
+        assertEquals("destination size", srcSize, dstChannel.size())
+
+        val srcAfterPosition = srcChannel.position()
+        assertEquals("source position changed", nTransferred, srcAfterPosition)
+
+        val dstAfterPosition = dstChannel.position()
+        assertEquals(
+          "destination position changed",
+          dstBeforePosition,
+          dstAfterPosition
+        )
+      } finally {
+        dstChannel.close();
+      }
+    } finally {
+      srcChannel.close();
+    }
+
+    assertTrue("file contents are not equal", filesHaveSameContents(src, dst))
+  }
+
+  private class InfiniteByteSourceChannel extends ReadableByteChannel {
+    private var available = true
+
+    def close(): Unit =
+      available = false
+
+    def isOpen(): Boolean = available
+
+    def read(dst: ByteBuffer): Int = {
+      val full = dst.limit()
+      dst.limit(full)
+      dst.position(full)
+      full
+    }
+  }
+
+  private class InfiniteByteSinkChannel extends WritableByteChannel {
+    private var available = true
+
+    def close(): Unit =
+      available = false
+
+    def isOpen(): Boolean = available
+
+    def write(dst: ByteBuffer): Int = {
+      val nWritten = dst.limit()
+      dst.position(nWritten)
+      nWritten
+    }
+  }
+
+  @Test def canTransferFromGivenLongCount(): Unit = {
+    // Runs on Linux & macOS. Not exercised on FreeBSD.
+    assumeFalse(
+      "Linux device specific tests are not run on Windows",
+      Platform.isWindows
+    )
+    assumeFalse(
+      "Linux device specific tests are not run on Windows",
+      Platform.isFreeBSD
+    )
+
+    val srcChannel = new InfiniteByteSourceChannel
+
+    val dst =
+      if (!Platform.isWindows) "/dev/null"
+      else "NUL" // Buyer beware, Test not yet exercised on Windows.
+
+    val dstChannel =
+      FileChannel.open(Paths.get(dst), StandardOpenOption.WRITE)
+
+    /* An arbitrary value larger than Integer.MAX_VALUE.
+     * To be distinguishable during debugging, should differ from
+     * value used in 'canTransferToGivenLongCount()'.
+     */
+    val MAX_TRANSFER = Integer.MAX_VALUE + 1024L
+
+    try {
+      val nTransferred =
+        dstChannel.transferFrom(srcChannel, 0L, MAX_TRANSFER)
+
+      assertEquals("number of bytes transferred", MAX_TRANSFER, nTransferred)
+
+    } finally {
+      srcChannel.close();
+      dstChannel.close();
+    }
+  }
+
+  @Test def canTransferTo(): Unit = {
+    val src =
+      s"${fileChannelTestDirString}/src/FileChannelsTestData.jar"
+
+    val dst =
+      s"${fileChannelTestDirString}/dst/transferToResult.jar"
+
+    var srcChannel: FileChannel = null
+    var dstChannel: FileChannel = null
+
+    try {
+      srcChannel = new FileInputStream(src).getChannel()
+      val srcSize = srcChannel.size()
+      assertTrue("src size <= 0", srcSize > 0)
+
+      try {
+        dstChannel = new FileOutputStream(dst).getChannel()
+        val srcBeforePosition = srcChannel.position()
+        val dstBeforePosition = dstChannel.position()
+
+        val nTransferred = srcChannel.transferTo(0, srcSize, dstChannel)
+
+        assertEquals("source size", expectedFileSize, srcSize)
+        assertEquals("number of bytes transferred", srcSize, nTransferred)
+        assertEquals("destination size", srcSize, dstChannel.size())
+
+        val srcAfterPosition = srcChannel.position()
+        assertEquals(
+          "source position changed",
+          srcBeforePosition,
+          srcAfterPosition
+        )
+
+        val dstAfterPosition = dstChannel.position()
+        assertEquals(
+          "destination position changed",
+          nTransferred,
+          dstAfterPosition
+        )
+      } finally {
+        dstChannel.close();
+      }
+    } finally {
+      srcChannel.close();
+    }
+
+    assertTrue("file contents are not equal", filesHaveSameContents(src, dst))
+  }
+
+  /* Make this test available to be run manually. Do not run it in CI
+   * because some of the Linux systems there are like macOS and always
+   * return 0 bytes read on /dev/zero.
+   *
+   * The "Platform.isLinux" test is not sufficiently determinative.
+   *
+   * See what your system of interest does when you run it manually.
+   * If you get a zero read count from /dev/zero, then, if you have enough
+   * disk space, you can create file > 2 GB and specify it as the 'src'.
+   */
+
+  @Ignore
+  @Test def canTransferToGivenLongCount(): Unit = {
+    assumeTrue("Test is Linux specific", Platform.isLinux)
+
+    /* - macOS seems to always returns 0 bytes read when reading from
+     *   character special files, such as /dev/zero.
+     *
+     * - Neither implemented nor tested on Windows.
+     *   bootstrap: Windows probably uses "NUL" instead of "/dev/null"
+     *
+     * - Neither implemented nor tested on FreeBSD or elsewhere.
+     *   Probably similar 0 length issue as macOS.
+     */
+
+    val src = "/dev/zero" // Glitch: macOs always reads 0 bytes. Arrgh!
+    val srcChannel =
+      FileChannel.open(Paths.get(src), StandardOpenOption.READ)
+
+    val dstChannel = new InfiniteByteSinkChannel
+
+    /* An arbitrary value larger than Integer.MAX_VALUE.
+     * To be distinguishable during debugging, should differ from
+     * value used in 'canTransferFromGivenLongCount()'.
+     */
+    val MAX_TRANSFER = Integer.MAX_VALUE + 1024L + 109L
+
+    try {
+      val nTransferred =
+        srcChannel.transferTo(0L, MAX_TRANSFER, dstChannel)
+
+      assertEquals("number of bytes transferred", MAX_TRANSFER, nTransferred)
+
+    } finally {
+      srcChannel.close();
+      dstChannel.close();
     }
   }
 

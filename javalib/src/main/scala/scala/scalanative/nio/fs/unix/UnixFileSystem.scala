@@ -2,7 +2,7 @@ package scala.scalanative.nio.fs.unix
 
 import java.io.IOException
 import java.lang.Iterable
-import java.lang.StringBuilder
+import java.{lang => jl}
 import java.nio.file.{
   FileStore,
   FileSystem,
@@ -41,7 +41,7 @@ class UnixFileSystem(
   override def getPath(first: String, more: Array[String]): Path = {
     if (more.length == 0) new UnixPath(this, first)
     else {
-      val sb = new StringBuilder(first)
+      val sb = new jl.StringBuilder(first)
       more.foreach { element =>
         if (element.length > 0) {
           if (sb.length() > 0) sb.append('/')
@@ -67,7 +67,7 @@ class UnixFileSystem(
   override def isOpen(): Boolean =
     closed == false
 
-  override def isReadOnly(): Boolean = Zone { implicit z =>
+  override def isReadOnly(): Boolean = Zone.acquire { implicit z =>
     val stat = alloc[statvfs.statvfs]()
     val err = statvfs.statvfs(toCString(root), stat)
     if (err != 0) {

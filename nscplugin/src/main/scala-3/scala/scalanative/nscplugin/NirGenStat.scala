@@ -3,6 +3,7 @@ package nscplugin
 
 import scala.language.implicitConversions
 
+import dotty.tools.dotc.ast.tpd
 import dotty.tools.dotc.ast.tpd._
 import dotty.tools.dotc.core
 import core.Contexts._
@@ -181,7 +182,7 @@ trait NirGenStat(using Context) {
       f <- classSym.info.decls.toList
       if !f.isOneOf(Method | Module) && f.isTerm
     do
-      given nir.SourcePosition = f.span
+      given nir.SourcePosition = f.span.orElse(td.span)
       val isStatic = f.is(JavaStatic) || f.isScalaStatic
       val isExtern = f.isExtern
       val mutable = isStatic || f.is(Mutable)
@@ -238,8 +239,9 @@ trait NirGenStat(using Context) {
       case _: TypeDef => Nil
       case dd: DefDef =>
         lazyValsAdapter.transformDefDef(dd) match {
-          case dd: DefDef => genMethod(dd)
-          case _          => Nil // erased
+          case dd: DefDef =>
+            genMethod(dd) ++ genInterfaceMethodBridgeForDefDef(dd)
+          case _ => Nil // erased
         }
       case tree =>
         throw new FatalError("Illegal tree in body of genMethods():" + tree)
@@ -252,6 +254,7 @@ trait NirGenStat(using Context) {
 
   private def genMethod(dd: DefDef): Option[nir.Defn] = {
     implicit val pos: nir.SourcePosition = dd.span
+    if (pos.isEmpty) println(dd.name -> dd.span)
     val fresh = nir.Fresh()
     val freshScope = initFreshScope(dd.rhs)
     val scopes = mutable.Set.empty[DebugInfo.LexicalScope]
@@ -370,7 +373,7 @@ trait NirGenStat(using Context) {
       bodyp: Tree,
       isExtern: Boolean
   ): Seq[nir.Inst] = {
-    given nir.SourcePosition = bodyp.span
+    given nir.SourcePosition = bodyp.span.orElse(dd.span).orElse(dd.symbol.span)
     given fresh: nir.Fresh = curFresh.get
     val buf = ExprBuffer()
     val isStatic = dd.symbol.isStaticInNIR
@@ -419,7 +422,7 @@ trait NirGenStat(using Context) {
             s"cannot generate `synchronized` for method ${curMethodSym.name}, curMethodThis was empty"
           )
         }
-        buf.genSynchronized(ValTree(syncedIn))(bodyGen)
+        buf.genSynchronized(ValTree(dd)(syncedIn))(bodyGen)
       }
     }
     def genBody(): Unit = {
@@ -511,8 +514,8 @@ trait NirGenStat(using Context) {
               case If(cond, thenp, elsep) =>
                 buf.genIf(retty, cond, thenp, elsep, ensureLinktime = true)
               case tree: Apply if retty == nir.Type.Bool =>
-                val True = ValTree(nir.Val.True)
-                val False = ValTree(nir.Val.False)
+                val True = ValTree(dd)(nir.Val.True)
+                val False = ValTree(dd)(nir.Val.False)
                 buf.genIf(retty, tree, True, False, ensureLinktime = true)
               case Block(stats, expr) =>
                 stats.foreach { v =>
@@ -783,7 +786,7 @@ trait NirGenStat(using Context) {
     for {
       sym <- members if !isExcluded(sym)
     } yield {
-      given nir.SourcePosition = sym.span
+      given nir.SourcePosition = sym.span.orElse(moduleClass.span)
 
       val methodName = genMethodName(sym)
       val forwarderName = genStaticMemberName(sym, moduleClass)
@@ -815,7 +818,7 @@ trait NirGenStat(using Context) {
             curScopeId := nir.ScopeId.TopLevel
           ) {
             val entryParams = forwarderParamTypes.map(nir.Val.Local(fresh(), _))
-            val args = entryParams.map(ValTree(_))
+            val args = entryParams.map(ValTree(_)(sym.span))
             buf.label(fresh(), entryParams)
             val res = buf.genApplyModuleMethod(moduleClass, sym, args)
             buf.ret(res)
@@ -824,6 +827,40 @@ trait NirGenStat(using Context) {
         }
       )
     }
+  }
+
+  private def genInterfaceMethodBridgeForDefDef(dd: DefDef): Seq[nir.Defn] =
+    val sym = dd.symbol
+    sym.owner.directlyInheritedTraits
+      .flatMap { parent =>
+        val inheritedSym = parent.info.decl(sym.name)
+        Option.when(
+          inheritedSym.exists &&
+          inheritedSym.symbol.is(Deferred) &&
+          sym.signature != inheritedSym.signature &&
+          sym.info <:< inheritedSym.info
+        )(inheritedSym.symbol.asTerm)
+      }
+      .distinctBy(_.signature)
+      .flatMap(genInterfaceMethodBridge(sym.asTerm, _))
+
+  private def genInterfaceMethodBridge(
+      sym: TermSymbol,
+      inheritedSym: TermSymbol
+  ): Option[nir.Defn] = {
+    assert(sym.name == inheritedSym.name, "Not an override")
+    val owner = sym.owner.asClass
+    val bridgeSym = inheritedSym.copy(owner = owner, flags = sym.flags).asTerm
+    val bridge = tpd
+      .DefDef(
+        bridgeSym,
+        { paramss =>
+          val params = paramss.head
+          tpd.Apply(tpd.This(owner).select(sym), params)
+        }
+      )
+      .withSpan(sym.span)
+    genMethod(bridge)
   }
 
   private def genStaticMethodForwarders(

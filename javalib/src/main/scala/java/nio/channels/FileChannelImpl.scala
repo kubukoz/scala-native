@@ -358,7 +358,7 @@ private[java] final class FileChannelImpl(
       if (GetFileSizeEx(fd.handle, size)) (!size).toLong
       else 0L
     } else
-      Zone { implicit z =>
+      Zone.acquire { implicit z =>
         /* statbuf is too large to be thread stack friendly.
          * Even a Zone and an alloc() per size() call should be cheaper than
          * the required three (yes 3 to get it right and not move current
@@ -375,28 +375,130 @@ private[java] final class FileChannelImpl(
       }
   }
 
+  /* The pair transferFrom() and transferTo() and quite similar and
+   * beg calling into a common implementation.
+   *
+   * They differ just enough in how they must handle the position of
+   * the 'this' FileChannel that such a common implementation exceeds the
+   * day is left for the reader.
+   */
+
   override def transferFrom(
       src: ReadableByteChannel,
-      position: Long,
+      _position: Long,
       count: Long
   ): Long = {
-    ensureOpen()
-    val buf = ByteBuffer.allocate(count.toInt)
-    src.read(buf)
-    write(buf, position)
+    if (_position < 0L)
+      throw new IllegalArgumentException("Negative position")
+
+    if (count < 0L)
+      throw new IllegalArgumentException("Negative count")
+
+    if (_position > this.size()) {
+      0L
+    } else {
+      ensureOpen()
+
+      val maxBufSize = 8 * 1024 // value used by JVM
+      val bufSize =
+        if (count > Integer.MAX_VALUE) maxBufSize
+        else Math.min(count.toInt, maxBufSize)
+
+      val buf = ByteBuffer.allocate(bufSize)
+
+      var totalWritten = 0L
+      var done = false
+
+      while ((!done) && (totalWritten < count)) {
+        val nRemaining = count - totalWritten
+        if ((nRemaining) < bufSize)
+          buf.limit(nRemaining.toInt) // Enable next partial buffer short read
+
+        val nRead = src.read(buf)
+        if (nRead == -1) { // How should repeating/looping 0 reads be handled?
+          done = true
+        } else {
+          buf.flip()
+
+          /* Using absolute write at position takes math but avoids
+           * set, save, and then restore of position. That overload
+           * does all that work already.
+           *
+           * Since 'this' is known to be a FileChannel, write(buf, position)
+           * is available for use.
+           */
+          val nWritten = this.write(buf, _position + totalWritten)
+          buf.clear()
+
+          totalWritten = totalWritten + nWritten
+        }
+      }
+
+      totalWritten
+    }
   }
 
+  // See comment about lack of common code before transferFrom()
+
   override def transferTo(
-      pos: Long,
+      _position: Long,
       count: Long,
       target: WritableByteChannel
   ): Long = {
-    ensureOpen()
-    position(pos)
-    val buf = new Array[Byte](count.toInt)
-    val nb = read(buf, 0, buf.length)
-    target.write(ByteBuffer.wrap(buf, 0, nb))
-    nb
+    if (_position < 0L)
+      throw new IllegalArgumentException("Negative position")
+
+    if (count < 0L)
+      throw new IllegalArgumentException("Negative count")
+
+    if (_position > this.size()) {
+      0L
+    } else {
+      ensureOpen()
+
+      val savedPosition = position()
+      if (_position != savedPosition)
+        position(_position)
+
+      val maxBufSize = 8 * 1024 // value used by JVM
+      val bufSize =
+        if (count > Integer.MAX_VALUE) maxBufSize
+        else Math.min(count.toInt, maxBufSize)
+
+      val buf = ByteBuffer.allocate(bufSize)
+
+      var totalWritten = 0L
+      var done = false
+
+      while ((!done) && (totalWritten < count)) {
+        val nRemaining = count - totalWritten
+        if (nRemaining < bufSize)
+          buf.limit(nRemaining.toInt) // Enable next partial buffer short read
+
+        val nRead = this.read(buf)
+        if (nRead == -1) { // How should repeating/looping 0 reads be handled?
+          done = true
+        } else {
+          buf.flip()
+
+          /* Using write with position costs math but avoids
+           * set, save, and then restore of position. That overload
+           * does all that work already.
+           *
+           * Since 'this' is known to be a FileChannel, write(buf, position)
+           * is available for use.
+           */
+          val nWritten = target.write(buf)
+          buf.clear()
+
+          totalWritten = totalWritten + nWritten
+        }
+      }
+
+      position(savedPosition)
+
+      totalWritten
+    }
   }
 
   private def lengthen(newFileSize: Long): Unit = {
