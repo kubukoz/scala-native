@@ -223,23 +223,23 @@ void Heap_Collect(Heap *heap, Stack *stack) {
 }
 
 bool Heap_shouldGrow(Heap *heap) {
-    //     uint32_t freeBlockCount = (uint32_t)blockAllocator.freeBlockCount;
-    //     uint32_t blockCount = heap->blockCount;
-    //     uint32_t recycledBlockCount = 0;
-    //     MutatorThreads_foreach(mutatorThreads, node) {
-    //         recycledBlockCount += node->value->allocator.recycledBlockCount;
-    //     }
-    //     uint32_t unavailableBlockCount =
-    //         blockCount - (freeBlockCount + recycledBlockCount);
+    uint32_t freeBlockCount = (uint32_t)blockAllocator.freeBlockCount;
+    uint32_t blockCount = heap->blockCount;
+    uint32_t recycledBlockCount = 0;
+    MutatorThreads_foreach(mutatorThreads, node) {
+        recycledBlockCount += node->value->allocator.recycledBlockCount;
+    }
+    uint32_t unavailableBlockCount =
+        blockCount - (freeBlockCount + recycledBlockCount);
 
-    // #ifdef DEBUG_PRINT
-    // #ifdef PD_DEBUG
-    //     pd_log_error("\n\nBlock count: %u\n", blockCount);
-    //     pd_log_error("Unavailable: %u\n", unavailableBlockCount);
-    //     pd_log_error("Free: %u\n", freeBlockCount);
-    //     pd_log_error("Recycled: %u\n", recycledBlockCount);
-    // #endif
-    // #endif
+#ifdef DEBUG_PRINT
+#ifdef PD_DEBUG
+    pd_log_error("\n\nBlock count: %u\n", blockCount);
+    pd_log_error("Unavailable: %u\n", unavailableBlockCount);
+    pd_log_error("Free: %u\n", freeBlockCount);
+    pd_log_error("Recycled: %u\n", recycledBlockCount);
+#endif
+#endif
 
     //     bool result = freeBlockCount * 2 < blockCount ||
     //                   4 * unavailableBlockCount > blockCount;
@@ -309,6 +309,7 @@ void Heap_Recycle(Heap *heap) {
 #ifdef SCALANATIVE_MULTITHREADING_ENABLED
     atomic_thread_fence(memory_order_seq_cst);
 #endif
+    Heap_shouldGrow(heap);
     // if (Heap_shouldGrow(heap)) {
     //     double growth;
     //     if (heap->heapSize < EARLY_GROWTH_THRESHOLD) {
@@ -320,8 +321,8 @@ void Heap_Recycle(Heap *heap) {
     //     if (Heap_isGrowingPossible(heap, blocks)) {
     //         Heap_Grow(heap, blocks);
     //     } else {
-    //         uint32_t remainingGrowth = heap->maxBlockCount - heap->blockCount;
-    //         if (remainingGrowth > 0) {
+    //         uint32_t remainingGrowth = heap->maxBlockCount -
+    //         heap->blockCount; if (remainingGrowth > 0) {
     //             Heap_Grow(heap, remainingGrowth);
     //         }
     //     }
