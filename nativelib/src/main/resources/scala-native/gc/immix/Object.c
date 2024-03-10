@@ -17,21 +17,8 @@ extern void assertOr(int condition, char *message);
 
 word_t *Object_LastWord(Object *object) {
     size_t size = Object_Size(object);
-#ifdef PD_DEBUG
-    if (size >= LARGE_BLOCK_SIZE) {
-        int isArray = Object_IsArray(object);
-        wchar_t *str = Object_nameWString(object);
-        pd_log_error("size >= LARGE_BLOCK_SIZE: %d vs %d. array? %d, class name? %ls", size,
-                     LARGE_BLOCK_SIZE, isArray, str);
-        free(str);
-
-    }
-#endif
-
-    // THIS IS FAILING!
     assertOr(size < LARGE_BLOCK_SIZE, "size < LARGE_BLOCK_SIZE");
-    word_t *last =
-        (word_t *)((ubyte_t *)object + size) - ALLOCATION_ALIGNMENT_WORDS;
+    word_t *last = (word_t *)((ubyte_t *)object + size) - 1;
     return last;
 }
 
@@ -58,7 +45,7 @@ Object *Object_getInnerPointer(Heap *heap, BlockMeta *blockMeta, word_t *word,
     }
     Object *object = (Object *)current;
     if (ObjectMeta_IsAllocated(currentMeta) &&
-        word < current + Object_Size(object) / WORD_SIZE) {
+        (ubyte_t *)word < (ubyte_t *)current + Object_Size(object)) {
         return object;
     } else {
         return NULL;

@@ -63,10 +63,12 @@ void Allocator_InitCursors(Allocator *allocator, bool canCollect) {
 void Allocator_Clear(Allocator *allocator) {
     BlockList_Clear(&allocator->recycledBlocks);
     allocator->recycledBlockCount = 0;
-    allocator->limit = NULL;
     allocator->block = NULL;
-    allocator->largeLimit = NULL;
+    allocator->cursor = NULL;
+    allocator->limit = NULL;
     allocator->largeBlock = NULL;
+    allocator->largeCursor = NULL;
+    allocator->largeLimit = NULL;
 }
 
 bool Allocator_newOverflowBlock(Allocator *allocator) {
@@ -91,6 +93,7 @@ bool Allocator_newOverflowBlock(Allocator *allocator) {
  */
 word_t *Allocator_overflowAllocation(Allocator *allocator, size_t size) {
     word_t *start = allocator->largeCursor;
+    assert(start != NULL);
     word_t *end = (word_t *)((uint8_t *)start + size);
 
     if (end > allocator->largeLimit) {
@@ -110,6 +113,7 @@ word_t *Allocator_overflowAllocation(Allocator *allocator, size_t size) {
  */
 INLINE word_t *Allocator_tryAlloc(Allocator *allocator, size_t size) {
     word_t *start = allocator->cursor;
+    assert(start != NULL);
     word_t *end = (word_t *)((uint8_t *)start + size);
     // Checks if the end of the block overlaps with the limit
     if (end > allocator->limit) {
@@ -139,13 +143,13 @@ bool Allocator_getNextLine(Allocator *allocator) {
     if (block == NULL) {
         return Allocator_newBlock(allocator);
     }
-    word_t *blockStart = allocator->blockStart;
 
     int lineIndex = BlockMeta_FirstFreeLine(block);
     if (lineIndex == LAST_HOLE) {
         return Allocator_newBlock(allocator);
     }
 
+    word_t *blockStart = allocator->blockStart;
     word_t *line = Block_GetLineAddress(blockStart, lineIndex);
 
     allocator->cursor = line;
@@ -153,6 +157,8 @@ bool Allocator_getNextLine(Allocator *allocator) {
     uint16_t size = lineMeta->size;
     if (size == 0)
         return Allocator_newBlock(allocator);
+    assert(lineMeta->next == LAST_HOLE ||
+           (lineMeta->next >= 0 && lineMeta->next <= LINE_COUNT));
     BlockMeta_SetFirstFreeLine(block, lineMeta->next);
     allocator->limit = line + (size * WORDS_IN_LINE);
     assertOr(allocator->limit <= Block_GetBlockEnd(blockStart), "limit <= Block_GetBlockEnd(blockStart)");
@@ -180,11 +186,13 @@ bool Allocator_newBlock(Allocator *allocator) {
         assertOr(lineIndex < LINE_COUNT, "lineIndex < LINE_COUNT");
         word_t *line = Block_GetLineAddress(blockStart, lineIndex);
 
-        allocator->cursor = line;
         FreeLineMeta *lineMeta = (FreeLineMeta *)line;
-        BlockMeta_SetFirstFreeLine(block, lineMeta->next);
         uint16_t size = lineMeta->size;
-        assertOr(size > 0, "size > 0");
+        assertOr(size > 0, "size > 0 in Allocator_newBlock");
+        assertOr(lineMeta->next == LAST_HOLE ||
+               (lineMeta->next >= 0 && lineMeta->next <= LINE_COUNT), "lineMeta->next == LAST_HOLE || (lineMeta->next >= 0 && lineMeta->next <= LINE_COUNT)");
+        BlockMeta_SetFirstFreeLine(block, lineMeta->next);
+        allocator->cursor = line;
         allocator->limit = line + (size * WORDS_IN_LINE);
         assertOr(allocator->limit <= Block_GetBlockEnd(blockStart), "limit <= Block_GetBlockEnd(blockStart)");
     } else {
@@ -217,6 +225,9 @@ NOINLINE word_t *Allocator_allocSlow(Allocator *allocator, Heap *heap,
             assertOr(object != NULL, "object != NULL");
             memset(object, 0, size);
             ObjectMeta *objectMeta = Bytemap_Get(allocator->bytemap, object);
+#ifdef GC_ASSERTIONS
+            ObjectMeta_AssertIsValidAllocation(objectMeta, size);
+#endif
             ObjectMeta_SetAllocated(objectMeta);
             return object;
         }
@@ -234,7 +245,7 @@ NOINLINE word_t *Allocator_allocSlow(Allocator *allocator, Heap *heap,
         if (Heap_isGrowingPossible(heap, 1))
             Heap_Grow(heap, 1);
         else
-            Heap_exitWithOutOfMemory("");
+            Heap_exitWithOutOfMemory("cannot allocate more objects");
     } while (true);
     return NULL; // unreachable
 }
@@ -248,7 +259,7 @@ INLINE word_t *Allocator_Alloc(Heap *heap, uint32_t size) {
     word_t *end = (word_t *)((uint8_t *)start + size);
 
     // Checks if the end of the block overlaps with the limit
-    if (end > allocator->limit) {
+    if (start == NULL || end > allocator->limit) {
         return Allocator_allocSlow(allocator, heap, size);
     }
 
@@ -258,6 +269,9 @@ INLINE word_t *Allocator_Alloc(Heap *heap, uint32_t size) {
 
     word_t *object = start;
     ObjectMeta *objectMeta = Bytemap_Get(heap->bytemap, object);
+#ifdef GC_ASSERTIONS
+    ObjectMeta_AssertIsValidAllocation(objectMeta, size);
+#endif
     ObjectMeta_SetAllocated(objectMeta);
 
     // prefetch starting from 36 words away from the object start

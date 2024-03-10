@@ -12,7 +12,7 @@ import scala.scalanative.linker.{
 import scala.scalanative.build.Logger
 
 // scalafmt: { maxColumn = 120}
-object Generate {
+private[codegen] object Generate {
   private implicit val pos: nir.SourcePosition = nir.SourcePosition.NoPosition
   private implicit val scopeId: nir.ScopeId = nir.ScopeId.TopLevel
   import Impl._
@@ -332,7 +332,7 @@ object Generate {
         LoadModuleSig
       )
       val LoadModule = nir.Val.Global(LoadModuleDecl.name, nir.Type.Ptr)
-      val useSynchronizedAccessors = meta.config.multithreadingSupport
+      val useSynchronizedAccessors = meta.platform.isMultithreadingEnabled
       if (useSynchronizedAccessors) {
         buf += LoadModuleDecl
       }

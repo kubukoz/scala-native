@@ -88,3 +88,5 @@ and the development process behind the project.
   blog/index
   changelog/index
   faq
+
+Document built at : |today|

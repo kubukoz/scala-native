@@ -14,11 +14,10 @@ import ScriptedPlugin.autoImport._
 import com.jsuereth.sbtpgp.PgpKeys
 
 import scala.collection.mutable
-import scala.scalanative.build.Platform
-import Build.{crossPublish, crossPublishSigned}
 import MyScalaNativePlugin.isGeneratingForIDE
 
 import java.io.File
+import java.util.Locale
 
 object Settings {
   lazy val fetchScalaSource = taskKey[File](
@@ -45,6 +44,22 @@ object Settings {
           "This build requires JDK 8 or later. Aborting."
         )
       v
+    },
+    Global / onLoad ~= { prev =>
+      if (!scala.util.Properties.isWin) {
+        import java.nio.file._
+        val prePush = Paths.get(".git", "hooks", "pre-push")
+        Files.createDirectories(prePush.getParent)
+        Files.write(
+          prePush,
+          """#!/bin/sh
+          |set -eux
+          |CHECK_MODIFIED_ONLY=1 ./scripts/check-lint.sh
+          |""".stripMargin.getBytes()
+        )
+        prePush.toFile.setExecutable(true)
+      }
+      prev
     }
   )
 
@@ -167,7 +182,11 @@ object Settings {
       apiMappings += file("/modules/java.base") -> url(javaDocBaseURL),
       Compile / doc / sources := {
         val prev = (Compile / doc / sources).value
-        if (Platform.isWindows &&
+        val isWindows = System
+          .getProperty("os.name", "unknown")
+          .toLowerCase(Locale.ROOT)
+          .startsWith("windows")
+        if (isWindows &&
             sys.env.contains("CI") // Always present in GitHub Actions
         ) Nil
         else prev
@@ -581,52 +600,8 @@ object Settings {
     libraryDependencies ++= Deps.compilerPluginDependencies(scalaVersion.value),
     publishSettings(None),
     mavenPublishSettings,
-    exportJars := true,
-    crossPublishSettings
+    exportJars := true
   )
-
-  lazy val crossPublishSettings = Def.settings(
-    crossPublish := crossPublishProject(publish).value,
-    crossPublishSigned := crossPublishProject(publishSigned).value
-  )
-
-  /** Builds a given project across all crossScalaVersion values. It does not
-   *  modify the value of scalaVersion outside of it's scope. This allows to
-   *  build multiple projects in parallel.
-   */
-  def crossPublishProject(publishKey: TaskKey[Unit]) = Def.task {
-    val currentVersion = scalaVersion.value
-    val binVersion = CrossVersion.binaryScalaVersion(currentVersion)
-    val s = state.value
-    val log = s.log
-    val extracted = sbt.Project.extract(s)
-    val id = thisProjectRef.value.project
-    val selfRef = thisProjectRef.value
-    val _ = crossScalaVersions.value.foreach {
-      case `currentVersion` =>
-        log.info(
-          s"Skip publish $id ${currentVersion} - it should be already published"
-        )
-      case crossVersion =>
-        log.info(s"Try publish $id ${crossVersion}")
-        val (_, result) = sbt.Project
-          .runTask(
-            selfRef / publishKey,
-            state = extracted.appendWithoutSession(
-              Build.allMultiScalaProjects
-                .map(
-                  _.forBinaryVersion(binVersion) / scalaVersion := crossVersion
-                ),
-              s
-            )
-          )
-          .get
-        result.toEither match {
-          case Left(failure) => throw new RuntimeException(failure)
-          case Right(_)      => System.gc()
-        }
-    }
-  }
 
   lazy val sbtPluginSettings = Def.settings(
     commonSettings,
@@ -738,7 +713,6 @@ object Settings {
   def commonScalalibSettings(libraryName: String): Seq[Setting[_]] = {
     Def.settings(
       version := scalalibVersion(scalaVersion.value, nativeVersion),
-      crossPublishSettings,
       mavenPublishSettings,
       disabledDocsSettings,
       recompileAllOrNothingSettings,
