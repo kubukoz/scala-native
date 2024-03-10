@@ -161,7 +161,8 @@ bool Allocator_getNextLine(Allocator *allocator) {
            (lineMeta->next >= 0 && lineMeta->next <= LINE_COUNT));
     BlockMeta_SetFirstFreeLine(block, lineMeta->next);
     allocator->limit = line + (size * WORDS_IN_LINE);
-    assertOr(allocator->limit <= Block_GetBlockEnd(blockStart), "limit <= Block_GetBlockEnd(blockStart)");
+    assertOr(allocator->limit <= Block_GetBlockEnd(blockStart),
+             "limit <= Block_GetBlockEnd(blockStart)");
 
     return true;
 }
@@ -190,11 +191,14 @@ bool Allocator_newBlock(Allocator *allocator) {
         uint16_t size = lineMeta->size;
         assertOr(size > 0, "size > 0 in Allocator_newBlock");
         assertOr(lineMeta->next == LAST_HOLE ||
-               (lineMeta->next >= 0 && lineMeta->next <= LINE_COUNT), "lineMeta->next == LAST_HOLE || (lineMeta->next >= 0 && lineMeta->next <= LINE_COUNT)");
+                     (lineMeta->next >= 0 && lineMeta->next <= LINE_COUNT),
+                 "lineMeta->next == LAST_HOLE || (lineMeta->next >= 0 && "
+                 "lineMeta->next <= LINE_COUNT)");
         BlockMeta_SetFirstFreeLine(block, lineMeta->next);
         allocator->cursor = line;
         allocator->limit = line + (size * WORDS_IN_LINE);
-        assertOr(allocator->limit <= Block_GetBlockEnd(blockStart), "limit <= Block_GetBlockEnd(blockStart)");
+        assertOr(allocator->limit <= Block_GetBlockEnd(blockStart),
+                 "limit <= Block_GetBlockEnd(blockStart)");
     } else {
         block = BlockAllocator_GetFreeBlock(allocator->blockAllocator);
         if (block == NULL) {
@@ -221,7 +225,8 @@ NOINLINE word_t *Allocator_allocSlow(Allocator *allocator, Heap *heap,
 
         if (object != NULL) {
         done:
-            assertOr(Heap_IsWordInHeap(heap, object), "Heap_IsWordInHeap(heap, object) in Allocator_allocSlow");
+            assertOr(Heap_IsWordInHeap(heap, object),
+                     "Heap_IsWordInHeap(heap, object) in Allocator_allocSlow");
             assertOr(object != NULL, "object != NULL");
             memset(object, 0, size);
             ObjectMeta *objectMeta = Bytemap_Get(allocator->bytemap, object);
@@ -251,7 +256,8 @@ NOINLINE word_t *Allocator_allocSlow(Allocator *allocator, Heap *heap,
 }
 
 INLINE word_t *Allocator_Alloc(Heap *heap, uint32_t size) {
-    assertOr(size % ALLOCATION_ALIGNMENT == 0, "size % ALLOCATION_ALIGNMENT == 0");
+    assertOr(size % ALLOCATION_ALIGNMENT == 0,
+             "size % ALLOCATION_ALIGNMENT == 0");
     assertOr(size < MIN_BLOCK_SIZE, "size < MIN_BLOCK_SIZE");
 
     Allocator *allocator = &currentMutatorThread->allocator;
@@ -280,7 +286,8 @@ INLINE word_t *Allocator_Alloc(Heap *heap, uint32_t size) {
     // caches as possible
     __builtin_prefetch(object + 36, 0, 3);
 
-    assertOr(Heap_IsWordInHeap(heap, object), "Heap_IsWordInHeap(heap, object) in Allocator_Aloc");
+    assertOr(Heap_IsWordInHeap(heap, object),
+             "Heap_IsWordInHeap(heap, object) in Allocator_Aloc");
     return object;
 }
 
