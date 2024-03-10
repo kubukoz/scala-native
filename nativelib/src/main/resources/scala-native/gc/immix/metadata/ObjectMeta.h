@@ -79,7 +79,9 @@ static inline void ObjectMeta_AssertIsValidAllocation(ObjectMeta *start,
     ObjectMeta *limit = start + (size / ALLOCATION_ALIGNMENT);
     int i = 0;
     for (ObjectMeta *current = start; current < limit; current++, i++) {
-        assertOr(ObjectMeta_IsFree(current) || ObjectMeta_IsPlaceholder(current), "Invalid allocation");
+        assertOr(ObjectMeta_IsFree(current) ||
+                     ObjectMeta_IsPlaceholder(current),
+                 "Invalid allocation");
     }
 }
 #endif

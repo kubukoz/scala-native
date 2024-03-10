@@ -52,7 +52,8 @@ BlockAllocator_pollSuperblock(BlockAllocator *blockAllocator, int first) {
         BlockMeta *superblock =
             BlockList_Poll(&blockAllocator->freeSuperblocks[i]);
         if (superblock != NULL) {
-            assertOr(BlockMeta_SuperblockSize(superblock) > 0, "BlockMeta_SuperblockSize(superblock) > 0");
+            assertOr(BlockMeta_SuperblockSize(superblock) > 0,
+                     "BlockMeta_SuperblockSize(superblock) > 0");
             return superblock;
         } else {
             blockAllocator->minNonEmptyIndex = i + 1;

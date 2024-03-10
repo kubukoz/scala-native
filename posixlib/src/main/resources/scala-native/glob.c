@@ -44,7 +44,8 @@ _Static_assert(offsetof(struct scalanative_glob_t, gl_pathv) ==
 #endif // __STDC_VERSION__
 #endif // Unix or Mac OS
 
-#if defined(_WIN32) || defined(TARGET_PLAYDATE) // bogus values to keep linker happy
+#if defined(_WIN32) ||                                                         \
+    defined(TARGET_PLAYDATE) // bogus values to keep linker happy
 #define GLOB_APPEND -1
 #define GLOB_DOOFFS -1
 #define GLOB_ERR -1

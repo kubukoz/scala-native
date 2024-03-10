@@ -30,8 +30,8 @@ typedef struct {
 
 static inline bool Heap_IsWordInHeap(Heap *heap, word_t *word) {
     // #ifdef PD_DEBUG
-    // pd_log_error("Heap_IsWordInHeap: word=%p, heapStart=%p, heapEnd=%p", word, heap->heapStart, heap->heapEnd);
-    // #endif
+    // pd_log_error("Heap_IsWordInHeap: word=%p, heapStart=%p, heapEnd=%p",
+    // word, heap->heapStart, heap->heapEnd); #endif
 
     return word >= heap->heapStart && word < heap->heapEnd;
 }

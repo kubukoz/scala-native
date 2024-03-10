@@ -43,7 +43,8 @@ _Static_assert(offsetof(struct scalanative_wordexp_t, we_offs) ==
 #endif // !OpenBSD
 #endif // Unix or Mac OS
 
-#if defined(_WIN32) || defined(__OpenBSD__)|| defined(TARGET_PLAYDATE) // bogus values to keep linker happy
+#if defined(_WIN32) || defined(__OpenBSD__) ||                                 \
+    defined(TARGET_PLAYDATE) // bogus values to keep linker happy
 #define WRDE_APPEND -1
 #define WRDE_DOOFFS -1
 #define WRDE_NOCMD -1

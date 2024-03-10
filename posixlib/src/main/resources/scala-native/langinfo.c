@@ -5,7 +5,8 @@
 
 #endif // Unix or Mac OS
 
-#if defined(_WIN32) || defined(TARGET_PLAYDATE) // bogus values to keep compiler happy
+#if defined(_WIN32) ||                                                         \
+    defined(TARGET_PLAYDATE) // bogus values to keep compiler happy
 #define CODESET -1
 #define D_T_FMT -1
 #define D_FMT -1
