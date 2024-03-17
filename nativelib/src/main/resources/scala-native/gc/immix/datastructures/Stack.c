@@ -5,21 +5,12 @@
 #include <stdbool.h>
 #include "Stack.h"
 #include "immix_commix/Log.h"
-#include <string.h>
-
-#ifdef PD_DEBUG
-extern void pd_log_error(char *str, ...);
-#endif
-extern void assertOr(bool condition, char *message);
 
 void Stack_doubleSize(Stack *stack);
 
 void Stack_Init(Stack *stack, size_t size) {
-    assertOr(size % sizeof(Stack_Type) == 0, "size % sizeof(Stack_Type) == 0");
+    assert(size % sizeof(Stack_Type) == 0);
     stack->current = 0;
-#ifdef PD_DEBUG
-    pd_log_error("Stack_Init allocating %d bytes", size);
-#endif
     stack->bottom = malloc(size);
     stack->nb_words = size / sizeof(Stack_Type);
 }
@@ -34,7 +25,7 @@ void Stack_Push(Stack *stack, Stack_Type word) {
 
 INLINE
 Stack_Type Stack_Pop(Stack *stack) {
-    assertOr(stack->current > 0, "Stack_Pop: stack->current > 0");
+    assert(stack->current > 0);
     return stack->bottom[--stack->current];
 }
 

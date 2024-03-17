@@ -8,10 +8,6 @@
 #include "Stats.h"
 #include "shared/ThreadUtil.h"
 
-#ifdef PD_DEBUG
-extern void pd_log_error(char *str, ...);
-#endif
-
 typedef struct {
     word_t *blockMetaStart;
     word_t *blockMetaEnd;
@@ -29,10 +25,6 @@ typedef struct {
 } Heap;
 
 static inline bool Heap_IsWordInHeap(Heap *heap, word_t *word) {
-    // #ifdef PD_DEBUG
-    // pd_log_error("Heap_IsWordInHeap: word=%p, heapStart=%p, heapEnd=%p",
-    // word, heap->heapStart, heap->heapEnd); #endif
-
     return word >= heap->heapStart && word < heap->heapEnd;
 }
 

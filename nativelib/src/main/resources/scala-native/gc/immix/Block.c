@@ -7,7 +7,6 @@
 #include "immix_commix/Log.h"
 #include "Allocator.h"
 
-extern void assertOr(int condition, char *message);
 INLINE void Block_recycleUnmarkedBlock(Allocator *allocator,
                                        BlockMeta *blockMeta,
                                        word_t *blockStart) {
@@ -28,8 +27,7 @@ void Block_Recycle(Allocator *allocator, BlockMeta *blockMeta,
         Block_recycleUnmarkedBlock(allocator, blockMeta, blockStart);
     } else {
         // If the block is marked, we need to recycle line by line
-        assertOr(BlockMeta_IsMarked(blockMeta),
-                 "BlockMeta_IsMarked(blockMeta)");
+        assert(BlockMeta_IsMarked(blockMeta));
         BlockMeta_Unmark(blockMeta);
         Bytemap *bytemap = allocator->bytemap;
 
@@ -64,7 +62,7 @@ void Block_Recycle(Allocator *allocator, BlockMeta *blockMeta,
                 } else {
                     // Update the last recyclable line to point to the current
                     // one
-                    assertOr(lineIndex >= 0, "lineIndex >= 0");
+                    assert(lineIndex >= 0);
                     lastRecyclable->next = lineIndex;
                 }
                 ObjectMeta_ClearLineAt(bytemapCursor);
@@ -95,10 +93,8 @@ void Block_Recycle(Allocator *allocator, BlockMeta *blockMeta,
             lastRecyclable->next = LAST_HOLE;
             BlockList_AddLast(&allocator->recycledBlocks, blockMeta);
 
-            assertOr(BlockMeta_FirstFreeLine(blockMeta) >= 0,
-                     "BlockMeta_FirstFreeLine(blockMeta) >= 0");
-            assertOr(BlockMeta_FirstFreeLine(blockMeta) < LINE_COUNT,
-                     "BlockMeta_FirstFreeLine(blockMeta) < LINE_COUNT");
+            assert(BlockMeta_FirstFreeLine(blockMeta) >= 0);
+            assert(BlockMeta_FirstFreeLine(blockMeta) < LINE_COUNT);
             atomic_fetch_add_explicit(&allocator->recycledBlockCount, 1,
                                       memory_order_relaxed);
         }

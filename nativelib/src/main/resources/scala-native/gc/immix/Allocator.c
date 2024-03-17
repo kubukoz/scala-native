@@ -11,12 +11,6 @@ bool Allocator_getNextLine(Allocator *allocator);
 bool Allocator_newBlock(Allocator *allocator);
 bool Allocator_newOverflowBlock(Allocator *allocator);
 
-#ifdef PD_DEBUG
-extern void pd_log_error(char *str, ...);
-#endif
-
-extern void assertOr(int condition, char *message);
-
 void Allocator_Init(Allocator *allocator, BlockAllocator *blockAllocator,
                     Bytemap *bytemap, word_t *blockMetaStart,
                     word_t *heapStart) {
@@ -49,12 +43,9 @@ void Allocator_InitCursors(Allocator *allocator, bool canCollect) {
              Allocator_newOverflowBlock(allocator))) {
         if (Heap_isGrowingPossible(&heap, 2))
             Heap_Grow(&heap, 2);
-        else if (canCollect) {
+        else if (canCollect)
             Heap_Collect(&heap, &stack);
-#ifdef PD_DEBUG
-            pd_log_error("Allocator_InitCursors: after collect");
-#endif
-        } else
+        else
             Heap_exitWithOutOfMemory(
                 "Not enough memory to allocate GC mutator thread allocator");
     }
@@ -161,8 +152,7 @@ bool Allocator_getNextLine(Allocator *allocator) {
            (lineMeta->next >= 0 && lineMeta->next <= LINE_COUNT));
     BlockMeta_SetFirstFreeLine(block, lineMeta->next);
     allocator->limit = line + (size * WORDS_IN_LINE);
-    assertOr(allocator->limit <= Block_GetBlockEnd(blockStart),
-             "limit <= Block_GetBlockEnd(blockStart)");
+    assert(allocator->limit <= Block_GetBlockEnd(blockStart));
 
     return true;
 }
@@ -172,7 +162,7 @@ bool Allocator_getNextLine(Allocator *allocator) {
  * first free line of the new block.
  */
 bool Allocator_newBlock(Allocator *allocator) {
-    assertOr(allocator != NULL, "allocator != NULL");
+    assert(allocator != NULL);
     BlockMeta *block = BlockList_Poll(&allocator->recycledBlocks);
     word_t *blockStart;
 
@@ -184,21 +174,18 @@ bool Allocator_newBlock(Allocator *allocator) {
                                              allocator->heapStart, block);
 
         int lineIndex = BlockMeta_FirstFreeLine(block);
-        assertOr(lineIndex < LINE_COUNT, "lineIndex < LINE_COUNT");
+        assert(lineIndex < LINE_COUNT);
         word_t *line = Block_GetLineAddress(blockStart, lineIndex);
 
         FreeLineMeta *lineMeta = (FreeLineMeta *)line;
         uint16_t size = lineMeta->size;
-        assertOr(size > 0, "size > 0 in Allocator_newBlock");
-        assertOr(lineMeta->next == LAST_HOLE ||
-                     (lineMeta->next >= 0 && lineMeta->next <= LINE_COUNT),
-                 "lineMeta->next == LAST_HOLE || (lineMeta->next >= 0 && "
-                 "lineMeta->next <= LINE_COUNT)");
+        assert(size > 0);
+        assert(lineMeta->next == LAST_HOLE ||
+               (lineMeta->next >= 0 && lineMeta->next <= LINE_COUNT));
         BlockMeta_SetFirstFreeLine(block, lineMeta->next);
         allocator->cursor = line;
         allocator->limit = line + (size * WORDS_IN_LINE);
-        assertOr(allocator->limit <= Block_GetBlockEnd(blockStart),
-                 "limit <= Block_GetBlockEnd(blockStart)");
+        assert(allocator->limit <= Block_GetBlockEnd(blockStart));
     } else {
         block = BlockAllocator_GetFreeBlock(allocator->blockAllocator);
         if (block == NULL) {
@@ -225,9 +212,8 @@ NOINLINE word_t *Allocator_allocSlow(Allocator *allocator, Heap *heap,
 
         if (object != NULL) {
         done:
-            assertOr(Heap_IsWordInHeap(heap, object),
-                     "Heap_IsWordInHeap(heap, object) in Allocator_allocSlow");
-            assertOr(object != NULL, "object != NULL");
+            assert(Heap_IsWordInHeap(heap, object));
+            assert(object != NULL);
             memset(object, 0, size);
             ObjectMeta *objectMeta = Bytemap_Get(allocator->bytemap, object);
 #ifdef GC_ASSERTIONS
@@ -237,9 +223,6 @@ NOINLINE word_t *Allocator_allocSlow(Allocator *allocator, Heap *heap,
             return object;
         }
         Heap_Collect(heap, &stack);
-#ifdef PD_DEBUG
-        pd_log_error("Allocator_allocSlow: after collect");
-#endif
         object = Allocator_tryAlloc(allocator, size);
 
         if (object != NULL)
@@ -256,9 +239,8 @@ NOINLINE word_t *Allocator_allocSlow(Allocator *allocator, Heap *heap,
 }
 
 INLINE word_t *Allocator_Alloc(Heap *heap, uint32_t size) {
-    assertOr(size % ALLOCATION_ALIGNMENT == 0,
-             "size % ALLOCATION_ALIGNMENT == 0");
-    assertOr(size < MIN_BLOCK_SIZE, "size < MIN_BLOCK_SIZE");
+    assert(size % ALLOCATION_ALIGNMENT == 0);
+    assert(size < MIN_BLOCK_SIZE);
 
     Allocator *allocator = &currentMutatorThread->allocator;
     word_t *start = allocator->cursor;
@@ -286,8 +268,7 @@ INLINE word_t *Allocator_Alloc(Heap *heap, uint32_t size) {
     // caches as possible
     __builtin_prefetch(object + 36, 0, 3);
 
-    assertOr(Heap_IsWordInHeap(heap, object),
-             "Heap_IsWordInHeap(heap, object) in Allocator_Aloc");
+    assert(Heap_IsWordInHeap(heap, object));
     return object;
 }
 

@@ -49,7 +49,7 @@ size_t Heap_getMemoryLimit() {
  * `alignement` mask
  */
 word_t *Heap_mapAndAlign(size_t memoryLimit, size_t alignmentSize) {
-    assertOr(alignmentSize % WORD_SIZE == 0, "alignmentSize % WORD_SIZE == 0");
+    assert(alignmentSize % WORD_SIZE == 0);
     word_t *heapStart = memoryMap(memoryLimit);
     size_t alignmentMask = ~(alignmentSize - 1);
     // Heap start not aligned on
@@ -65,51 +65,42 @@ word_t *Heap_mapAndAlign(size_t memoryLimit, size_t alignmentSize) {
  */
 void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
     size_t memoryLimit = Heap_getMemoryLimit();
-#ifdef PD_DEBUG
-    pd_log_error("Memory limit: %zu\n", memoryLimit);
-#endif
 
-    //     if (maxHeapSize < MIN_HEAP_SIZE) {
-    // #ifdef PD_DEBUG
-    //         pd_log_error("GC_MAXIMUM_HEAP_SIZE too small to initialize
-    //         heap.\n"); pd_log_error("Minimum required: %zum \n",
-    //                      (size_t)(MIN_HEAP_SIZE / 1024 / 1024));
-    // #endif
-    //         exit(1);
-    //     }
+    /*
+    if (maxHeapSize < MIN_HEAP_SIZE) {
+        fprintf(stderr, "GC_MAXIMUM_HEAP_SIZE too small to initialize heap.\n");
+        fprintf(stderr, "Minimum required: %zum \n",
+                (size_t)(MIN_HEAP_SIZE / 1024 / 1024));
+        fflush(stderr);
+        exit(1);
+    }
 
-    //     if (minHeapSize > memoryLimit) {
-    // #ifdef PD_DEBUG
-    //         pd_log_error("GC_INITIAL_HEAP_SIZE is too large.\n");
-    //         pd_log_error("Maximum possible: %zum \n", memoryLimit / 1024 /
-    //         1024);
-    // #endif
-    //         exit(1);
-    //     }
+    if (minHeapSize > memoryLimit) {
+        fprintf(stderr, "GC_INITIAL_HEAP_SIZE is too large.\n");
+        fprintf(stderr, "Maximum possible: %zug \n",
+                memoryLimit / 1024 / 1024 / 1024);
+        fflush(stderr);
+        exit(1);
+    }
 
-    //     if (maxHeapSize < minHeapSize) {
-    // #ifdef PD_DEBUG
-    //         pd_log_error("GC_MAXIMUM_HEAP_SIZE should be at least "
-    //                      "GC_INITIAL_HEAP_SIZE\n");
-    // #endif
-    //         exit(1);
-    //     }
+    if (maxHeapSize < minHeapSize) {
+        fprintf(stderr, "GC_MAXIMUM_HEAP_SIZE should be at least "
+                        "GC_INITIAL_HEAP_SIZE\n");
+        fflush(stderr);
+        exit(1);
+    }
 
-    //     if (minHeapSize < MIN_HEAP_SIZE) {
-    //         minHeapSize = MIN_HEAP_SIZE;
-    //     }
+    if (minHeapSize < MIN_HEAP_SIZE) {
+        minHeapSize = MIN_HEAP_SIZE;
+    }
 
-    //     if (maxHeapSize == UNLIMITED_HEAP_SIZE) {
-    //         maxHeapSize = memoryLimit;
-    //     }
+    if (maxHeapSize == UNLIMITED_HEAP_SIZE) {
+        maxHeapSize = memoryLimit;
+    }
+     */
 
     maxHeapSize = memoryLimit;
     minHeapSize = maxHeapSize;
-
-#ifdef PD_DEBUG
-    pd_log_error("Max heap size: %zu\n", maxHeapSize);
-    pd_log_error("Min heap size: %zu\n", minHeapSize);
-#endif
 
     uint32_t maxNumberOfBlocks = maxHeapSize / SPACE_USED_PER_BLOCK;
     uint32_t initialBlockCount = minHeapSize / SPACE_USED_PER_BLOCK;
@@ -129,10 +120,8 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
         (size_t)maxNumberOfBlocks * LINE_COUNT * LINE_METADATA_SIZE;
     word_t *lineMetaStart = Heap_mapAndAlign(lineMetaSpaceSize, WORD_SIZE);
     heap->lineMetaStart = lineMetaStart;
-    assertOr(LINE_COUNT * LINE_SIZE == BLOCK_TOTAL_SIZE,
-             "LINE_COUNT * LINE_SIZE == BLOCK_TOTAL_SIZE");
-    assertOr(LINE_COUNT * LINE_METADATA_SIZE % WORD_SIZE == 0,
-             "LINE_COUNT * LINE_METADATA_SIZE % WORD_SIZE == 0");
+    assert(LINE_COUNT * LINE_SIZE == BLOCK_TOTAL_SIZE);
+    assert(LINE_COUNT * LINE_METADATA_SIZE % WORD_SIZE == 0);
     heap->lineMetaEnd = lineMetaStart + initialBlockCount * LINE_COUNT *
                                             LINE_METADATA_SIZE / WORD_SIZE;
 
@@ -168,10 +157,10 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
     BlockAllocator_Init(&blockAllocator, blockMetaStart, initialBlockCount);
     Bytemap_Init(bytemap, heapStart, maxHeapSize);
     char *statsFile = Settings_StatsFileName();
-    // if (statsFile != NULL) {
-    heap->stats = malloc(sizeof(Stats));
-    Stats_Init(heap->stats, statsFile);
-    // }
+    if (statsFile != NULL) {
+        heap->stats = malloc(sizeof(Stats));
+        Stats_Init(heap->stats, statsFile);
+    }
     mutex_init(&heap->lock);
 }
 
@@ -233,24 +222,15 @@ bool Heap_shouldGrow(Heap *heap) {
         blockCount - (freeBlockCount + recycledBlockCount);
 
 #ifdef DEBUG_PRINT
-#ifdef PD_DEBUG
-    pd_log_error("\n\nBlock count: %u\n", blockCount);
-    pd_log_error("Unavailable: %u\n", unavailableBlockCount);
-    pd_log_error("Free: %u\n", freeBlockCount);
-    pd_log_error("Recycled: %u\n", recycledBlockCount);
+    printf("\n\nBlock count: %u\n", blockCount);
+    printf("Unavailable: %u\n", unavailableBlockCount);
+    printf("Free: %u\n", freeBlockCount);
+    printf("Recycled: %u\n", recycledBlockCount);
+    fflush(stdout);
 #endif
-#endif
 
-    //     bool result = freeBlockCount * 2 < blockCount ||
-    //                   4 * unavailableBlockCount > blockCount;
-
-    // #ifdef PD_DEBUG
-    //     pd_log_error("Heap_shouldGrow: %d\n", result);
-    //     exit(1001);
-    // #endif
-
-    // // 16 * 16*1024
-    //     return result;
+    // return freeBlockCount * 2 < blockCount ||
+    //        4 * unavailableBlockCount > blockCount;
     return false;
 }
 
@@ -285,8 +265,7 @@ void Heap_Recycle(Heap *heap) {
     while ((word_t *)current < end) {
         int size = 1;
 
-        assertOr(!BlockMeta_IsSuperblockMiddle(current),
-                 "!BlockMeta_IsSuperblockMiddle(current)");
+        assert(!BlockMeta_IsSuperblockMiddle(current));
         if (BlockMeta_IsSimpleBlock(current)) {
             MutatorThread *recycleBlocksTo = NextMutatorThread();
             Block_Recycle(&recycleBlocksTo->allocator, current,
@@ -297,10 +276,10 @@ void Heap_Recycle(Heap *heap) {
             LargeAllocator_Sweep(&recycleBlocksTo->largeAllocator, current,
                                  currentBlockStart);
         } else {
-            assertOr(BlockMeta_IsFree(current), "BlockMeta_IsFree(current)");
+            assert(BlockMeta_IsFree(current));
             BlockAllocator_AddFreeBlocks(&blockAllocator, current, 1);
         }
-        assertOr(size > 0, "size > 0");
+        assert(size > 0);
         current += size;
         currentBlockStart += WORDS_IN_BLOCK * size;
         lineMetas += LINE_COUNT * size;
@@ -309,24 +288,23 @@ void Heap_Recycle(Heap *heap) {
 #ifdef SCALANATIVE_MULTITHREADING_ENABLED
     atomic_thread_fence(memory_order_seq_cst);
 #endif
-    Heap_shouldGrow(heap);
-    // if (Heap_shouldGrow(heap)) {
-    //     double growth;
-    //     if (heap->heapSize < EARLY_GROWTH_THRESHOLD) {
-    //         growth = EARLY_GROWTH_RATE;
-    //     } else {
-    //         growth = GROWTH_RATE;
-    //     }
-    //     uint32_t blocks = heap->blockCount * (growth - 1);
-    //     if (Heap_isGrowingPossible(heap, blocks)) {
-    //         Heap_Grow(heap, blocks);
-    //     } else {
-    //         uint32_t remainingGrowth = heap->maxBlockCount -
-    //         heap->blockCount; if (remainingGrowth > 0) {
-    //             Heap_Grow(heap, remainingGrowth);
-    //         }
-    //     }
-    // }
+    if (Heap_shouldGrow(heap)) {
+        double growth;
+        if (heap->heapSize < EARLY_GROWTH_THRESHOLD) {
+            growth = EARLY_GROWTH_RATE;
+        } else {
+            growth = GROWTH_RATE;
+        }
+        uint32_t blocks = heap->blockCount * (growth - 1);
+        if (Heap_isGrowingPossible(heap, blocks)) {
+            Heap_Grow(heap, blocks);
+        } else {
+            uint32_t remainingGrowth = heap->maxBlockCount - heap->blockCount;
+            if (remainingGrowth > 0) {
+                Heap_Grow(heap, remainingGrowth);
+            }
+        }
+    }
     BlockAllocator_SweepDone(&blockAllocator);
     MutatorThreads_foreach(mutatorThreads, node) {
         MutatorThread *thread = node->value;

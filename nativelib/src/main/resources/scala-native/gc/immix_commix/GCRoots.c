@@ -8,8 +8,6 @@
 #include <stdatomic.h>
 #include "shared/ThreadUtil.h"
 
-extern void assertOr(int condition, char *message);
-
 GC_Roots *GC_Roots_Init() {
     GC_Roots *roots = (GC_Roots *)malloc(sizeof(GC_Roots));
     roots->head = ATOMIC_VAR_INIT(NULL);
@@ -29,8 +27,7 @@ void GC_Roots_Add(GC_Roots *roots, AddressRange range) {
 
 void GC_Roots_Add_Range_Except(GC_Roots *roots, AddressRange range,
                                AddressRange except) {
-    assertOr(AddressRange_Contains(range, except),
-             "AddressRange_Contains(range, except)");
+    assert(AddressRange_Contains(range, except));
     if (range.address_low < except.address_low) {
         GC_Roots_Add(roots,
                      (AddressRange){range.address_low, except.address_low});

@@ -19,12 +19,6 @@
 
 void scalanative_afterexit() { Stats_OnExit(heap.stats); }
 
-#ifdef PD_DEBUG
-extern void pd_log_error(char *str, ...);
-#endif
-
-extern void assertOr(int condition, char *message);
-
 NOINLINE void scalanative_GC_init() {
     volatile word_t dummy = 0;
     dummy = (word_t)&dummy;
@@ -43,8 +37,7 @@ NOINLINE void scalanative_GC_init() {
 INLINE void *scalanative_GC_alloc(Rtti *info, size_t size) {
     size = MathUtils_RoundToNextMultiple(size, ALLOCATION_ALIGNMENT);
 
-    assertOr(size % ALLOCATION_ALIGNMENT == 0,
-             "size % ALLOCATION_ALIGNMENT == 0");
+    assert(size % ALLOCATION_ALIGNMENT == 0);
 
     Object *alloc;
     if (size >= LARGE_BLOCK_SIZE) {
@@ -81,12 +74,7 @@ INLINE void *scalanative_GC_alloc_array(Rtti *info, size_t length,
     return (void *)alloc;
 }
 
-INLINE void scalanative_GC_collect() {
-    Heap_Collect(&heap, &stack);
-#ifdef PD_DEBUG
-    pd_log_error("scalanative_GC_collect: after collect");
-#endif
-}
+INLINE void scalanative_GC_collect() { Heap_Collect(&heap, &stack); }
 
 INLINE void scalanative_GC_set_weak_references_collected_callback(
     WeakReferencesCollectedCallback callback) {

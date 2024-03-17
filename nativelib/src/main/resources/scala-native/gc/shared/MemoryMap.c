@@ -99,6 +99,7 @@ word_t *memoryMapPrealloc(size_t memorySize, size_t doPrealloc) {
     return res;
 #endif // !_WIN32
 }
+
 bool memoryCommit(void *ref, size_t memorySize) {
 #ifdef _WIN32
     return VirtualAlloc(ref, memorySize, MEM_COMMIT, PAGE_READWRITE) != NULL;
