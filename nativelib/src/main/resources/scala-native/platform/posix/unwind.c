@@ -44,45 +44,37 @@ int scalanative_unwind_get_proc_name(void *cursor, char *buffer, size_t length,
     return 0;
 }
 
-size_t
-scalanative_unwind_sizeof_context()
-{
+size_t scalanative_unwind_sizeof_context() {
     exit(19);
     return 0;
 }
 
-size_t scalanative_unwind_sizeof_cursor()
-{
+size_t scalanative_unwind_sizeof_cursor() {
     exit(20);
     return 0;
 }
 
-int scalanative_unwind_init_local(void *cursor, void *context)
-{
+int scalanative_unwind_init_local(void *cursor, void *context) {
     exit(21);
     return 0;
 }
 
-int scalanative_unwind_step(void *cursor)
-{
+int scalanative_unwind_step(void *cursor) {
     exit(22);
     return 0;
 }
 
-int scalanative_unw_reg_ip()
-{
+int scalanative_unw_reg_ip() {
     exit(23);
     return 0;
 }
 
-int scalanative_unwind_get_reg(void *cursor, int regnum, size_t *valp)
-{
+int scalanative_unwind_get_reg(void *cursor, int regnum, size_t *valp) {
     exit(24);
     return 0;
 }
 
-int scalanative_unwind_get_context(void *context)
-{
+int scalanative_unwind_get_context(void *context) {
     exit(25);
     return 0;
 }
