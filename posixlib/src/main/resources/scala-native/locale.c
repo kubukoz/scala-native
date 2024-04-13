@@ -1,5 +1,8 @@
-#if defined(_WIN32) || defined(TARGET_PLAYDATE)
-// No Windows/playdate support
+#if defined(SCALANATIVE_COMPILE_ALWAYS) || defined(__SCALANATIVE_POSIX_LOCALE)
+#ifdef _WIN32
+// No Windows support
+#elif defined(TARGET_PLAYDATE)
+// no playdate support
 #else
 #if !(defined __STDC_VERSION__) || (__STDC_VERSION__ < 201112L)
 #ifndef SCALANATIVE_SUPPRESS_STRUCT_CHECK_WARNING
@@ -35,3 +38,4 @@ int scalanative_lc_time_mask() { return (1 << LC_TIME); }
 
 #endif // POSIX
 #endif // ! _WIN32
+#endif

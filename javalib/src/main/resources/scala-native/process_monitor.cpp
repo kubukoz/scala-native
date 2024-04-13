@@ -1,5 +1,7 @@
 // This mechanism is only used in POSIX compliant platforms.
 // On Windows other build in approach is used.
+#if defined(SCALANATIVE_COMPILE_ALWAYS) ||                                     \
+    defined(__SCALANATIVE_JAVALIB_PROCESS_MONITOR)
 #if defined(__unix__) || defined(__unix) || defined(unix) ||                   \
     (defined(__APPLE__) && defined(__MACH__))
 #include <memory>
@@ -135,11 +137,12 @@ void scalanative_process_monitor_init() {
     // on M1 chips) leading to deadlocks
     char semaphoreName[SEM_MAX_LENGTH];
 
-#if defined(__FreeBSD__)
-#define SEM_NAME_PREFIX "/" // FreeBSD semaphore names must start with '/'
+#if defined(__FreeBSD__) || defined(__NetBSD__)
+#define SEM_NAME_PREFIX                                                        \
+    "/" // FreeBSD and NetBSD semaphore names must start with '/'
 #else
 #define SEM_NAME_PREFIX ""
-#endif // __FreeBSD__
+#endif // __FreeBSD__ || __NetBSD__
 
     snprintf(semaphoreName, SEM_MAX_LENGTH,
              SEM_NAME_PREFIX "__sn_%d-process-monitor", getpid());
@@ -155,3 +158,4 @@ void scalanative_process_monitor_init() {
 }
 
 #endif // Unix or Mac OS
+#endif // __SCALANATIVE_PROCESS_MONITOR

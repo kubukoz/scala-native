@@ -1,3 +1,5 @@
+#if defined(SCALANATIVE_COMPILE_ALWAYS) ||                                     \
+    defined(__SCALANATIVE_POSIX_SYS_SOCKET)
 #include <string.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -8,8 +10,8 @@
 #include <ws2tcpip.h>
 #endif
 #ifdef _WIN32
-#include <WinSock2.h>
-#pragma comment(lib, "Ws2_32.lib")
+#include <winsock2.h>
+#pragma comment(lib, "ws2_32.lib")
 typedef SSIZE_T ssize_t;
 #else
 #if defined(__FreeBSD__)
@@ -426,3 +428,4 @@ int scalanative_socketpair(int domain, int type, int protocol, int *sv) {
     return socketpair(domain, type, protocol, sv);
 #endif
 }
+#endif

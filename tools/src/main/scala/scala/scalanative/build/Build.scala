@@ -149,25 +149,10 @@ object Build {
           )
         }
 
-      /* Used to pass alternative paths of compiled native (lib) sources,
-       * eg: reused native sources used in partests.
+      /* Finds all the libraries on the classpath that contain native
+       * code and then compiles them.
        */
-      val compileNativeLibs = {
-        Properties.propOrNone("scalanative.build.paths.libobj") match {
-          case None =>
-            /* Finds all the libraries on the classpath that contain native
-             * code and then compiles them.
-             */
-            findAndCompileNativeLibraries(config, analysis)
-          case Some(libObjectPaths) =>
-            Future.successful {
-              libObjectPaths
-                .split(java.io.File.pathSeparatorChar)
-                .toSeq
-                .map(Paths.get(_))
-            }
-        }
-      }
+      val compileNativeLibs = findAndCompileNativeLibraries(config, analysis)
 
       Future.reduceLeft(
         immutable.Seq(compileGeneratedIR, compileNativeLibs)
@@ -201,10 +186,14 @@ object Build {
       if (config.compilerConfig.multithreading.isEmpty) {
         // format: off
         val jlThread = nir.Global.Top("java.lang.Thread")
-        val jlThreadStart = jlThread.member(nir.Sig.Method("start", Seq(nir.Type.Unit)))
-        val jlPlatformContext = nir.Global.Top("java.lang.PlatformThreadContext")
-        val jlPlatformContextStart = jlPlatformContext.member(nir.Sig.Method("start", Seq(nir.Type.Ref(jlThread), nir.Type.Unit)))
-        val usesSystemThreads = analysis.infos.contains(jlThreadStart) || analysis.infos.contains(jlPlatformContextStart)
+        val jlMainThread = nir.Global.Top("java.lang.Thread$MainThread$")
+        val jlVirtualThread = nir.Global.Top("java.lang.VirtualThread")
+        val usesSystemThreads = analysis.infos.get(jlThread).collect{
+          case cls: linker.Class =>
+            cls.subclasses.size > 2 ||
+            cls.subclasses.map(_.name).diff(Set(jlMainThread, jlVirtualThread)).nonEmpty || 
+            cls.allocations > 4 // minimal number of allocations
+        }.getOrElse(false)
         // format: on
         if (!usesSystemThreads) {
           config.logger.info(

@@ -4,7 +4,7 @@
 #include <time.h>
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
+#include <windows.h>
 
 static int winFreqQuadPartValue = 0;
 static int winFreqQuadPart(int *quad) {
@@ -82,8 +82,8 @@ long long Time_current_nanos() {
 #else
 #if defined(__FreeBSD__)
     int clock = CLOCK_MONOTONIC_PRECISE; // OS has no CLOCK_MONOTONIC_RAW
-#elif defined(__OpenBSD__)
-    int clock = CLOCK_MONOTONIC; // OpenBSD has only CLOCK_MONOTONIC
+#elif defined(__OpenBSD__) || defined(__NetBSD__)
+    int clock = CLOCK_MONOTONIC; // OpenBSD and NetBSD has only CLOCK_MONOTONIC
 #else  // Linux, macOS
     int clock = CLOCK_MONOTONIC_RAW;
 #endif // !FreeBSD || !OpenBSD

@@ -13,6 +13,7 @@ import scalanative.meta.LinktimeInfo._
  *    [[https://scala-native.readthedocs.io/en/latest/lib/posixlib.html]]
  */
 @extern
+@define("__SCALANATIVE_POSIX_SYS_SOCKET")
 object socket {
   type _14 = Nat.Digit2[Nat._1, Nat._4]
   type _31 = Nat.Digit2[Nat._3, Nat._1]
@@ -396,7 +397,7 @@ object socketOps {
   // Also used by posixlib netinet/in.scala
   @resolvedAtLinktime
   def useSinXLen = !isLinux &&
-    (isMac || isFreeBSD || isOpenBSD)
+    (isMac || isFreeBSD || isOpenBSD || isNetBSD)
 
   implicit class sockaddrOps(val ptr: Ptr[sockaddr]) extends AnyVal {
     def sa_len: uint8_t = if (!useSinXLen) {
