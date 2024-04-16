@@ -13,28 +13,28 @@ object Continuations:
   import Impl.*
 
   /** A marker for a given `boundary`. Use `break` or `suspend` to suspend the
-   *  continuation up to the specified `boundary`. This value MUST NOT escape
-   *  the `boundary` that created it.
-   */
+ *  continuation up to the specified `boundary`. This value MUST NOT escape
+ *  the `boundary` that created it.
+ */
   opaque type BoundaryLabel[T] = Impl.BoundaryLabel
 
   /** The C implementation lets us set up how the Continuation structs (holding
-   *  the reified stack fragment) is allocated, through a custom function that
-   *  would allocate a blob of memory of the given size.
-   *
-   *  We want our implementation to use the allocations done by
-   *  `Continuation.alloc`, so that the GC is aware of the stack fragment.
-   */
+ *  the reified stack fragment) is allocated, through a custom function that
+ *  would allocate a blob of memory of the given size.
+ *
+ *  We want our implementation to use the allocations done by
+ *  `Continuation.alloc`, so that the GC is aware of the stack fragment.
+ */
   Impl.init(CFuncPtr2.fromScalaFunction(allocateBlob))
 
   /** Marks the given body as suspendable with a `BoundaryLabel` that `suspend`
-   *  can refer to. Forwards the return value of `body`, or the return value of
-   *  the `suspend` call, if it happens during the execution of `f`.
-   *
-   *  __Safety__: the passed-in `BoundaryLabel` cannot be used outside of the
-   *  scope of the body. Suspending to a `BoundaryLabel` not created by a
-   *  `boundary` call higher on the same call stack is undefined behaviour.
-   */
+ *  can refer to. Forwards the return value of `body`, or the return value of
+ *  the `suspend` call, if it happens during the execution of `f`.
+ *
+ *  __Safety__: the passed-in `BoundaryLabel` cannot be used outside of the
+ *  scope of the body. Suspending to a `BoundaryLabel` not created by a
+ *  `boundary` call higher on the same call stack is undefined behaviour.
+ */
   inline def boundary[T](inline body: BoundaryLabel[T] ?=> T): T =
     // Disable on Windows
     if isWindows then UnsupportedFeature.continuations()
@@ -44,12 +44,12 @@ object Continuations:
     Impl.boundary(boundaryBodyFn, call).get
 
   /** Suspends the current running stack up to the corresponding `boundary` into
-   *  a continuation `cont: R => T` and passes it into `f`. The return value of
-   *  `f(cont)` is returned to `boundary`.
-   *
-   *  Same as `suspendCont`, but hides the fact that the passed in function is a
-   *  continuation.
-   */
+ *  a continuation `cont: R => T` and passes it into `f`. The return value of
+ *  `f(cont)` is returned to `boundary`.
+ *
+ *  Same as `suspendCont`, but hides the fact that the passed in function is a
+ *  continuation.
+ */
   inline def suspend[R, T](
       inline onSuspend: (R => T) => T
   )(using label: BoundaryLabel[T]): R =
@@ -70,9 +70,9 @@ object Continuations:
     suspend[Nothing, T](_ => value)
 
   /** Suspends the computation up to the corresponding `BoundaryLabel`, passing
-   *  the stored Continuation to `onSuspend` and passed its result to
-   *  `boundary`'s caller. Returns when the continuation gets resumed.
-   */
+ *  the stored Continuation to `onSuspend` and passed its result to
+ *  `boundary`'s caller. Returns when the continuation gets resumed.
+ */
   private inline def suspendContinuation[R, T](
       inline onSuspend: Continuation[R, T] => T
   )(using label: BoundaryLabel[T]): R =
@@ -85,13 +85,13 @@ object Continuations:
     Impl.suspend(label, suspendFn, call, continuation)
 
   /** A `Continuation` holds the C implementation continuation pointer,
-   *  alongside a list of `ObjectArray`s, used for storing suspended fragments
-   *  of the stack.
-   *
-   *  These fragments need to be treated as possibly containing pointers into
-   *  the GC heap, and so needs to be scanned by the GC. We store them in an
-   *  `ObjectArray` to simulate just that.
-   */
+ *  alongside a list of `ObjectArray`s, used for storing suspended fragments
+ *  of the stack.
+ *
+ *  These fragments need to be treated as possibly containing pointers into
+ *  the GC heap, and so needs to be scanned by the GC. We store them in an
+ *  `ObjectArray` to simulate just that.
+ */
   private[Continuations] class Continuation[-R, +T] extends (R => T):
     private[Continuations] var inner: Impl.Continuation = _
     private val allocas = mutable.ArrayBuffer[BlobArray]()
@@ -108,13 +108,13 @@ object Continuations:
   // STATIC FUNCTIONS THAT CALL PASSED-IN FUNCTION OBJECTS
 
   /** Transformed version of the suspend lambda, to be passed to cont_suspend.
-   *  Takes:
-   *    - `continuation`: the reified continuation
-   *    - `onSuspend`: The suspend lambda as Continuation => Ptr[?] (the
-   *      returned object, cast to a pointer)
-   *
-   *  Returns Ptr[?] / void*.
-   */
+ *  Takes:
+ *    - `continuation`: the reified continuation
+ *    - `onSuspend`: The suspend lambda as Continuation => Ptr[?] (the
+ *      returned object, cast to a pointer)
+ *
+ *  Returns Ptr[?] / void*.
+ */
   inline def suspendFn[R, T] = suspendFnAny.asInstanceOf[SuspendFnPtr[R, T]]
   private val suspendFnAny: SuspendFnPtr[Any, Any] =
     CFuncPtr2.fromScalaFunction((continuation, onSuspend) =>
@@ -122,21 +122,21 @@ object Continuations:
     )
 
   /** Transformed version of the boundary body, to be passed to cont_boundary.
-   *  Takes:
-   *    - `label`: the boundary label
-   *    - `arg`: The boundary body as BoundaryLabel ?=> Ptr[?] (the returned
-   *      object, cast to a pointer)
-   *
-   *  Returns Ptr[?] / void*.
-   */
+ *  Takes:
+ *    - `label`: the boundary label
+ *    - `arg`: The boundary body as BoundaryLabel ?=> Ptr[?] (the returned
+ *      object, cast to a pointer)
+ *
+ *  Returns Ptr[?] / void*.
+ */
   inline def boundaryBodyFn[T] =
     boundaryBodyFnAny.asInstanceOf[ContinuationBodyPtr[T]]
   private val boundaryBodyFnAny: ContinuationBodyPtr[Any] =
     CFuncPtr2.fromScalaFunction((label, arg) => arg(label))
 
   /** Allocate a blob of memory of `size` bytes, from `continuation`'s
-   *  implementation of `Continuation.alloc`.
-   */
+ *  implementation of `Continuation.alloc`.
+ */
   private def allocateBlob(
       size: CUnsignedLong,
       continuation: Continuation[Any, Any]

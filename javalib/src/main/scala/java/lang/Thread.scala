@@ -24,7 +24,7 @@ import scala.scalanative.unsafe.CString
 import scala.scalanative.runtime.javalib.Proxy
 import scala.concurrent.duration._
 import scala.scalanative.concurrent.NativeExecutionContext
- 
+
 class Thread private[lang] (
     @volatile private var name: String,
     private[java] val platformCtx: PlatformThreadContext /* | Null */
