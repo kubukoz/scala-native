@@ -517,7 +517,7 @@ object Thread {
 
   @alwaysinline private[lang] def nativeCompanion: NativeThread.Companion =
     if (isWindows) WindowsThread
-    else PlaydateThread // PosixThread
+    else PosixThread
 
   def activeCount(): Int = currentThread()
     .getThreadGroup()
