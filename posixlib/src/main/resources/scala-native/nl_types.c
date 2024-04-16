@@ -14,4 +14,3 @@ int scalanative_nl_cat_locale() { return NL_CAT_LOCALE; };
 #endif // _WIN32
 
 #endif
-
