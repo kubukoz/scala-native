@@ -541,8 +541,8 @@ object stdatomic extends stdatomicExt {
   @name("scalanative_atomic_compare_exchange_weak_explicit_llong")
   def atomic_compare_exchange_weak_explicit(ptr: Ptr[atomic_llong], expected: Ptr[CLongLong], desired: CLongLong, memoryOrderOnSuccess: memory_order, memoryOrderOnFailure: memory_order): CBool = extern
   
-//  @name("scalanative_atomic_fetch_add_llong")          
-//  def atomic_fetch_add(ptr: Ptr[atomic_llong], value: CLongLong): CLongLong = extern
+  @name("scalanative_atomic_fetch_add_llong")          
+  def atomic_fetch_add(ptr: Ptr[atomic_llong], value: CLongLong): CLongLong = extern
   @name("scalanative_atomic_fetch_add_explicit_llong") 
   def atomic_fetch_add_explicit(ptr: Ptr[atomic_llong], value: CLongLong, memoryOrder: memory_order): CLongLong = extern
   @name("scalanative_atomic_fetch_sub_llong")          
