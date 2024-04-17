@@ -16,11 +16,6 @@ import scala.scalanative.runtime.NativeThread.State._
 import scala.scalanative.libc.stdatomic.{AtomicLongLong, atomic_thread_fence}
 import scala.scalanative.libc.stdatomic.memory_order._
 import scala.scalanative.runtime.UnsupportedFeature
-
-import scala.scalanative.unsafe.extern
-import scala.scalanative.unsafe.name
-import scala.scalanative.unsafe.CQuote
-import scala.scalanative.unsafe.CString
 import scala.scalanative.runtime.javalib.Proxy
 import scala.concurrent.duration._
 import scala.scalanative.concurrent.NativeExecutionContext
@@ -29,8 +24,7 @@ class Thread private[lang] (
     @volatile private var name: String,
     private[java] val platformCtx: PlatformThreadContext /* | Null */
 ) extends Runnable {
-  // this will be reset by MainThread afterwards, so we don't need to use the atomic counter.
-  protected val tid: scala.Long = -1 // ThreadIdentifiers.next()
+  protected val tid = ThreadIdentifiers.next()
 
   @volatile private var interruptedState = false
   @volatile private[java] var parkBlocker: Object = _
