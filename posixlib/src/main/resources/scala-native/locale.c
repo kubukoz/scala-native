@@ -1,8 +1,6 @@
 #if defined(SCALANATIVE_COMPILE_ALWAYS) || defined(__SCALANATIVE_POSIX_LOCALE)
 #ifdef _WIN32
 // No Windows support
-#elif defined(TARGET_PLAYDATE)
-// no playdate support
 #else
 #if !(defined __STDC_VERSION__) || (__STDC_VERSION__ < 201112L)
 #ifndef SCALANATIVE_SUPPRESS_STRUCT_CHECK_WARNING
