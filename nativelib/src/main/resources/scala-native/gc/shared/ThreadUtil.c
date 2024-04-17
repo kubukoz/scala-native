@@ -5,6 +5,9 @@
 #if !(defined SCALANATIVE_GC_COMMIX ||                                         \
       defined SCALANATIVE_MULTITHREADING_ENABLED)
 
+// If neither multithreading nor Commix GC is enabled, there's no concurrency
+// so we don't need to involve actual mutexes.
+
 INLINE
 bool mutex_init(mutex_t *ref) { return true; }
 
