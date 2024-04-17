@@ -21,7 +21,7 @@
 // process would not use too much resources.
 #define DEFAULT_CHUNK_SIZE "64M"
 #else
-#define DEFAULT_CHUNK_SIZE "2M"
+#define DEFAULT_CHUNK_SIZE "4G"
 #endif
 
 #if defined(__has_feature)
@@ -39,14 +39,8 @@ static size_t CHUNK;
 static size_t TO_NORMAL_MMAP = 1L;
 static size_t DO_PREALLOC = 0L; // No Preallocation.
 
-#ifdef PD_DEBUG
-extern void pd_log_error(char *str, ...);
-#endif
-
 static void exitWithOutOfMemory() {
-#ifdef PD_DEBUG
-    pd_log_error("Out of heap space\n");
-#endif
+    fprintf(stderr, "Out of heap space\n");
     exit(1);
 }
 
