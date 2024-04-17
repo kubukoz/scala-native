@@ -1,5 +1,5 @@
 #if defined(SCALANATIVE_COMPILE_ALWAYS) || defined(__SCALANATIVE_POSIX_SPAWN)
-#if !(defined(_WIN32) || defined(TARGET_PLAYDATE))
+#if !defined(_WIN32)
 
 #include <spawn.h>
 
