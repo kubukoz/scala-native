@@ -49,13 +49,5 @@ int scalanative_getpwnam(char *name, struct scalanative_passwd *buf) {
     }
 }
 
-#elif defined(TARGET_PLAYDATE) // Unix or Mac OS
-
-#include "types.h"
-int scalanative_getpwuid(scalanative_uid_t uid, void *buf) {
-    // No pwd on playdate
-    return 1;
-}
-
-#endif
 #endif // Unix or Mac OS
+#endif
