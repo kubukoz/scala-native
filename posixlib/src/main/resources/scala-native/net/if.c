@@ -5,9 +5,6 @@
 #include <netioapi.h>
 #include <iphlpapi.h>
 #pragma comment(lib, "iphlpapi.lib")
-#elif defined(TARGET_PLAYDATE)
-// Networking in Playdate not supported, bogus values to keep compiler happy
-#define IF_NAMESIZE -1
 #else
 #include <net/if.h>
 
