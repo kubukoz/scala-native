@@ -2,6 +2,17 @@
 #include <stdio.h>
 #include <limits.h>
 
+#if !(defined SCALANATIVE_GC_COMMIX ||                                         \
+      defined SCALANATIVE_MULTITHREADING_ENABLED)
+
+INLINE
+bool mutex_init(mutex_t *ref) { return true; }
+
+INLINE bool mutex_lock(mutex_t *ref) { return true; }
+
+INLINE bool mutex_unlock(mutex_t *ref) { return true; }
+#else
+
 INLINE
 bool thread_create(thread_t *ref, routine_fn routine, void *data) {
 #ifdef _WIN32
@@ -157,3 +168,6 @@ bool rwlock_unlockRead(rwlock_t *ref) {
     return pthread_rwlock_unlock(ref) == 0;
 #endif
 }
+
+#endif
+//(defined SCALANATIVE_GC_COMMIX || defined SCALANATIVE_MULTITHREADING_ENABLED)
