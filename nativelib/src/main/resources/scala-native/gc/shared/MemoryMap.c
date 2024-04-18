@@ -1,6 +1,8 @@
 // MemoryMap.c is used by all GCs and Zone
 
 #include "shared/MemoryMap.h"
+#include <stdlib.h>
+#include <stdio.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -36,6 +38,10 @@
 #define HEAP_MEM_FD_OFFSET 0
 #endif // Unix
 
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
+
 word_t *memoryMap(size_t memorySize) {
 #ifdef _WIN32
     // On Windows only reserve given chunk of memory. It should be explicitly
@@ -44,8 +50,23 @@ word_t *memoryMap(size_t memorySize) {
     // supports only 32-bit address space and is in most cases not recommended.
     return VirtualAlloc(NULL, memorySize, MEM_RESERVE, PAGE_NOACCESS);
 #else // Unix
-    return mmap(NULL, memorySize, HEAP_MEM_PROT, HEAP_MEM_FLAGS, HEAP_MEM_FD,
-                HEAP_MEM_FD_OFFSET);
+    // return mmap(NULL, memorySize, HEAP_MEM_PROT, HEAP_MEM_FLAGS, HEAP_MEM_FD,
+    //             HEAP_MEM_FD_OFFSET);
+
+#ifdef PD_DEBUG
+    pd_log_error("Trying to map %d bytes of memory\n", memorySize);
+#endif
+    word_t *result = malloc(memorySize);
+#ifdef PD_DEBUG
+    pd_log_error("Mapped %d bytes of memory to %p\n", memorySize, result);
+#endif
+
+    if (result == NULL) {
+#ifdef PD_DEBUG
+        pd_log_error("Failed to map memory\n");
+#endif
+    }
+    return result;
 #endif
 }
 
@@ -65,12 +86,14 @@ word_t *memoryMapPrealloc(size_t memorySize, size_t doPrealloc) {
     if (!doPrealloc) {
         return memoryMap(memorySize);
     }
-    word_t *res = mmap(NULL, memorySize, HEAP_MEM_PROT, HEAP_MEM_FLAGS_PREALLOC,
-                       HEAP_MEM_FD, HEAP_MEM_FD_OFFSET);
+    word_t *res = malloc(memorySize);
+    // word_t *res = mmap(NULL, memorySize, HEAP_MEM_PROT,
+    // HEAP_MEM_FLAGS_PREALLOC,
+    //                    HEAP_MEM_FD, HEAP_MEM_FD_OFFSET);
 #ifndef __linux__
     // if we are not on linux the next best thing we can do is to mark the pages
     // as MADV_WILLNEED but only if doPrealloc is enabled.
-    madvise(res, memorySize, MADV_WILLNEED);
+    // madvise(res, memorySize, MADV_WILLNEED);
 #endif // __linux__
 
     return res;
@@ -90,8 +113,10 @@ bool memoryCommit(void *ref, size_t memorySize) {
 #include <stdlib.h>
 
 static void exitWithOutOfMemory() {
-    fprintf(stderr, "Out of heap space\n");
-    exit(1);
+#ifdef PD_DEBUG
+    pd_log_error("Out of heap space\n");
+#endif
+    exit(137);
 }
 
 word_t *memoryMapOrExitOnError(size_t memorySize) {
@@ -108,8 +133,11 @@ word_t *memoryMapOrExitOnError(size_t memorySize) {
 }
 
 static void exitWithFailToUnmapMemory() {
-    fprintf(stderr, "Fail to unmap memory.\n");
-    exit(1);
+    // fprintf(stderr, "Fail to unmap memory.\n");
+#ifdef PD_DEBUG
+    pd_log_error("Fail to unmap memory.\n");
+#endif
+    exit(138);
 }
 
 void memoryUnmapOrExitOnError(void *address, size_t memorySize) {

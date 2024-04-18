@@ -121,6 +121,8 @@ void scalanative_set_os_props(void (*add_prop)(const char *, const char *)) {
     add_prop("os.name", "Windows (Unknown version)");
 #elif defined(__APPLE__)
     add_prop("os.name", "Mac OS X");
+#elif defined(TARGET_PLAYDATE)
+    add_prop("os.name", "playdate");
 #else
     struct utsname name;
     if (uname(&name) == 0) {
@@ -139,6 +141,8 @@ void scalanative_set_os_props(void (*add_prop)(const char *, const char *)) {
     arch = "aarch64";
 #endif // Windows
 
+#elif defined(TARGET_PLAYDATE)
+    arch = "armv7";
 #else // on Unix
     struct utsname buffer;
     if (uname(&buffer) >= 0) {

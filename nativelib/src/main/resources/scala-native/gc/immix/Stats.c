@@ -12,8 +12,9 @@
 void Stats_writeToFile(Stats *stats);
 
 void Stats_Init(Stats *stats, const char *statsFile) {
-    stats->outFile = fopen(statsFile, "w");
-    fprintf(stats->outFile, "mark_time_ns,nullify_time_ns,sweep_time_ns\n");
+#ifdef PD_DEBUG
+    pd_log_error("mark_time_ns,nullify_time_ns,sweep_time_ns\n");
+#endif
     stats->collections = 0;
 }
 
@@ -36,13 +37,13 @@ void Stats_writeToFile(Stats *stats) {
     if (remainder == 0) {
         remainder = STATS_MEASUREMENTS;
     }
-    FILE *outFile = stats->outFile;
     for (uint64_t i = 0; i < remainder; i++) {
-        fprintf(outFile, "%" PRIu64 ",%" PRIu64 ",%" PRIu64 "\n",
-                stats->mark_time_ns[i], stats->nullify_time_ns[i],
-                stats->sweep_time_ns[i]);
+#ifdef PD_DEBUG
+        pd_log_error("%" PRIu64 ",%" PRIu64 ",%" PRIu64 "\n",
+                     stats->mark_time_ns[i], stats->nullify_time_ns[i],
+                     stats->sweep_time_ns[i]);
+#endif
     }
-    fflush(outFile);
 }
 
 void Stats_OnExit(Stats *stats) {
@@ -52,7 +53,6 @@ void Stats_OnExit(Stats *stats) {
             // there were some measurements not written in the last full batch.
             Stats_writeToFile(stats);
         }
-        fclose(stats->outFile);
     }
 }
 

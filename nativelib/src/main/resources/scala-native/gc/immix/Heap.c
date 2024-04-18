@@ -17,8 +17,16 @@
 #include "WeakReferences.h"
 #include "immix_commix/Synchronizer.h"
 
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
+
+extern void assertOr(int condition, char *message);
+
 void Heap_exitWithOutOfMemory(const char *details) {
-    fprintf(stderr, "Out of heap space %s\n", details);
+#ifdef PD_DEBUG
+    pd_log_error("Out of heap space %s\n", details);
+#endif
     StackTrace_PrintStackTrace();
     exit(1);
 }
@@ -58,6 +66,7 @@ word_t *Heap_mapAndAlign(size_t memoryLimit, size_t alignmentSize) {
 void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
     size_t memoryLimit = Heap_getMemoryLimit();
 
+    /*
     if (maxHeapSize < MIN_HEAP_SIZE) {
         fprintf(stderr, "GC_MAXIMUM_HEAP_SIZE too small to initialize heap.\n");
         fprintf(stderr, "Minimum required: %zum \n",
@@ -88,6 +97,10 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
     if (maxHeapSize == UNLIMITED_HEAP_SIZE) {
         maxHeapSize = memoryLimit;
     }
+     */
+
+    maxHeapSize = memoryLimit;
+    minHeapSize = maxHeapSize;
 
     uint32_t maxNumberOfBlocks = maxHeapSize / SPACE_USED_PER_BLOCK;
     uint32_t initialBlockCount = minHeapSize / SPACE_USED_PER_BLOCK;
@@ -163,8 +176,9 @@ void Heap_Collect(Heap *heap, Stack *stack) {
     uint64_t start_ns, nullify_start_ns, sweep_start_ns, end_ns;
     Stats *stats = heap->stats;
 #ifdef DEBUG_PRINT
-    printf("\nCollect\n");
-    fflush(stdout);
+#ifdef PD_DEBUG
+    pd_log_error("\nCollect\n");
+#endif
 #endif
     if (stats != NULL) {
         start_ns = Time_current_nanos();
@@ -191,8 +205,9 @@ void Heap_Collect(Heap *heap, Stack *stack) {
 #endif
     WeakReferences_InvokeGCFinishedCallback();
 #ifdef DEBUG_PRINT
-    printf("End collect\n");
-    fflush(stdout);
+#ifdef PD_DEBUG
+    pd_log_error("End collect\n");
+#endif
 #endif
 }
 
@@ -214,8 +229,9 @@ bool Heap_shouldGrow(Heap *heap) {
     fflush(stdout);
 #endif
 
-    return freeBlockCount * 2 < blockCount ||
-           4 * unavailableBlockCount > blockCount;
+    // return freeBlockCount * 2 < blockCount ||
+    //        4 * unavailableBlockCount > blockCount;
+    return false;
 }
 
 void Heap_Recycle(Heap *heap) {
@@ -313,9 +329,10 @@ void Heap_Grow(Heap *heap, uint32_t incrementInBlocks) {
     size_t incrementInBytes = incrementInBlocks * SPACE_USED_PER_BLOCK;
 
 #ifdef DEBUG_PRINT
-    printf("Growing heap by %zu bytes, to %zu bytes\n", incrementInBytes,
-           heap->heapSize + incrementInBytes);
-    fflush(stdout);
+#ifdef PD_DEBUG
+    pd_log_error("Growing heap by %zu bytes, to %zu bytes\n", incrementInBytes,
+                 heap->heapSize + incrementInBytes);
+#endif
 #endif
 
     word_t *heapEnd = heap->heapEnd;

@@ -12,7 +12,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #elif defined(__unix__) || defined(__unix) || defined(unix) ||                 \
-    (defined(__APPLE__) && defined(__MACH__))
+    (defined(__APPLE__) && defined(__MACH__)) || defined(TARGET_PLAYDATE)
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/param.h>
@@ -94,6 +94,8 @@ size_t getMemorySize() {
     return 0L; /* Failed? */
 #endif /* sysctl and sysconf variants */
 
+#elif defined(TARGET_PLAYDATE)
+    return (size_t)10 * 1024 * 1024;
 #else
     return 0L; /* Unknown OS. */
 #endif

@@ -1,3 +1,4 @@
+#ifndef TARGET_PLAYDATE
 #if defined(SCALANATIVE_COMPILE_ALWAYS) || defined(__SCALANATIVE_DELIMCC)
 #include "delimcc.h"
 #include <stddef.h>
@@ -401,3 +402,5 @@ void scalanative_continuation_free(Continuation *continuation) {
 #endif // DELIMCC_DEBUG
 
 #endif
+
+#endif // TARGET_PLAYDATE
