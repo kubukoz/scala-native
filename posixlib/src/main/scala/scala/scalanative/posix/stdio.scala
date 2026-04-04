@@ -1,8 +1,10 @@
 package scala.scalanative
 package posix
 
+import scalanative.posix.sys.types
 import scalanative.unsafe._
-import scalanative.posix.sys.types, types.{off_t, size_t}
+
+import types.{off_t, size_t}
 
 @extern object stdio extends stdio
 
@@ -24,7 +26,7 @@ import scalanative.posix.sys.types, types.{off_t, size_t}
   /* Open Group POSIX defines this as a C macro.
    * To provide the value in a portable manner, it is implemented here as
    * an external method.  A slight but necessary deviation from the
-   * specification. The same idiom is used in an number of other posixlib
+   * specification. The same idiom is used in a number of other posixlib
    * files.
    */
   @name("scalanative_l_ctermid")

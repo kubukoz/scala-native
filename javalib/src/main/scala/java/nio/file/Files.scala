@@ -2,36 +2,34 @@ package java.nio.file
 
 import java.io._
 import java.lang.Iterable
-
-import java.nio.charset.{Charset, StandardCharsets}
 import java.nio.channels.SeekableByteChannel
-import java.nio.file.attribute._
+import java.nio.charset.{Charset, StandardCharsets}
 import java.nio.file.StandardCopyOption.{COPY_ATTRIBUTES, REPLACE_EXISTING}
-
+import java.nio.file.attribute.PosixFilePermission._
+import java.nio.file.attribute._
+import java.util.WindowsHelperMethods._
 import java.util._
-import java.util.function.BiPredicate
-import java.util.stream.Stream
+import java.util.function.{BiPredicate, Consumer, Supplier}
+import java.util.stream.{Stream, StreamSupport}
+import java.{lang => jl}
 
-import scalanative.unsigned._
-import scalanative.unsafe._
-import scalanative.libc._
-
-import scalanative.posix.errno.{errno, EEXIST, ENOENT, ENOTEMPTY}
-import scalanative.posix.{fcntl, limits, unistd}
-import scalanative.posix.sys.stat
-
+import scalanative.libc.{errno => _, _}
 import scalanative.meta.LinktimeInfo.isWindows
-
 import scalanative.nio.fs.FileHelpers
 import scalanative.nio.fs.unix.UnixException
-
-import scalanative.windows._
+import scalanative.posix.dirent._
+import scalanative.posix.direntOps._
+import scalanative.posix.errno._
+import scalanative.posix.sys.stat
+import scalanative.posix.{fcntl, limits, unistd}
+import scalanative.unsafe._
+import scalanative.unsigned._
+import scalanative.windows.ErrorHandlingApi._
+import scalanative.windows.FileApiExt._
 import scalanative.windows.WinBaseApi._
 import scalanative.windows.WinBaseApiExt._
-import scalanative.windows.FileApiExt._
-import scalanative.windows.ErrorHandlingApi._
+import scalanative.windows._
 import scalanative.windows.winnt.AccessRights._
-import java.util.WindowsHelperMethods._
 
 object Files {
   private final val emptyPath = Paths.get("", Array.empty)
@@ -46,31 +44,44 @@ object Files {
         true
       else throw new UnsupportedOperationException()
 
-    val targetFile = target.toFile()
-    val targetExists = targetFile.exists()
+    val noFollowOpts = Array(LinkOption.NOFOLLOW_LINKS)
 
-    val out =
-      if (!targetExists || (targetFile.isFile() && replaceExisting)) {
-        new FileOutputStream(targetFile, append = false)
-      } else if (targetFile.isDirectory() &&
-          targetFile.list().isEmpty &&
-          replaceExisting) {
-        if (!targetFile.delete()) throw new IOException()
-        new FileOutputStream(targetFile, append = false)
-      } else if (targetFile.isDirectory() &&
-          !targetFile.list().isEmpty &&
-          replaceExisting) {
-        throw new DirectoryNotEmptyException(targetFile.getAbsolutePath())
-      } else {
-        throw new FileAlreadyExistsException(targetFile.getAbsolutePath())
+    val out = {
+      if (Files.exists(target, noFollowOpts) && !replaceExisting) {
+        throw new FileAlreadyExistsException(target.toAbsolutePath().toString())
+      } else if (Files.isRegularFile(target, noFollowOpts)) {
+        /* Deleting and recreating a file in order to replace it is expensive
+         * but also more certain than adjusting permissions when umask
+         * is unknowable.
+         */
+        Files.delete(target)
+      } else if (Files.isDirectory(target, noFollowOpts)) {
+        if (!target.toFile().list().isEmpty)
+          throw new DirectoryNotEmptyException(
+            target.toAbsolutePath().toString()
+          )
+        else
+          Files.delete(target)
+      } else if (Files.isSymbolicLink(target)) {
+        Files.delete(target)
       }
 
+      Files.newOutputStream(target, Array.empty)
+    }
+
     try {
-      val copyResult = copy(in, out)
-      // Make sure that created file has correct permissions
-      if (!targetExists) {
-        targetFile.setReadable(true, ownerOnly = false)
-        targetFile.setWritable(true, ownerOnly = true)
+      val copyResult = in.transferTo(out)
+      if (isWindows) {
+        // This block is unnecessary on unix. Is this really necessary on
+        // Windows?
+        // Make sure that created file has correct permissions
+        val targetFile = target.toFile()
+        val targetExists = targetFile.exists()
+
+        if (!targetExists) {
+          targetFile.setReadable(true, ownerOnly = false)
+          targetFile.setWritable(true, ownerOnly = true)
+        }
       }
       copyResult
     } finally out.close()
@@ -78,7 +89,253 @@ object Files {
 
   def copy(source: Path, out: OutputStream): Long = {
     val in = newInputStream(source, Array.empty)
-    copy(in, out)
+    try {
+      in.transferTo(out)
+    } finally in.close()
+  }
+
+  /* Precondition:
+   *   - an ancestor caller has ensured that cTarget is neither a directory
+   *     nor a symbolic link. Let fcntl.open() determine how other non-regular
+   *     existing files are handled.
+   */
+
+  private def unixCopyFile(
+      source: Path,
+      target: Path,
+      copyOptions: Array[CopyOption],
+      permissions: Set[PosixFilePermission]
+  ): Unit = {
+    if (isWindows)
+      throw new IOException("Unix specific method; should never get here")
+    else
+      Zone.acquire { implicit z =>
+
+        /* Requirement:
+         *
+         *   Files.copy(Path, Path, Options) on the JVM ensures that, on
+         *   success, the PosixPermissions of the source, limited by the
+         *   process umask, have been copied to the target.
+         *   This is similar to bash & zsh behavior.
+         *
+         *   Using the usual 022 umask, copying a source file with permissions
+         *   r-xrwxrwx results in a target file with permissions
+         *   r-xr-xr-x.
+         */
+
+        /* Design Notes:
+         *
+         *   - Use POSIX I/O to handle the corner case where a file exists but
+         *     the user does not have write access: r--x------ & kin.
+         *
+         *     JVM handles this case, Scala Native must also.
+         *
+         *     Most of Scala Native javalib Files.scala, File_Helpers.scala,
+         *     java.nio.*, and java.io.* use a non-atomic sequence of steps:
+         *     create the file, then set indicated attributes. Any subsequent
+         *     write to the file fails because the file permissions have been
+         *     set user no-write.
+         *
+         *     POSIX fcntl.open() is defined so that it can open and create
+         *     a new file for write if the indicated directory permissions
+         *     allow. Code can use the fd returned to write to the file as long
+         *     as that fd is open. The mode argument to open() is applied
+         *     only to future accesses.
+         *
+         *   - This method is optimized for success paths. That is
+         *     condition checking is delegated to the operating system
+         *     under the expectation that in most cases the operation will
+         *     succeed.
+         *
+         *   - Some, but probably not all, rare and somewhat astonishing corner
+         *     conditions exist when the REPLACE_EXISTING option is present:
+         *
+         *     - Any kind of IOException, including but not limited to:
+         *           - source file can not be read
+         *       Action: target file is deleted.
+         *
+         *     - target file exists but does not have write permission,
+         *       e.g. r-xr-xr-x.
+         *       Action: copy proceeds but inode number changes.
+         *
+         *   - This method follows the practice from early Scala Native
+         *     development days of modifying files in-place.  This
+         *     leaves a pretty wide window for misadventure, particularly
+         *     if more than one thread or process is accessing the file.
+         *
+         *     Many contemporary applications create a temporary intermediate
+         *     file, copy the source contents to the temporary,
+         *     set permissions on the temporary, and then, finally, if the
+         *     replace conditions still hold, rename the temporary to the
+         *     provided target path. A second application will never
+         *     see an incompletely copied target file.
+         *
+         *     The major difficulty with that approach is reliably creating
+         *     a file with a temporary name. The obvious library calls
+         *     each have their own drawbacks. A "create-until-success" loop
+         *     also has its own pain points: more than an afternoon's work.
+         *
+         *     Oh, give me a good ship, a fair wind, and a few clever
+         *     secondary school students!
+         */
+
+        def permissionsToUnixModeType(
+            perms: Set[PosixFilePermission]
+        ): UInt = {
+          var mode = 0.toUInt
+
+          if (perms.contains(OWNER_READ))
+            mode |= stat.S_IRUSR
+
+          if (perms.contains(OWNER_WRITE))
+            mode |= stat.S_IWUSR
+
+          if (perms.contains(OWNER_EXECUTE))
+            mode |= stat.S_IXUSR
+
+          if (perms.contains(GROUP_READ))
+            mode |= stat.S_IRGRP
+
+          if (perms.contains(GROUP_WRITE))
+            mode |= stat.S_IWGRP
+
+          if (perms.contains(GROUP_EXECUTE))
+            mode |= stat.S_IXGRP
+
+          if (perms.contains(OTHERS_READ))
+            mode |= stat.S_IROTH
+
+          if (perms.contains(OTHERS_WRITE))
+            mode |= stat.S_IWOTH
+
+          if (perms.contains(OTHERS_EXECUTE))
+            mode |= stat.S_IXOTH
+
+          mode
+        }
+
+        def openTarget(
+            cTarget: CString,
+            replaceExisting: Boolean,
+            cPerms: UInt
+        ): Int = {
+          val cOpenExtraFlags =
+            if (replaceExisting) fcntl.O_TRUNC
+            else fcntl.O_EXCL
+
+          val createFd = fcntl.open(
+            cTarget,
+            fcntl.O_WRONLY | fcntl.O_CREAT | cOpenExtraFlags,
+            cPerms
+          )
+
+          if (createFd != -1) {
+            createFd
+          } else if (replaceExisting && (errno == EACCES)) {
+            /* Handle what should be a vanishingly rare but possible
+             * corner case where cTarget exists but is not user writable;
+             * r-xr-xr-x, --xr-xr-x, and kin. O_TRUNC will fail in those cases.
+             *
+             * unlink() is a directory operation. If the permissions on that
+             * directory permit, the operation should succeed.
+             *
+             * Of course, if two or more threads/processes are accessing the
+             * same file without explicit synchronization, there are always
+             * timing issues, since the file unlink & subsequent creation
+             * are not atomic.
+             */
+            unistd.unlink(cTarget) // Handle error later.
+            openTarget(cTarget, replaceExisting = false, cPerms)
+          } else {
+            val msg = LibcExt.strError()
+            throw new IOException(
+              s"error opening target path '${cTarget}': ${msg}"
+            )
+          }
+        }
+
+        def transferTo(inFd: Int, outFd: Int): Unit = {
+          /* If measurement and/or experience shows this method to be a
+           * performance bottleneck, a future Evolution could explore
+           * calling methods operating systems have developed just for this
+           * purpose. Linux has 'copy_file_range()' while macOS has
+           * 'copyfile()'. The picture on FreeBSD is more complicated.
+           */
+
+          val limit = 8192 // a guess of appropriate size, 2 * usual page size
+          val buffer = new Array[Byte](limit).at(0)
+
+          errno = 0 // clearing is probably redundant but be defensive
+
+          var doneRead = false
+
+          while (!doneRead) {
+            val nRead = unistd.read(inFd, buffer, limit.toCSize)
+
+            if (nRead < 0) {
+              val msg = LibcExt.strError()
+              throw new IOException(
+                s"error reading copy source file: ${msg}"
+              )
+            } else if (nRead == 0) {
+              doneRead = true // EOF
+            } else {
+              // Be robust to partial writes.
+              var nRemaining = nRead
+              while ((nRemaining > 0) && errno == 0) {
+                val nWritten = unistd.write(outFd, buffer, nRemaining.toCSize)
+                if (nWritten < 0) {
+                  val msg = LibcExt.strError()
+                  throw new IOException(
+                    s"error writing copy target file: ${msg}"
+                  )
+                }
+                nRemaining -= nWritten
+              }
+            }
+          }
+        }
+
+        val absSource = source.toAbsolutePath().toString()
+        val cSource = toCString(absSource)
+
+        val absTarget = target.toAbsolutePath().toString()
+        val cTarget = toCString(absTarget)
+
+        val cPerms = permissionsToUnixModeType(permissions)
+
+        errno = 0
+
+        /* Hold the 'source' read-lock the shortest amount of time.
+         * Do the potentially time-consuming open of 'target' first.
+         *
+         * Other Java I/O options probably do not make sense for uxix I/O.
+         * Time & experience will tell.
+         */
+        val outFd =
+          openTarget(cTarget, copyOptions.contains(REPLACE_EXISTING), cPerms)
+
+        try {
+          val inFd = fcntl.open(cSource, fcntl.O_RDONLY, 0.toUInt)
+
+          if (inFd == -1) {
+            val msg = LibcExt.strError()
+            throw new IOException(
+              s"error opening source path '${absSource}': ${msg}"
+            )
+          }
+
+          try
+            transferTo(inFd, outFd)
+          finally
+            unistd.close(inFd)
+
+        } catch {
+          case _: IOException => unistd.unlink(cTarget) // leave no garbage
+        } finally {
+          unistd.close(outFd)
+        }
+      }
   }
 
   def copy(source: Path, target: Path, options: Array[CopyOption]): Path = {
@@ -88,23 +345,34 @@ object Files {
       else classOf[PosixFileAttributes]
 
     val attrs = Files.readAttributes(source, attrsCls, linkOpts)
-    if (attrs.isSymbolicLink())
-      throw new IOException(
-        s"Unsupported operation: copy symbolic link $source to $target"
-      )
-
     val targetExists = exists(target, linkOpts)
     if (targetExists && !options.contains(REPLACE_EXISTING))
       throw new FileAlreadyExistsException(target.toString)
 
-    if (isDirectory(source, Array.empty)) {
+    if (attrs.isSymbolicLink() &&
+        options.contains(LinkOption.NOFOLLOW_LINKS)) {
+      if (targetExists) Files.delete(target)
+      createSymbolicLink(target, readSymbolicLink(source), Array.empty)
+    } else if (isDirectory(source, Array.empty)) {
       createDirectory(target, Array.empty)
-    } else {
+    } else if (!isWindows) {
+      // Scala Native Issue #4382
+      // Devos, ensure preconditions described at top of method endure.
+      unixCopyFile(
+        source,
+        target,
+        options,
+        attrs.asInstanceOf[PosixFileAttributes].permissions()
+      )
+    } else { // Windows
       val in = newInputStream(source, Array.empty)
       try copy(in, target, options.filter(_ == REPLACE_EXISTING))
       finally in.close()
     }
 
+    /* Bug Alert! The following block appears to not copy Access Control Lists.
+     * See Scala Native Issue #4381.
+     */
     if (options.contains(COPY_ATTRIBUTES)) {
       val attrViewCls =
         if (isWindows) classOf[DosFileAttributeView]
@@ -124,6 +392,7 @@ object Files {
           newAttrView.setHidden(attrs.isHidden())
           newAttrView.setReadOnly(attrs.isReadOnly())
           newAttrView.setSystem(attrs.isSystem())
+        case _ => ??? // ignore
       }
       newAttrView.setTimes(
         attrs.lastModifiedTime(),
@@ -132,18 +401,6 @@ object Files {
       )
     }
     target
-  }
-
-  private def copy(in: InputStream, out: OutputStream): Long = {
-    var written: Long = 0L
-    var value: Int = 0
-
-    while ({ value = in.read(); value != -1 }) {
-      out.write(value)
-      written += 1
-    }
-
-    written
   }
 
   def createDirectories(dir: Path, attrs: Array[FileAttribute[_]]): Path =
@@ -218,7 +475,7 @@ object Files {
               null
             )
           else
-            throw new IOException(fromCString(string.strerror(e)))
+            throw new IOException(LibcExt.strError(e))
         }
 
       }
@@ -236,8 +493,9 @@ object Files {
         val targetFilename = toCWideStringUTF16LE(target.toString())
         val linkFilename = toCWideStringUTF16LE(link.toString())
         val flags =
-          if (target.toFile().isFile()) SYMBOLIC_LINK_FLAG_FILE
-          else SYMBOLIC_LINK_FLAG_DIRECTORY
+          if (isDirectory(target, Array(LinkOption.NOFOLLOW_LINKS)))
+            SYMBOLIC_LINK_FLAG_DIRECTORY
+          else SYMBOLIC_LINK_FLAG_FILE
         val created =
           CreateSymbolicLinkW(
             symlinkFileName = linkFilename,
@@ -276,25 +534,36 @@ object Files {
     }
   }
 
-  private def createTempDirectory(
-      dir: File,
+  private def createTempDirectoryImpl(
+      dir: Path,
       prefix: String,
       attrs: Array[FileAttribute[_]]
   ): Path = {
-    val p = if (prefix == null) "" else prefix
-    val temp = FileHelpers.createTempFile(
-      p,
-      "",
-      dir,
-      minLength = false,
-      throwOnError = true
-    )
-    if (temp.delete() && temp.mkdir()) {
-      val tempPath = temp.toPath()
-      setAttributes(tempPath, attrs)
-      tempPath
+
+    if (!isWindows) {
+      val tempDirPath = FileHelpers.createTempDirectoryUnixImpl(dir, prefix)
+
+      if (attrs.length > 0)
+        setAttributes(tempDirPath, attrs)
+
+      tempDirPath
+
     } else {
-      throw new IOException()
+      val p = if (prefix == null) "" else prefix
+      val temp = FileHelpers.createTempFile(
+        p,
+        "",
+        dir.toFile(),
+        minLength = false,
+        throwOnError = true
+      )
+      if (temp.delete() && temp.mkdir()) {
+        val tempPath = temp.toPath()
+        setAttributes(tempPath, attrs)
+        tempPath
+      } else {
+        throw new IOException()
+      }
     }
   }
 
@@ -303,13 +572,15 @@ object Files {
       prefix: String,
       attrs: Array[FileAttribute[_]]
   ): Path =
-    createTempDirectory(dir.toFile(), prefix, attrs)
+    createTempDirectoryImpl(dir, prefix, attrs)
 
   def createTempDirectory(
       prefix: String,
       attrs: Array[FileAttribute[_]]
-  ): Path =
-    createTempDirectory(null: File, prefix, attrs)
+  ): Path = {
+    val dirPath = Path.of(FileHelpers.tempDir, Array.empty)
+    createTempDirectoryImpl(dirPath, prefix, attrs)
+  }
 
   private def createTempFile(
       dir: File,
@@ -367,7 +638,7 @@ object Files {
   }
 
   def delete(path: Path): Unit = {
-    if (!exists(path, Array.empty)) {
+    if (!exists(path, Array(LinkOption.NOFOLLOW_LINKS))) {
       throw new NoSuchFileException(path.toString)
     } else if (isWindows) {
       windowsDeletePath(path)
@@ -394,25 +665,14 @@ object Files {
       matcher: BiPredicate[Path, BasicFileAttributes],
       options: Array[FileVisitOption]
   ): Stream[Path] = {
-    val nofollow = Array(LinkOption.NOFOLLOW_LINKS)
-    val stream =
-      walk(start, maxDepth, 0, options, new HashSet[Path]()).filter { p =>
-        val brokenSymLink =
-          if (isSymbolicLink(p)) {
-            val target = readSymbolicLink(p)
-            val targetExists = exists(target, nofollow)
-            !targetExists
-          } else false
-        val linkOpts =
-          if (!brokenSymLink) linkOptsFromFileVisitOpts(options) else nofollow
-        val attributes =
-          getFileAttributeView(p, classOf[BasicFileAttributeView], linkOpts)
-            .readAttributes()
+    Objects.requireNonNull(start, "start is null")
+    if (maxDepth < 0)
+      throw new IllegalArgumentException("'maxDepth' is negative")
+    Objects.requireNonNull(matcher, "matcher is null")
 
-        matcher.test(p, attributes)
-      }
+    val followLinks = options.contains(FileVisitOption.FOLLOW_LINKS)
 
-    stream
+    FileTreeWalker(start, maxDepth, followLinks, matcher).stream()
   }
 
   def getAttribute(
@@ -464,12 +724,11 @@ object Files {
     getAttribute(path, "posix:permissions", options)
       .asInstanceOf[Set[PosixFilePermission]]
 
-  def isDirectory(path: Path, options: Array[LinkOption]): Boolean = {
-    def notALink =
-      if (options.contains(LinkOption.NOFOLLOW_LINKS)) !isSymbolicLink(path)
-      else true
-    exists(path, options) && notALink && path.toFile().isDirectory()
-  }
+  def isDirectory(path: Path, options: Array[LinkOption]): Boolean =
+    try {
+      val attrs = readAttributes(path, classOf[BasicFileAttributes], options)
+      attrs != null && attrs.isDirectory()
+    } catch { case _: IOException => false }
 
   def isExecutable(path: Path): Boolean =
     path.toFile().canExecute()
@@ -481,42 +740,24 @@ object Files {
     path.toFile().canRead()
 
   def isRegularFile(path: Path, options: Array[LinkOption]): Boolean = {
-    if (isWindows) {
-      getAttribute(path, "basic:isRegularFile", options).asInstanceOf[Boolean]
-    } else
-      Zone.acquire { implicit z =>
-        val buf = alloc[stat.stat]()
-        val err =
-          if (options.contains(LinkOption.NOFOLLOW_LINKS)) {
-            stat.lstat(toCString(path.toFile().getPath()), buf)
-          } else {
-            stat.stat(toCString(path.toFile().getPath()), buf)
-          }
-        if (err == 0) stat.S_ISREG(buf._13) == 1
-        else false
-      }
+    try {
+      val attrs = readAttributes(path, classOf[BasicFileAttributes], options)
+      attrs != null && attrs.isRegularFile()
+    } catch { case _: IOException => false }
   }
 
   def isSameFile(path: Path, path2: Path): Boolean =
     path.toFile().getCanonicalPath() == path2.toFile().getCanonicalPath()
 
-  def isSymbolicLink(path: Path): Boolean = Zone.acquire { implicit z =>
-    if (isWindows) {
-      val filename = toCWideStringUTF16LE(path.toFile().getPath())
-      val attrs = FileApi.GetFileAttributesW(filename)
-      val exists = attrs != INVALID_FILE_ATTRIBUTES
-      def isReparsePoint = (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0
-      exists & isReparsePoint
-    } else {
-      val filename = toCString(path.toFile().getPath())
-      val buf = alloc[stat.stat]()
-      if (stat.lstat(filename, buf) == 0) {
-        stat.S_ISLNK(buf._13) == 1
-      } else {
-        false
-      }
-    }
-  }
+  def isSymbolicLink(path: Path): Boolean =
+    try {
+      val attrs = readAttributes(
+        path,
+        classOf[BasicFileAttributes],
+        Array(LinkOption.NOFOLLOW_LINKS)
+      )
+      attrs != null && attrs.isSymbolicLink()
+    } catch { case _: IOException => false }
 
   def isWritable(path: Path): Boolean =
     path.toFile().canWrite()
@@ -526,6 +767,143 @@ object Files {
 
   def lines(path: Path, cs: Charset): Stream[String] =
     newBufferedReader(path, cs).lines(true)
+
+  private final val nul = 0.toByte // ASCII NUL
+  private final val dot = 46.toByte // ASCII period or dot
+
+  private def posixList(dir: Path, dirString: String): Stream[Path] = {
+    /* The JVM specification describes the returned stream as lazy.
+     *
+     * FileHelpers.unixList() is not used here because it eagerly creates an
+     * Array of all the entries in the directory.
+     */
+
+    class PosixDir(dir: Path, dirString: String)
+        extends Supplier[Spliterator[Path]] {
+      /* Older operating system provided no guarantee that the
+       * dirent data returned by readdir() would not be overwritten.
+       *
+       * Open Group 2018 says "They shall not be affected by a call to
+       * readdir() on a different directory stream.". Most if not all current
+       * (circa 2024) operating systems supported by Scala Native describe
+       * the same guarantee.
+       *
+       * The calls to readdir() here are two uses of result of the same
+       * one opendir() call. Exactly the kind of access pattern which
+       * "must be externally synchronized".
+       *
+       * That "external synchronization" exists in this method but is
+       * not obvious on a quick reading.
+       *
+       * The __essential__ concept that the "trySplit()" method of the
+       * Spliterator for the returned stream is overriden to _never_ split.
+       * No split, no parallel execution of this stream, no conflict.
+       *
+       * The Stream "spliterator" and "iterator" methods are described in
+       * JVM as terminal operations. That is, one should not be able to
+       * obtain more than one. Subsequent attempts will fail.
+       * Both are also described as non-thread safe, only the returned
+       * stream needs to be thread-safe.
+       *
+       * Belt, suspenders, duct tape, and instant glue
+       * "external synchronization" by design rather than runtime
+       * "synchronized" blocks.
+       */
+
+      private var posixDirClosed = true
+
+      private val posixDir: Ptr[DIR] = Zone.acquire { implicit z =>
+        val ptr = opendir(toCString(dirString))
+        if (ptr == null)
+          throw PosixException(dirString, errno)
+
+        posixDirClosed = false
+        ptr
+      }
+
+      private type T = Path
+
+      def get(): Spliterator[T] = {
+
+        new Spliterators.AbstractSpliterator[T](Long.MaxValue, 0) {
+          private def appendToStream(
+              cName: CString,
+              action: Consumer[_ >: T]
+          ): Boolean = {
+            val entryPath = dir.resolve(fromCString(cName))
+
+            action.accept(entryPath)
+            true
+          }
+
+          /* See Design Note at top of method about serializing access
+           * to C's readdir buffer.
+           *
+           * _Never_ splitting this Spliterator is __critical__.
+           */
+          override def trySplit(): Spliterator[T] = null
+
+          def tryAdvance(action: Consumer[_ >: T]): Boolean = {
+            if (posixDirClosed) false // Issue #4431
+            else {
+              val entry = { errno = 0; readdir(posixDir) }
+
+              if (entry == null) {
+                if (errno != 0) {
+                  throw PosixException(dirString, errno)
+                } else { // End of OS directory stream
+                  closeImpl()
+                  false
+                }
+              } else {
+                /* Consume "." and "..", Java does not want to see them.
+                 *
+                 * Those two entries are usually the first two, but that
+                 * is not guaranteed. There are obscure scenarios where
+                 * at least '.' can come later.
+                 *
+                 * This is conceptually a 'stream.filter()' operation but
+                 * with less overhead.
+                 */
+
+                val entryName = entry.d_name // A CString, so byte comparisons
+
+                if (entryName(0) != dot)
+                  appendToStream(entryName, action)
+                else if (entryName(1) == nul)
+                  tryAdvance(action) // past "."
+                else if ((entryName(1) == dot) && (entryName(2) == nul))
+                  tryAdvance(action) // past ".."
+                else
+                  appendToStream(entryName, action) // ".git" or such
+              }
+            }
+          }
+        }
+      }
+
+      /* Call only while holding dirLock.
+       * When closedir() is called more than once, some operating systems
+       * set errno to EBADF. Others are not so robust and fail (signal? exit?).
+       */
+
+      private def closeImpl(): Unit = {
+        if (!posixDirClosed) {
+          val err = closedir(posixDir)
+          if (err != 0)
+            throw PosixException(dirString, errno)
+
+          posixDirClosed = true
+        }
+      }
+
+      def close(): Unit =
+        closeImpl()
+    }
+
+    val posixDir = new PosixDir(dir, dirString)
+    StreamSupport.stream(posixDir, 0, false).onClose(() => posixDir.close())
+  }
 
   def list(dir: Path): Stream[Path] = {
     /* Fix Issue 3165 - From Java "Path" documentation URL:
@@ -537,17 +915,69 @@ object Files {
      * Operating Systems can not opendir() an empty string, so expand "" to
      * "./".
      */
+
     val dirString =
       if (dir.equals(emptyPath)) "./"
       else dir.toString()
 
-    Arrays.stream[Path](FileHelpers.list(dirString, (n, _) => dir.resolve(n)))
+    if (!isWindows)
+      posixList(dir, dirString) // see comment re: args at top of that method
+    else {
+      Arrays.stream[Path](FileHelpers.list(dirString, (n, _) => dir.resolve(n)))
+    }
+  }
+
+  private def mismatchCore(is1: InputStream, is2: InputStream): Long = {
+    // A guess, trade off memory use vs speed, many machine page sizes are 4K.
+    val bufMaxSize = 4 * 1024 // buf1 & buf1 use 8K total
+    val buf1 = new Array[Byte](bufMaxSize)
+    val buf2 = new Array[Byte](bufMaxSize)
+
+    var mismatchedAt = jl.Long.MIN_VALUE // not _, as that is a valid value 0
+    var runningTotal = 0L // cumulative count of bytes read & matched to date
+
+    var done = false
+
+    while (!done) {
+      val nReadBuf1 = is1.readNBytes(buf1, 0, bufMaxSize)
+      val nReadBuf2 = is2.readNBytes(buf2, 0, Math.max(1, nReadBuf1))
+
+      if ((nReadBuf1 == 0) && (nReadBuf2 == 0)) { // both EOF
+        mismatchedAt = -1
+        done = true
+      } else {
+        val mmPos = Arrays.mismatch(buf1, 0, nReadBuf1, buf2, 0, nReadBuf2)
+
+        if (mmPos < 0) {
+          runningTotal += nReadBuf1 // no mismatch, continue looping
+        } else {
+          mismatchedAt = runningTotal + mmPos
+          done = true
+        }
+      }
+    }
+
+    mismatchedAt
+  }
+
+  def mismatch(path: Path, path2: Path): Long = {
+    if (path.equals(path2)) -1
+    else {
+      val is1 = Files.newInputStream(path, Array.empty)
+      try {
+        val is2 = Files.newInputStream(path2, Array.empty)
+        try {
+          mismatchCore(is1, is2)
+        } finally
+          is2.close()
+      } finally is1.close()
+    }
   }
 
   def move(source: Path, target: Path, options: Array[CopyOption]): Path = {
     lazy val replaceExisting = options.contains(REPLACE_EXISTING)
 
-    if (!exists(source.toAbsolutePath(), Array.empty)) {
+    if (!exists(source.toAbsolutePath(), Array(LinkOption.NOFOLLOW_LINKS))) {
       throw new NoSuchFileException(source.toString)
     } else if (!exists(
           target.toAbsolutePath(),
@@ -568,16 +998,29 @@ object Files {
     Zone.acquire { implicit z =>
       val sourceAbs = source.toAbsolutePath().toString
       val targetAbs = target.toAbsolutePath().toString
-      // We cannot replace directory, it needs to be removed first
+
       if (replaceExisting && target.toFile().isDirectory()) {
-        // todo delete children
-        Files.delete(target)
+        val mustDeleteTarget =
+          if (isWindows) {
+            // We can not replace directory at all, it must be removed first.
+            true
+          } else {
+            // We can not replace a directory with a file on unix-like.
+            (!source.toFile().isDirectory())
+          }
+
+        if (mustDeleteTarget)
+          Files.delete(target) // will detect & throw if target is not empty.
       }
+
       if (isWindows) {
         val sourceCString = toCWideStringUTF16LE(sourceAbs)
         val targetCString = toCWideStringUTF16LE(targetAbs)
 
         // stdio.rename on Windows does not replace existing file
+        if (replaceExisting && target.toFile().isDirectory())
+          Files.delete(target)
+
         val flags = {
           val replace =
             if (replaceExisting) MOVEFILE_REPLACE_EXISTING else 0.toUInt
@@ -629,7 +1072,7 @@ object Files {
       _options: Array[OpenOption]
   ): SeekableByteChannel = {
     val options = new HashSet[OpenOption]()
-    _options.foreach(options.add _)
+    _options.foreach(options.add)
     newByteChannel(path, options, Array.empty)
   }
 
@@ -685,52 +1128,60 @@ object Files {
     if (!pathSize.isValidInt) {
       throw new OutOfMemoryError("Required array size too large")
     }
-    val len = pathSize.toInt
-    val bytes = scala.scalanative.runtime.ByteArray.alloc(len)
 
-    if (isWindows) {
-      val bytesRead = stackalloc[DWord]()
-
-      withFileOpen(
-        path.toString,
-        access = FILE_GENERIC_READ,
-        shareMode = FILE_SHARE_READ
-      ) { handle =>
-        if (!FileApi.ReadFile(
-              handle,
-              bytes.at(0),
-              pathSize.toUInt,
-              bytesRead,
-              null
-            )) {
-          throw WindowsException.onPath(path.toString())
-        }
-      }
+    if (pathSize == 0L) { // SN Issue #I4384, part 1.
+      Array.empty[Byte]
     } else {
-      errno = 0
-      val pathCString = toCString(path.toString)
-      val fd = fcntl.open(pathCString, fcntl.O_RDONLY, 0.toUInt)
+      val len = pathSize.toInt
+      val bytes = scala.scalanative.runtime.ByteArray.alloc(len)
 
-      if (fd == -1) {
-        val msg = fromCString(string.strerror(errno))
-        throw new IOException(s"error opening path '${path}': ${msg}")
-      }
+      if (isWindows) {
+        val bytesRead = stackalloc[DWord]()
 
-      try {
-        var offset = 0
-        var read = 0
-        while ({
-          read = unistd.read(fd, bytes.at(offset), (len - offset).toUInt);
-          read != -1 && (offset + read) < len
-        }) {
-          offset += read
+        withFileOpen(
+          path.toString,
+          access = FILE_GENERIC_READ,
+          shareMode = FILE_SHARE_READ
+        ) { handle =>
+          if (!FileApi.ReadFile(
+                handle,
+                bytes.at(0),
+                pathSize.toUInt,
+                bytesRead,
+                null
+              )) {
+            throw WindowsException.onPath(path.toString())
+          }
         }
-        if (read == -1) throw UnixException(path.toString, errno)
-      } finally {
-        unistd.close(fd)
+      } else {
+        errno = 0
+        val pathCString = toCString(path.toString)
+        val fd = fcntl.open(pathCString, fcntl.O_RDONLY, 0.toUInt)
+
+        if (fd == -1) {
+          val msg = LibcExt.strError()
+          throw new IOException(s"error opening path '${path}': ${msg}")
+        }
+
+        try {
+          var offset = 0
+          var read = 0
+          while ({
+            read = unistd.read(fd, bytes.at(offset), (len - offset).toUInt);
+            read != -1 && (offset + read) < len
+          }) {
+            offset += read
+          }
+
+          if (read == -1)
+            throw UnixException(path.toString, errno)
+        } finally {
+          unistd.close(fd)
+        }
       }
+
+      bytes.asInstanceOf[Array[Byte]]
     }
-    bytes.asInstanceOf[Array[Byte]]
   }
 
   def readAllLines(path: Path): List[String] =
@@ -802,7 +1253,7 @@ object Files {
   def readString(path: Path, cs: Charset): String = {
     val reader = newBufferedReader(path, cs)
     try {
-      // Guess an cost-effective amortized size.
+      // Guess a cost-effective amortized size.
       val writer = new StringWriter(2 * 1024)
       reader.transferTo(writer)
       writer.toString()
@@ -909,80 +1360,13 @@ object Files {
       maxDepth: Int,
       options: Array[FileVisitOption]
   ): Stream[Path] = {
+    Objects.requireNonNull(start, "start is null")
     if (maxDepth < 0)
       throw new IllegalArgumentException("'maxDepth' is negative")
 
-    val visited = new HashSet[Path]()
-    visited.add(start)
+    val followLinks = options.contains(FileVisitOption.FOLLOW_LINKS)
 
-    /* To aid debugging, keep maxDepth and currentDepth sensibly related.
-     * if maxDepth == 0, start currentDepth at zero, else start at 1.
-     */
-    walk(start, maxDepth, Math.min(maxDepth, 1), options, visited)
-  }
-
-  private def walk(
-      start: Path,
-      maxDepth: Int,
-      currentDepth: Int,
-      options: Array[FileVisitOption],
-      visited: Set[Path] // Java Set, gets mutated. Private so no footgun.
-  ): Stream[Path] = {
-    /* Design Note:
-     *    This implementation is an update to Java streams of the historical
-     *    Scala  stream implementation.  It is somewhat inefficient/costly
-     *    in that it converts known single names to a singleton Stream
-     *    and then relies upon flatmap() to merge streams. Creating a
-     *    full blown Stream has some overhead. A less costly implementation
-     *    would be a good use of time.
-     *
-     *    Some of the historical design is due to the JVM requirements on
-     *    Stream#flatMap. Java 16 introduced Stream#mapMulti which
-     *    relaxes the requirement to create small intermediate streams.
-     *    When Scala Native requires a minimum JDK >= 16, that method
-     *    would fix the problem described.  So watchful waiting is
-     *    probably the most economic approach, once the problem is described.
-     */
-
-    if (!isDirectory(start, linkOptsFromFileVisitOpts(options)) ||
-        (maxDepth == 0)) {
-      Stream.of(start)
-    } else {
-      Stream.concat(
-        Stream.of(start),
-        Arrays
-          .asList(FileHelpers.list(start.toString, (n, t) => (n, t)))
-          .stream()
-          .flatMap[Path] {
-            case (name, FileHelpers.FileType.Link)
-                if options.contains(FileVisitOption.FOLLOW_LINKS) =>
-              val path = start.resolve(name)
-
-              val target = readSymbolicLink(path)
-
-              visited.add(path)
-
-              if (visited.contains(target))
-                throw new UncheckedIOException(
-                  new FileSystemLoopException(path.toString)
-                )
-              else if (!exists(target, Array(LinkOption.NOFOLLOW_LINKS)))
-                Stream.of(start.resolve(name))
-              else
-                walk(path, maxDepth, currentDepth + 1, options, visited)
-
-            case (name, FileHelpers.FileType.Directory)
-                if currentDepth < maxDepth =>
-              val path = start.resolve(name)
-              if (options.contains(FileVisitOption.FOLLOW_LINKS))
-                visited.add(path)
-              walk(path, maxDepth, currentDepth + 1, options, visited)
-
-            case (name, _) =>
-              Stream.of(start.resolve(name))
-          }
-      )
-    }
+    FileTreeWalker(start, maxDepth, followLinks).stream()
   }
 
   def walkFileTree(start: Path, visitor: FileVisitor[_ >: Path]): Path =
@@ -993,108 +1377,21 @@ object Files {
       visitor
     )
 
-  private case object TerminateTraversalException extends Exception
-
   def walkFileTree(
       start: Path,
       options: Set[FileVisitOption],
       maxDepth: Int,
       visitor: FileVisitor[_ >: Path]
   ): Path = {
+    Objects.requireNonNull(start, "start is null")
     if (maxDepth < 0)
       throw new IllegalArgumentException("'maxDepth' is negative")
+    Objects.requireNonNull(visitor, "visitor is null")
 
-    try _walkFileTree(start, options, maxDepth, visitor)
-    catch { case TerminateTraversalException => start }
-  }
+    val followLinks = options.contains(FileVisitOption.FOLLOW_LINKS)
 
-  // The sense of how LinkOption follows links or not is somewhat
-  // inverted because of a double negative.  The absense of
-  // LinkOption.NOFOLLOW_LINKS means follow links, the default.
-  // There is no explicit LinkOption.FOLLOW_LINKS.
-  private def linkOptsFromFileVisitOpts(
-      options: Array[FileVisitOption]
-  ): Array[LinkOption] = {
-    if (options.contains(FileVisitOption.FOLLOW_LINKS)) Array.empty[LinkOption]
-    else Array(LinkOption.NOFOLLOW_LINKS)
-  }
+    FileTreeWalker(start, maxDepth, followLinks, visitor).walk()
 
-  private def _walkFileTree(
-      start: Path,
-      options: Set[FileVisitOption],
-      maxDepth: Int,
-      visitor: FileVisitor[_ >: Path]
-  ): Path = {
-    val nofollow = Array(LinkOption.NOFOLLOW_LINKS)
-    val optsArray = options.toArray(new Array[FileVisitOption](options.size()))
-    val dirsToSkip = new HashSet[Path]
-    val openDirs = scala.collection.mutable.Stack.empty[Path]
-
-    /* To aid debugging, keep maxDepth and currentDepth sensibly related.
-     * if maxDepth == 0, start currentDepth at zero, else start at 1.
-     */
-    val stream =
-      walk(start, maxDepth, Math.min(maxDepth, 1), optsArray, new HashSet[Path])
-
-    stream.forEach { p =>
-      val parent = p.getParent()
-
-      if (dirsToSkip.contains(parent)) ()
-      else {
-        try {
-          val brokenSymLink =
-            if (isSymbolicLink(p)) {
-              val target = readSymbolicLink(p)
-              val targetExists = exists(target, nofollow)
-              !targetExists
-            } else false
-
-          val linkOpts =
-            if (!brokenSymLink) linkOptsFromFileVisitOpts(optsArray)
-            else nofollow
-
-          val attributes =
-            getFileAttributeView(p, classOf[BasicFileAttributeView], linkOpts)
-              .readAttributes()
-
-          while (openDirs.nonEmpty && !parent.startsWith(openDirs.head)) {
-            visitor.postVisitDirectory(openDirs.pop(), null)
-          }
-
-          val result =
-            if (attributes.isRegularFile()) {
-              visitor.visitFile(p, attributes)
-            } else if (attributes.isDirectory()) {
-              openDirs.push(p)
-              visitor.preVisitDirectory(p, attributes) match {
-                case FileVisitResult.SKIP_SUBTREE =>
-                  openDirs.pop(); FileVisitResult.SKIP_SUBTREE
-                case other => other
-              }
-            } else if (attributes.isSymbolicLink()) {
-              visitor.visitFile(p, attributes)
-            } else {
-              FileVisitResult.CONTINUE
-            }
-
-          result match {
-            case FileVisitResult.TERMINATE =>
-              throw TerminateTraversalException
-            case FileVisitResult.SKIP_SUBTREE  => dirsToSkip.add(p)
-            case FileVisitResult.SKIP_SIBLINGS => dirsToSkip.add(parent)
-            case FileVisitResult.CONTINUE      => ()
-          }
-
-        } catch {
-          // Give the visitor a last chance to fix things up.
-          case e: IOException => visitor.visitFileFailed(p, e)
-        }
-      }
-    }
-
-    while (openDirs.nonEmpty) {
-      visitor.postVisitDirectory(openDirs.pop(), null)
-    }
     start
   }
 

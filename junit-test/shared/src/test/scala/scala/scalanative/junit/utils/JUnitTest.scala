@@ -2,13 +2,15 @@ package scala.scalanative.junit.utils
 
 // Ported from Scala.js
 
-import org.junit.Assert.fail
-import org.junit.Test
 import sbt.testing._
 
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent._
+
+import org.junit.Assert.fail
+import org.junit.Test
+
 import scala.scalanative.junit.async._
 
 abstract class JUnitTest {
@@ -60,19 +62,32 @@ abstract class JUnitTest {
         if (recordOutput) {
           val lines = out.map(Output.serialize)
           JUnitTestPlatformImpl.writeLines(lines, file)
+          None
         } else {
           val lines = JUnitTestPlatformImpl.readLines(file)
           val want = lines.map(Output.deserialize)
 
-          if (want != out) {
-            fail(s"Bad output (args: $args)\n\nWant:\n${want
-                .mkString("\n")}\n\nGot:\n${out.mkString("\n")}\n\n")
-          }
+          if (want != out)
+            Some(
+              s"""|Bad output (args: [${args.mkString(", ")}])
+                  |
+                  |Want:
+                  |${want.mkString("\n")}
+                  |
+                  |Got:
+                  |${out.mkString("\n")}
+                  |
+                  |""".stripMargin
+            )
+          else None
         }
       }
     }
 
-    Future.sequence(futs).map(_ => ())
+    Future.sequence(futs).map { errOpts =>
+      val errs = errOpts.flatten
+      if (errs.nonEmpty) fail(errs.mkString)
+    }
   }
 
   private def runTests(args: List[String]): Future[List[Output]] = {
@@ -185,7 +200,7 @@ abstract class JUnitTest {
         Some(msg.substring(s + testNamePrefix.length, e))
       }
 
-    case Event(_, name) =>
+    case Event(_, name, _, _) =>
       if (name == suiteUnderTestName) None
       else if (name.startsWith(testNamePrefix))
         Some(name.stripPrefix(testNamePrefix))
@@ -224,7 +239,7 @@ abstract class JUnitTest {
       throw new UnsupportedOperationException("trace is not supported")
 
     def handle(event: sbt.testing.Event): Unit = {
-      val testName = event.selector() match {
+      val testName: String = event.selector() match {
         case s: TestSelector =>
           s.testName()
 
@@ -232,7 +247,13 @@ abstract class JUnitTest {
           throw new AssertionError("unexpected selector")
       }
 
-      buf += Event(event.status(), testName)
+      buf += Event(
+        event.status(),
+        testName,
+        if (event.throwable().isEmpty()) None
+        else Some(event.throwable().get().toString),
+        event.duration() >= 0
+      )
     }
 
     def recordDone(msg: String): Unit = buf += Done(msg)
@@ -244,23 +265,42 @@ abstract class JUnitTest {
 object JUnitTest {
   sealed trait Output
   final case class Log(level: Char, msg: String) extends Output
-  final case class Event(status: Status, testName: String) extends Output
   final case class Done(msg: String) extends Output
+  final case class Event(
+      status: Status,
+      testName: String,
+      throwableToString: Option[String],
+      durationPopulated: Boolean
+  ) extends Output
 
   object Output {
+    // We need something that does not occur in test names nor in Throwable.toString.
+    final val separator = "::"
+
     def deserialize(line: String): Output = line.toList match {
       case 'l' :: level :: msg => Log(level, msg.mkString(""))
-      case 'e' :: s :: testName =>
+      case 'd' :: msg          => Done(msg.mkString(""))
+      case 'e' :: s :: tail    =>
         val status = Status.values
-        Event(status(s - '0'), testName.mkString(""))
-      case 'd' :: msg => Done(msg.mkString(""))
+        val rest: Array[String] = tail.mkString("").split(separator, -1)
+        val testName: String = rest(0)
+        val throwableToString: String = rest(1)
+        val durationPopulated: Boolean = rest(2).toBoolean
+        Event(
+          status = status(s - '0'),
+          testName,
+          throwableToString =
+            if (throwableToString.isEmpty) None else Some(throwableToString),
+          durationPopulated
+        )
       case _ => throw new RuntimeException("unexpected token in deserialize")
     }
 
     def serialize(o: Output): String = o match {
-      case Log(level, msg) => "l" + level + msg
-      case Event(s, n)     => "e" + s.ordinal + n
-      case Done(msg)       => "d" + msg
+      case Log(level, msg)   => "l" + level + msg
+      case Done(msg)         => "d" + msg
+      case Event(s, n, t, d) =>
+        "e" + s.ordinal + n + separator + t.getOrElse("") + separator + d
     }
   }
 }

@@ -1,12 +1,14 @@
 package scala.scalanative
 package nir
 
+import scala.annotation.nowarn
 import scala.util.hashing.MurmurHash3
+
 import util.unreachable
 
 sealed abstract class Op {
   self: Product =>
-  override lazy val hashCode = MurmurHash3.productHash(self)
+  override lazy val hashCode = MurmurHash3.productHash(self): @nowarn
 
   final def resty: Type = this match {
     case Op.Call(Type.Function(_, ret), _, _) => ret
@@ -32,7 +34,7 @@ sealed abstract class Op {
     case Op.Is(_, _)  => Type.Bool
     case Op.Copy(v)   => v.ty
     case Op.SizeOf(_) | Op.AlignmentOf(_) => Type.Size
-    case Op.Box(refty: Type.RefKind, _) =>
+    case Op.Box(refty: Type.RefKind, _)   =>
       val nullable = Type.isPtrBox(refty)
       Type.Ref(refty.className, exact = true, nullable = nullable)
     case Op.Unbox(ty, _)           => Type.unbox(ty)
@@ -43,7 +45,7 @@ sealed abstract class Op {
     case Op.Arrayload(ty, _, _)    => ty
     case Op.Arraystore(_, _, _, _) => Type.Unit
     case Op.Arraylength(_)         => Type.Int
-    case _ =>
+    case _                         =>
       throw new Exception(s"nir/Ops#resty ${this} not in set of expected Ops.")
   }
 

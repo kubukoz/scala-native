@@ -5,11 +5,10 @@
  */
 package java.util.concurrent.atomic
 
-import java.util.function.BinaryOperator
-import java.util.function.UnaryOperator
+import java.util.function.{IntBinaryOperator, IntUnaryOperator}
 
 object AtomicIntegerFieldUpdater {
-  // Imposible to define currently in Scala Native, requires reflection
+  // Impossible to define currently in Scala Native, requires reflection
   // Don't define it, allow to fail at linktime instead of runtime
   // def newUpdater[U <: AnyRef](
   //     tclass: Class[U],
@@ -33,21 +32,21 @@ abstract class AtomicIntegerFieldUpdater[T <: AnyRef] protected () {
     prev
   }
 
-  final def getAndUpdate(obj: T, updateFunction: UnaryOperator[Int]): Int = {
+  final def getAndUpdate(obj: T, updateFunction: IntUnaryOperator): Int = {
     var prev: Int = null.asInstanceOf[Int]
     while ({
       prev = get(obj)
-      val next = updateFunction(prev)
+      val next = updateFunction.applyAsInt(prev)
       !compareAndSet(obj, prev, next)
     }) ()
     prev
   }
 
-  final def updateAndGet(obj: T, updateFunction: UnaryOperator[Int]): Int = {
+  final def updateAndGet(obj: T, updateFunction: IntUnaryOperator): Int = {
     var next: Int = null.asInstanceOf[Int]
     while ({
       val prev = get(obj)
-      next = updateFunction(prev)
+      next = updateFunction.applyAsInt(prev)
       !compareAndSet(obj, prev, next)
     }) ()
     next
@@ -56,12 +55,12 @@ abstract class AtomicIntegerFieldUpdater[T <: AnyRef] protected () {
   final def getAndAccumulate(
       obj: T,
       x: Int,
-      accumulatorFunction: BinaryOperator[Int]
+      accumulatorFunction: IntBinaryOperator
   ): Int = {
     var prev: Int = null.asInstanceOf[Int]
     while ({
       prev = get(obj)
-      val next = accumulatorFunction(prev, x)
+      val next = accumulatorFunction.applyAsInt(prev, x)
       !compareAndSet(obj, prev, next)
     }) ()
     prev
@@ -70,12 +69,12 @@ abstract class AtomicIntegerFieldUpdater[T <: AnyRef] protected () {
   final def accumulateAndGet(
       obj: T,
       x: Int,
-      accumulatorFunction: BinaryOperator[Int]
+      accumulatorFunction: IntBinaryOperator
   ): Int = {
     var next: Int = null.asInstanceOf[Int]
     while ({
       val prev = get(obj)
-      next = accumulatorFunction(prev, x)
+      next = accumulatorFunction.applyAsInt(prev, x)
       !compareAndSet(obj, prev, next)
     }) ()
     next

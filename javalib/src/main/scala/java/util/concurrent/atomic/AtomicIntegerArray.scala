@@ -6,19 +6,20 @@
 
 package java.util.concurrent.atomic
 
+import java.util.function.{IntBinaryOperator, IntUnaryOperator}
+
 import scala.annotation.tailrec
 import scala.language.implicitConversions
+
 import scala.scalanative.annotation.alwaysinline
-import scala.scalanative.unsafe._
 import scala.scalanative.libc.stdatomic.AtomicInt
 import scala.scalanative.libc.stdatomic.memory_order._
-import java.util.function.IntBinaryOperator
-import java.util.function.IntUnaryOperator
 import scala.scalanative.runtime.IntArray
+import scala.scalanative.unsafe._
 
 @SerialVersionUID(2862133569453604235L)
 class AtomicIntegerArray extends Serializable {
-  final private var array: Array[Int] = null
+  private final var array: Array[Int] = null
 
   @alwaysinline
   private[concurrent] def nativeArray: IntArray = array.asInstanceOf[IntArray]
@@ -176,11 +177,9 @@ class AtomicIntegerArray extends Serializable {
       expectedValue: Int,
       newValue: Int
   ): Boolean = {
-    val ref = nativeArray.at(i)
-    if (!ref == expectedValue) {
-      !ref = newValue
-      true
-    } else false
+    nativeArray
+      .at(i)
+      .compareExchangeWeak(expectedValue, newValue, memory_order_relaxed)
   }
 
   /** Atomically increments the value of the element at index {@code i}, with
@@ -193,7 +192,7 @@ class AtomicIntegerArray extends Serializable {
    *  @return
    *    the previous value
    */
-  final def getAndIncrement()(i: Int): Int = {
+  final def getAndIncrement(i: Int): Int = {
     nativeArray.at(i).fetchAdd(1)
   }
 

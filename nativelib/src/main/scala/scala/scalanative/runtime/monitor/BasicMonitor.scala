@@ -1,15 +1,17 @@
 package scala.scalanative.runtime
 package monitor
 
-import LockWord._
 import scala.annotation.tailrec
+
 import scala.scalanative.annotation.alwaysinline
-import scala.scalanative.unsafe.{stackalloc => _, _}
+import scala.scalanative.meta.LinktimeInfo.{is32BitPlatform => is32bit}
 import scala.scalanative.runtime.Intrinsics._
 import scala.scalanative.runtime.ffi._
 import scala.scalanative.runtime.ffi.stdatomic._
 import scala.scalanative.runtime.ffi.stdatomic.memory_order._
-import scala.scalanative.meta.LinktimeInfo.{is32BitPlatform => is32bit}
+import scala.scalanative.unsafe.{stackalloc => _, _}
+
+import LockWord._
 
 /** Lightweight monitor used for single-threaded execution, upon detection of
  *  access from multiple threads is inflated in ObjectMonitor
@@ -43,7 +45,9 @@ private[runtime] final class BasicMonitor(val lockWordRef: RawPtr)
     getObjectMonitor()._wait(timeout, nanos)
 
   @inline def enter(obj: Object): Unit = {
-    val thread = Thread.currentThread()
+    val thread = NativeThread.currentThread
+    if (thread == null) return // Not yet initialized
+
     val threadId = getThreadId(thread)
 
     if (!tryLock(threadId))
@@ -67,7 +71,9 @@ private[runtime] final class BasicMonitor(val lockWordRef: RawPtr)
   }
 
   @inline def exit(obj: Object): Unit = {
-    val thread = Thread.currentThread()
+    val thread = NativeThread.currentThread
+    if (thread == null) return // Not yet initialized
+
     val threadId = getThreadId(thread)
     val current = lockWord
     val lockedOnce = lockedWithThreadId(threadId)
@@ -77,7 +83,7 @@ private[runtime] final class BasicMonitor(val lockWordRef: RawPtr)
         castIntToRawPtr(0),
         memory_order_release
       )
-    else if (current.isUnlocked) () // can happend only in main thread
+    else if (current.isUnlocked) () // can happen only on the main thread
     else if (current.isInflated) current.getObjectMonitor.exit(thread)
     else storeRawPtr(lockWordRef, current.withDecresedRecursion)
   }
@@ -120,7 +126,7 @@ private[runtime] final class BasicMonitor(val lockWordRef: RawPtr)
     )
   }
 
-  // Monitor is currently locked by other thread. Wait until getting over owership
+  // Monitor is currently locked by other thread. Wait until getting over ownership
   // of this object and transform LockWord to use HeavyWeight monitor
   @inline private def lockAndInflate(
       thread: Thread,
@@ -158,7 +164,7 @@ private[runtime] final class BasicMonitor(val lockWordRef: RawPtr)
     // Increment recursion by basic lock recursion count if present
     objectMonitor.recursion += lockWord.recursionCount
 
-    // Since pointers are always alligned we can safely override N=sizeof(Word) right most bits
+    // Since pointers are always aligned we can safely override N=sizeof(Word) right-most bits
     val monitorAddress = castObjectToRawPtr(objectMonitor)
     val inflated =
       if (is32bit) {
@@ -175,4 +181,15 @@ private[runtime] final class BasicMonitor(val lockWordRef: RawPtr)
 
     objectMonitor
   }
+
+  def show: String =
+    if (lockWord.isInflated)
+      lockWord.getObjectMonitor.toString
+    else {
+      val lock = lockWord
+      val isLocked = !lock.isUnlocked
+      val recursion = lock.recursionCount
+      val threadId = Intrinsics.castRawPtrToLong(lock.threadId)
+      s"BasicMonitor(locked=$isLocked, recursion=$recursion, threadId=$threadId)"
+    }
 }

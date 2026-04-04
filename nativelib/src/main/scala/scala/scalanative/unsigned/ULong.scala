@@ -1,15 +1,11 @@
 package scala.scalanative
 package unsigned
 
-import scalanative.runtime.Intrinsics.{
-  divULong,
-  remULong,
-  ulongToFloat,
-  ulongToDouble,
-  castLongToRawSize,
-  unsignedOf
-}
 import java.lang.{Long => JLong}
+
+import scalanative.runtime.Intrinsics.{
+  castLongToRawSize, divULong, remULong, ulongToDouble, ulongToFloat, unsignedOf
+}
 
 /** `ULong`, a 64-bit unsigned integer. */
 final class ULong private[scalanative] (
@@ -118,7 +114,7 @@ final class ULong private[scalanative] (
    */
   @inline final def >>(x: Long): ULong = unsignedOf(underlyingValue >> x)
 
-  @inline final override def compareTo(x: ULong): Int =
+  @inline override final def compareTo(x: ULong): Int =
     JLong.compareUnsigned(underlyingValue, x.underlyingValue)
 
   /** Returns `true` if this value is equal to x, `false` otherwise. */
@@ -313,7 +309,7 @@ final class ULong private[scalanative] (
   @inline final def %(x: ULong): ULong =
     unsignedOf(remULong(underlyingValue, x.underlyingValue))
 
-  @inline final override def toString(): String =
+  @inline override final def toString(): String =
     JLong.toUnsignedString(underlyingValue)
 
   @inline override def hashCode(): Int = underlyingValue.##

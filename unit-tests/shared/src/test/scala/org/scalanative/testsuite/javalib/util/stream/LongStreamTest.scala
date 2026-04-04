@@ -9,25 +9,17 @@ package org.scalanative.testsuite.javalib.util.stream
  * Use ju.ArrayList surgically at the points of use.
  */
 
-import java.{lang => jl}
-
-import java.{util => ju}
-import java.util.Arrays
-import java.util.LongSummaryStatistics
-import java.util.OptionalLong
-import java.util.{Spliterator, Spliterators}
-
-import java.util.concurrent.{CountDownLatch, TimeUnit}
 import java.util.concurrent.CountDownLatch._
-
-import java.util.function.{LongConsumer, LongFunction, LongSupplier}
-import java.util.function.Supplier
-
+import java.util.concurrent.{CountDownLatch, TimeUnit}
+import java.util.function.{LongConsumer, LongFunction, LongSupplier, Supplier}
 import java.util.stream._
+import java.util.{
+  Arrays, LongSummaryStatistics, OptionalLong, Spliterator, Spliterators
+}
+import java.{lang => jl, util => ju}
 
-import org.junit.Test
 import org.junit.Assert._
-import org.junit.Ignore
+import org.junit.{Ignore, Test}
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
 
@@ -405,14 +397,14 @@ class LongStreamTest {
     assertFalse("stream should be empty", it.hasNext())
   }
 
-  @Test def doubleStreamGenerate(): Unit = {
+  @Test def longStreamGenerate(): Unit = {
     val nElements = 5
     val data = new Array[Long](nElements)
-    data(0) = 0
-    data(1) = 11
-    data(2) = 22
-    data(3) = 33
-    data(4) = 44
+    data(0) = 0L
+    data(1) = 11L
+    data(2) = 22L
+    data(3) = 33L
+    data(4) = 44L
 
     val src = new LongSupplier() {
       var count = -1
@@ -527,11 +519,11 @@ class LongStreamTest {
     assertEquals(s"unexpected range count", expectedCount, count)
   }
 
-  @Test def intStreamRangeClosed(): Unit = {
+  @Test def longStreamRangeClosed(): Unit = {
 
-    val startInclusive = 5
-    val endInclusive = 15
-    val expectedCount = endInclusive - startInclusive + 1
+    val startInclusive = 5L
+    val endInclusive = 15L
+    val expectedCount = endInclusive - startInclusive + 1L
 
     val s = LongStream.rangeClosed(startInclusive, endInclusive)
 
@@ -607,11 +599,11 @@ class LongStreamTest {
     assertFalse("unexpected predicate failure", matched)
   }
 
-  @Test def intStreamAsDoubleStream(): Unit = {
+  @Test def longStreamAsDoubleStream(): Unit = {
     val nElements = 4
     var count = 0
 
-    val s0 = LongStream.of(11, 22, 33, 44L)
+    val s0 = LongStream.of(11L, 22L, 33L, 44L)
 
     val s1 = s0.asDoubleStream()
 
@@ -850,6 +842,23 @@ class LongStreamTest {
     assertTrue("expectedSet has remaining elements", expectedSet.isEmpty())
   }
 
+  // Issue #4743
+  @Test def longStreamDistinct_Characteristics(): Unit = {
+
+    val ls = LongStream.of(
+      55L, 0L, 44L, -11L, -11L, 44L, -22L, -22L, 33L, 44L
+    )
+
+    val spliter = ls.distinct().spliterator()
+
+    // No DISTINCT, inconsistent with Stream#distinct
+    StreamTestHelpers.verifyCharacteristics(
+      spliter,
+      Seq(Spliterator.ORDERED), // must be present
+      Seq(Spliterator.SIZED, Spliterator.SUBSIZED) // must be absent
+    )
+  }
+
   @Test def longStreamFindAny_Null(): Unit = {
     val s = LongStream.of(null.asInstanceOf[Long])
     // Long nulls get seen as 0
@@ -912,6 +921,23 @@ class LongStreamTest {
 
     val s1 = s0.filter(e => e < 1000)
     assertEquals(s"unexpected element count", expectedCount, s1.count())
+  }
+
+  // Issue #4742 - see also primary reproduction in LongStreamTestOnJDK16
+  @Test def longStreamFilter_Characteristics(): Unit = {
+    val expectedCount = 2
+
+    val ls = LongStream.of(
+      55L, 44L, -11L, 0L, -22L, 33L
+    )
+
+    val spliter = ls.filter((d: scala.Long) => d < 0L).spliterator()
+
+    StreamTestHelpers.verifyCharacteristics(
+      spliter,
+      Seq(Spliterator.ORDERED), // must be present
+      Seq(Spliterator.SIZED, Spliterator.SUBSIZED) // must be absent
+    )
   }
 
   @Test def longStreamForeachOrdered(): Unit = {
@@ -1016,8 +1042,8 @@ class LongStreamTest {
     // JVM 8 expects 0x11 (decimal 17), JVM >= 17 expects 0x4051 (Dec 16465)
     val expectedSAllLimitedCharacteristics =
       Spliterator.ORDERED | Spliterator.DISTINCT // 0x11
-      // Drop SIZED, SUBSIZED, CONCURRENT, IMMUTABLE, & NONNULL.
-      // SORTED was not there to drop.
+    // Drop SIZED, SUBSIZED, CONCURRENT, IMMUTABLE, & NONNULL.
+    // SORTED was not there to drop.
 
     assertEquals(
       "Unexpected characteristics for all characteristics stream",

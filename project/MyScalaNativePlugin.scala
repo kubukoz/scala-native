@@ -1,17 +1,17 @@
 package build
 
-import sbt._
 import sbt.Keys._
+import sbt._
 
-import scala.scalanative.sbtplugin.Utilities._
+import scala.sys.env
+
 import scala.scalanative.sbtplugin.ScalaNativePlugin
 import scala.scalanative.sbtplugin.ScalaNativePlugin.autoImport._
-import scala.sys.env
-import complete.DefaultParsers._
+import scala.scalanative.sbtplugin.Utilities._
 
-import one.profiler.AsyncProfilerLoader
-import one.profiler.AsyncProfiler
 import build.OutputType._
+import complete.DefaultParsers._
+import one.profiler.{AsyncProfiler, AsyncProfilerLoader}
 
 object MyScalaNativePlugin extends AutoPlugin {
   override def requires: Plugins = ScalaNativePlugin
@@ -25,7 +25,7 @@ object MyScalaNativePlugin extends AutoPlugin {
 
   final val enableExperimentalCompiler = {
     val ExperimentalCompilerEnv = "ENABLE_EXPERIMENTAL_COMPILER"
-    val enabled = env.contains(ExperimentalCompilerEnv)
+    val enabled = env.get(ExperimentalCompilerEnv).exists(_ != "false")
     println(
       if (enabled)
         s"Found `$ExperimentalCompilerEnv` env var: enabled sub-projects using Scala experimental version ${ScalaVersions.scala3Nightly}, using suffix `3_next`."
@@ -117,33 +117,34 @@ object MyScalaNativePlugin extends AutoPlugin {
         None
       }
 
-      val module = moduleName.value
-      val out =
-        (crossTarget.value / s"$module-profile.${outputType.extension}").toString
-      profilerOpt match {
-        case Some(profiler) =>
-          Def.task {
-            logger.info(
-              s"[async-profiler] starting profiler with commands: start,$commands"
-            )
-            profiler.execute(s"start,$commands")
-            nativeLink.value
-          } andFinally {
-            logger.info(s"[async-profiler] stop profiler, output to ${out}")
-            profiler.execute("stop")
-            profiler.execute(s"${outputType.name},file=${out}")
-          }
-        case None =>
-          nativeLink
-      }
+    val module = moduleName.value
+    val out =
+      (crossTarget.value / s"$module-profile.${outputType.extension}").toString
+    profilerOpt match {
+      case Some(profiler) =>
+        Def.task {
+          logger.info(
+            s"[async-profiler] starting profiler with commands: start,$commands"
+          )
+          profiler.execute(s"start,$commands")
+          nativeLink.value
+        } andFinally {
+          logger.info(s"[async-profiler] stop profiler, output to ${out}")
+          profiler.execute("stop")
+          profiler.execute(s"${outputType.name},file=${out}")
+        }
+      case None =>
+        nativeLink
+    }
   }
 
   override def projectSettings: Seq[Setting[_]] = Def.settings(
     /* Remove libraryDependencies on ourselves; we use .dependsOn() instead
      * inside this build.
      */
-    libraryDependencies ~= { libDeps =>
-      libDeps.filterNot(_.organization == "org.scala-native")
+    libraryDependencies := {
+      val org = (ThisBuild / organization).value
+      libraryDependencies.value.filterNot(_.organization == org)
     },
     nativeConfig ~= { nc =>
       nc.withCheck(true)
@@ -158,7 +159,7 @@ object MyScalaNativePlugin extends AutoPlugin {
     inConfig(Compile) {
       nativeLinkProfiling := nativeLinkProfilingImpl
         .tag(NativeTags.Link)
-        .evaluated,
+        .evaluated
     }
   )
 }

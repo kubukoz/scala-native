@@ -1,23 +1,21 @@
 package scala.scalanative
 package codegen
 
-import java.io.File
-import java.io.IOException
+import java.io.{File, IOException}
 import java.nio.ByteBuffer
-import java.nio.file.FileVisitResult
 import java.nio.file.FileVisitResult._
-import java.nio.file.Files
 import java.nio.file.Files._
-import java.nio.file.Path
-import java.nio.file.Paths
-import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
-import java.nio.file.FileSystems
-import java.nio.file.PathMatcher
+import java.nio.file.{
+  FileSystems, FileVisitResult, Files, Path, PathMatcher, Paths,
+  SimpleFileVisitor
+}
 import java.util.EnumSet
+
 import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+
 import scala.scalanative.build.Config
 import scala.scalanative.io.VirtualDirectory
 import scala.scalanative.util.Scope
@@ -40,13 +38,18 @@ private[scalanative] object ResourceEmbedder {
         "/scala-native/**",
         "/LICENSE",
         "/NOTICE",
+        "/library.properties",
+        "/BUILD",
         "/rootdoc.txt",
-        "/META-INF/**"
+        "/META-INF/**",
+        "/**.class",
+        "/**.nir",
+        "/**.tasty"
       ).map(toGlob)
 
     val includePatterns =
       config.compilerConfig.resourceIncludePatterns.map(toGlob)
-      // explicitly enabled pattern overwrites exclude pattern
+    // explicitly enabled pattern overwrites exclude pattern
     val excludePatterns = {
       (config.compilerConfig.resourceExcludePatterns).map(toGlob) ++
         internalExclusionPatterns
@@ -57,7 +60,16 @@ private[scalanative] object ResourceEmbedder {
     val notInIncludePatterns =
       s"Not matched by any include pattern: [${includePatterns.map(pat => s"'$pat'").mkString(", ")}]"
     case class IgnoreReason(reason: String, shouldLog: Boolean = true)
-    case class Matcher(matcher: PathMatcher, pattern: String)
+    case class Matcher(
+        matcher: PathMatcher,
+        pattern: String,
+        usesAbsoluteResourcePath: Boolean
+    ) {
+      def matches(absolutePath: Path, relativePath: Path): Boolean =
+        matcher.matches(
+          if (usesAbsoluteResourcePath) absolutePath else relativePath
+        )
+    }
 
     /** If the return value is defined, the given path should be ignored. If
      *  it's None, the path should be included.
@@ -65,13 +77,13 @@ private[scalanative] object ResourceEmbedder {
     def shouldIgnore(
         includeMatchers: Seq[Matcher],
         excludeMatchers: Seq[Matcher]
-    )(path: Path): Option[IgnoreReason] =
+    )(absolutePath: Path, relativePath: Path): Option[IgnoreReason] =
       includeMatchers
-        .find(_.matcher.matches(path))
+        .find(_.matches(absolutePath, relativePath))
         .map(_.pattern)
-        .fold(Option(IgnoreReason(notInIncludePatterns))) { includePattern =>
+        .map { includePattern =>
           excludeMatchers
-            .find(_.matcher.matches(path))
+            .find(_.matches(absolutePath, relativePath))
             .map(_.pattern)
             .map(excludePattern =>
               IgnoreReason(
@@ -80,20 +92,34 @@ private[scalanative] object ResourceEmbedder {
               )
             )
         }
+        .getOrElse {
+          Some(
+            IgnoreReason(
+              notInIncludePatterns,
+              shouldLog = !(isSourceFile(relativePath) || excludeMatchers
+                .find(_.matches(absolutePath, relativePath))
+                .exists(matcher =>
+                  internalExclusionPatterns.contains(matcher.pattern)
+                ))
+            )
+          )
+        }
 
     val foundFiles =
       if (config.compilerConfig.embedResources) {
-        classpath.flatMap { classpath =>
+        var ignoredFiles = 0
+        val selectedFiles = classpath.flatMap { classpath =>
           val virtualDir = VirtualDirectory.real(classpath)
           def makeMatcher(pattern: String) =
             Matcher(
               matcher = virtualDir.pathMatcher(pattern),
-              pattern = pattern
+              pattern = pattern,
+              usesAbsoluteResourcePath = pattern.startsWith("glob:/")
             )
           val includeMatchers = includePatterns.map(makeMatcher)
           val excludeMatchers = excludePatterns.map(makeMatcher)
           val applyPathMatchers =
-            shouldIgnore(includeMatchers, excludeMatchers)(_)
+            shouldIgnore(includeMatchers, excludeMatchers)(_, _)
           virtualDir.files
             .flatMap { path =>
               // Use the same path separator on all OSs
@@ -105,10 +131,23 @@ private[scalanative] object ResourceEmbedder {
                   (pathString, path)
                 }
 
-              applyPathMatchers(path) match {
+              val absoluteResourcePath = path
+                .getFileSystem()
+                .getPath(pathName)
+              // Match relative glob patterns such as "*.conf" against resource
+              // paths without a leading slash.
+              val relativeResourcePath = path
+                .getFileSystem()
+                .getPath(pathString.stripPrefix("/"))
+              applyPathMatchers(
+                absoluteResourcePath,
+                relativeResourcePath
+              ) match {
                 case Some(IgnoreReason(reason, shouldLog)) =>
-                  if (shouldLog)
-                    config.logger.info(s"Did not embed: $pathName - $reason")
+                  if (shouldLog) {
+                    config.logger.debug(s"Did not embed: $pathName - $reason")
+                    ignoredFiles += 1
+                  }
                   None
                 case None =>
                   if (isSourceFile((path))) None
@@ -117,6 +156,12 @@ private[scalanative] object ResourceEmbedder {
               }
             }
         }
+        if (ignoredFiles > 0) {
+          config.logger.info(
+            s"Did not embed $ignoredFiles resource files. Run build again with debug logging level enabled to see details."
+          )
+        }
+        selectedFiles
       } else Seq.empty
 
     def filterEqualPathNames(

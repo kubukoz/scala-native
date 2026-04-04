@@ -2,10 +2,11 @@ package scala.scalanative
 package interflow
 
 import scala.collection.mutable
-import scala.scalanative.nir.Defn.Define.DebugInfo
-import scala.scalanative.linker._
+
 import scala.scalanative.codegen.MemoryLayout
-import scala.scalanative.util.{unreachable, And}
+import scala.scalanative.linker._
+import scala.scalanative.nir.Defn.Define.DebugInfo
+import scala.scalanative.util.{And, unreachable}
 
 private[interflow] trait Eval { self: Interflow =>
   def interflow: Interflow = self
@@ -35,7 +36,7 @@ private[interflow] trait Eval { self: Interflow =>
 
     pc += 1
 
-    // Implicit scopeId required for materialization of insts other then Inst.Let
+    // Implicit scopeId required for materialization of insts other than Inst.Let
     implicit var lastScopeId = scopeMapping(nir.ScopeId.TopLevel)
     while (true) {
       val inst = insts(pc)
@@ -182,20 +183,19 @@ private[interflow] trait Eval { self: Interflow =>
             emit(nir.Op.Call(dsig, mtarget, margs))
           }
 
-          dtarget match {
-            case nir.Val.Global(name: nir.Global.Member, _)
+          (dtarget, eargs) match {
+            case (nir.Val.Global(name: nir.Global.Member, _), _)
                 if shallInline(name, eargs) =>
               `inline`(name, eargs)
-            case DelayedRef(op: nir.Op.Method) if shallPolyInline(op, eargs) =>
-              polyInline(op, eargs)
+            case PolyInlined(polyInlined) =>
+              polyInlined
             case _ =>
               fallback
           }
         }
 
         emeth match {
-          case nir.Val.Global(name: nir.Global.Member, _)
-              if intrinsics.contains(name) =>
+          case nir.Val.Global(name: nir.Global.Member, _) =>
             intrinsic(sig, name, args).getOrElse {
               nonIntrinsic
             }
@@ -255,7 +255,7 @@ private[interflow] trait Eval { self: Interflow =>
         nir.Val.Virtual(state.allocClass(cls, zonePtr))
       case nir.Op.Fieldload(ty, rawObj, name @ FieldRef(cls, fld)) =>
         eval(rawObj) match {
-          case VirtualRef(_, _, values) => values(fld.index)
+          case VirtualRef(_, _, values)   => values(fld.index)
           case DelayedRef(op: nir.Op.Box) =>
             val name = op.ty.asInstanceOf[nir.Type.RefKind].className
             eval(nir.Op.Unbox(nir.Type.Ref(name), rawObj))
@@ -298,9 +298,9 @@ private[interflow] trait Eval { self: Interflow =>
       case nir.Op.Method(rawObj, sig) =>
         val obj = eval(rawObj)
         val objty = {
-          /* If method is not virtual (eg. constructor) we need to ensure that
+          /* If method is not virtual (e.g. constructor) we need to ensure that
            * we would fetch for expected type targets (rawObj) instead of real (evaluated) type
-           * It might result in calling wrong method and lead to infinite loops, eg. issue #1909
+           * It might result in calling wrong method and lead to infinite loops, e.g. issue #1909
            */
           val realType = obj match {
             case InstanceRef(ty) => ty
@@ -427,6 +427,12 @@ private[interflow] trait Eval { self: Interflow =>
       case nir.Op.Unbox(boxty @ nir.Type.Ref(boxname, _, _), value) =>
         eval(value) match {
           case VirtualRef(_, cls, Array(value)) if boxname == cls.name =>
+            value
+          case ConvRef(
+                nir.Conv.Bitcast,
+                _,
+                VirtualRef(_, cls, Array(value))
+              ) if boxname == cls.name =>
             value
           case DelayedRef(nir.Op.Box(nir.Type.Ref(innername, _, _), innervalue))
               if innername == boxname =>
@@ -834,7 +840,7 @@ private[interflow] trait Eval { self: Interflow =>
     def bailOut =
       throw BailOut(s"can't eval conv op: $conv[${ty.show}] ${value.show}")
     conv match {
-      case _ if ty == value.ty => value
+      case _ if ty == value.ty                     => value
       case nir.Conv.SSizeCast | nir.Conv.ZSizeCast =>
         def size(ty: nir.Type) = ty match {
           case nir.Type.Size =>

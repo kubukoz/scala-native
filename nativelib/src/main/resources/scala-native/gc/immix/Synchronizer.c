@@ -1,18 +1,61 @@
 #if defined(SCALANATIVE_MULTITHREADING_ENABLED) && defined(SCALANATIVE_GC_IMMIX)
 
+#include "string_constants.h"
 #include "immix_commix/Synchronizer.h"
 #include "shared/ScalaNativeGC.h"
 #include <stdio.h>
 #include <stdatomic.h>
 #include <stdlib.h>
+#include <string.h>
+#include <errno.h>
 
 #include "State.h"
+#include "Settings.h"
 #include "shared/ThreadUtil.h"
+#include "shared/Log.h"
+#include "shared/Time.h"
 #include "MutatorThread.h"
 #include <signal.h>
+#include <errno.h>
 
 atomic_bool Synchronizer_stopThreads = false;
 static mutex_t synchronizerLock;
+
+// =============================================================================
+// Diagnostics for Stuck Threads
+// =============================================================================
+static void Synchronizer_diagnoseStuckThreads(MutatorThread *self,
+                                              int activeCount) {
+    GC_LOG_WARN("%d thread(s) not reaching safepoint:", activeCount);
+
+    MutatorThreads_foreach(mutatorThreads, node) {
+        MutatorThread *thread = node->value;
+        if (thread != self && !MutatorThread_isAtSafepoint(thread)) {
+            bool alive = MutatorThread_isAlive(thread);
+            GC_MutatorThreadState state =
+                atomic_load_explicit(&thread->state, memory_order_acquire);
+
+#ifdef _WIN32
+            GC_LOG_WARN("  Thread id=%p, stackBottom=%p, state=%s, alive=%s",
+                        (void *)thread->threadHandle,
+#else
+            GC_LOG_WARN("  Thread id=%lu, stackBottom=%p, state=%s, alive=%s",
+                        (unsigned long)thread->thread,
+#endif
+                        (void *)MutatorThread_getStackBottom(thread),
+                        state == GC_MutatorThreadState_Managed ? "Managed"
+                                                               : "Unmanaged",
+                        alive ? "yes" : "NO (zombie)");
+        }
+    }
+
+    GC_LOG_WARN(
+        "Possible causes:\n"
+        "  - Thread blocked in native code without @blocking annotation\n"
+        "  - Thread crashed without cleanup\n"
+        "  - Infinite loop in native code\n"
+        "  - Deadlock with resource held by waiting thread");
+}
 
 #ifndef _WIN32
 /* Receiving and handling SIGINT/SIGTERM during GC would lead to deadlocks
@@ -27,15 +70,14 @@ static void Synchronizer_SuspendThreads(void);
 static void Synchronizer_ResumeThreads(void);
 static void Synchronizer_WaitForResumption(MutatorThread *selfThread);
 
-// We can use 1 out 2 available threads yielding mechanisms:
-// 1: Trap-based yieldpoints using signal handlers, see:
-// https://dl.acm.org/doi/10.1145/2887746.2754187, low overheads, but
-// problematic when debugging
-// 2: Conditional yieldpoints based on checking
-// internal flag, better for debuggin, but slower
+// =============================================================================
+// Trap-based Yieldpoints Implementation
+// =============================================================================
+// Uses signal handlers for low-overhead yieldpoints
+// See: https://dl.acm.org/doi/10.1145/2887746.2754187
 #ifdef SCALANATIVE_GC_USE_YIELDPOINT_TRAPS
 #include "shared/YieldPointTrap.h"
-#include "immix_commix/StackTrace.h"
+#include "StackTrace.h"
 #include <errno.h>
 #ifdef _WIN32
 #include <errhandlingapi.h>
@@ -58,10 +100,8 @@ static LONG WINAPI SafepointTrapHandler(EXCEPTION_POINTERS *ex) {
                 Synchronizer_yield();
                 return EXCEPTION_CONTINUE_EXECUTION;
             }
-            fprintf(stderr,
-                    "Caught exception code %p in GC exception handler\n",
-                    (void *)(uintptr_t)ex->ExceptionRecord->ExceptionCode);
-            fflush(stderr);
+            GC_LOG_WARN("Caught exception code %p in GC exception handler\n",
+                        (void *)(uintptr_t)ex->ExceptionRecord->ExceptionCode);
             StackTrace_PrintStackTrace();
         // pass-through
         default:
@@ -77,28 +117,44 @@ static LONG WINAPI SafepointTrapHandler(EXCEPTION_POINTERS *ex) {
 #define SAFEPOINT_TRAP_SIGNAL SIGSEGV
 #endif
 #define THREAD_WAKEUP_SIGNAL SIGCONT
-static struct sigaction defaultAction;
+static struct sigaction previousSignalHandler = {};
 static sigset_t threadWakupSignals;
+
 static void SafepointTrapHandler(int signal, siginfo_t *siginfo, void *uap) {
     int old_errno = errno;
     if (signal == SAFEPOINT_TRAP_SIGNAL &&
         siginfo->si_addr == scalanative_GC_yieldpoint_trap) {
         Synchronizer_yield();
         errno = old_errno;
-    } else {
-        fprintf(stderr,
-                "Signal %d triggered when accessing memory at address %p, "
-                "code=%d\n",
-                signal, siginfo->si_addr, siginfo->si_code);
-        StackTrace_PrintStackTrace();
-        defaultAction.sa_handler(signal);
+        return;
     }
+
+    // Try call other handlers
+    if (previousSignalHandler.sa_handler != NULL) {
+        void *handler = previousSignalHandler.sa_handler;
+        if (handler != SIG_DFL && handler != SIG_IGN && handler != SIG_ERR &&
+            handler != SafepointTrapHandler) {
+            if (previousSignalHandler.sa_flags & SA_SIGINFO) {
+                void (*sigInfoHandler)(int, siginfo_t *, void *) = (void (*)(
+                    int, siginfo_t *, void *))previousSignalHandler.sa_handler;
+                return sigInfoHandler(signal, siginfo, uap);
+            } else {
+                return previousSignalHandler.sa_handler(signal);
+            }
+        }
+        return;
+    }
+
+    GC_LOG_WARN("%s Unhandled signal %d triggered when accessing "
+                "memory address %p, code=%d\n\n",
+                snErrorPrefix, signal, siginfo->si_addr, siginfo->si_code);
+    StackTrace_PrintStackTrace();
+    abort();
 }
 #endif
 
-static void SetupYieldPointTrapHandler() {
+static void SetupYieldPointTrapHandler(void) {
 #ifdef _WIN32
-    // Call it as first exception handler
     SetUnhandledExceptionFilter(&SafepointTrapHandler);
 #else
     sigemptyset(&threadWakupSignals);
@@ -111,8 +167,9 @@ static void SetupYieldPointTrapHandler() {
     sigemptyset(&sa.sa_mask);
     sa.sa_sigaction = &SafepointTrapHandler;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
-    if (sigaction(SAFEPOINT_TRAP_SIGNAL, &sa, &defaultAction) == -1) {
-        perror("Error: cannot setup safepoint synchronization handler");
+    if (sigaction(SAFEPOINT_TRAP_SIGNAL, &sa, &previousSignalHandler) == -1) {
+        GC_LOG_ERROR("Cannot setup safepoint synchronization handler: %s",
+                     strerror(errno));
         exit(errno);
     }
 #endif
@@ -122,17 +179,17 @@ static void Synchronizer_WaitForResumption(MutatorThread *selfThread) {
     assert(selfThread == currentMutatorThread);
 #ifdef _WIN32
     if (!ResetEvent(selfThread->wakeupEvent)) {
-        fprintf(stderr, "Failed to reset event %lu\n", GetLastError());
+        GC_LOG_WARN("Failed to reset event %lu", GetLastError());
     }
     if (WAIT_OBJECT_0 !=
         WaitForSingleObject(selfThread->wakeupEvent, INFINITE)) {
-        fprintf(stderr, "Error: suspend thread");
+        GC_LOG_WARN("suspend thread failed");
         exit(GetLastError());
     }
 #else
     int signum;
     if (0 != sigwait(&threadWakupSignals, &signum)) {
-        perror("Error: sig wait");
+        GC_LOG_ERROR("sigwait failed: %s", strerror(errno));
         exit(errno);
     }
     assert(signum == THREAD_WAKEUP_SIGNAL);
@@ -143,13 +200,12 @@ static void Synchronizer_ResumeThread(MutatorThread *thread) {
 #ifdef _WIN32
     assert(thread != currentMutatorThread);
     if (!SetEvent(thread->wakeupEvent)) {
-        fprintf(stderr, "Failed to set event %lu\n", GetLastError());
+        GC_LOG_ERROR("Failed to set event %lu", GetLastError());
     }
 #else
     int status = pthread_kill(thread->thread, THREAD_WAKEUP_SIGNAL);
     if (status != 0) {
-        fprintf(stderr, "Failed to resume thread after GC, retval: %d\n",
-                status);
+        GC_LOG_ERROR("Failed to resume thread after GC, retval: %d", status);
     }
 #endif
 }
@@ -172,8 +228,10 @@ static void Synchronizer_ResumeThreads(void) {
     }
 }
 
-#else // notDefined SCALANATIVE_GC_USE_YIELDPOINT_TRAPS
-
+#else // !SCALANATIVE_GC_USE_YIELDPOINT_TRAPS
+// =============================================================================
+// Conditional Yieldpoints Implementation (Debug Mode)
+// =============================================================================
 #ifdef _WIN32
 static HANDLE threadSuspensionEvent;
 #else
@@ -197,7 +255,7 @@ static void Synchronizer_WaitForResumption(MutatorThread *selfThread) {
 #endif
 }
 
-static void Synchronizer_SuspendThreads() {
+static void Synchronizer_SuspendThreads(void) {
 #ifdef _WIN32
     ResetEvent(threadSuspensionEvent);
     atomic_store_explicit(&Synchronizer_stopThreads, true,
@@ -210,8 +268,7 @@ static void Synchronizer_SuspendThreads() {
 #endif
 }
 
-static void Synchronizer_ResumeThreads() {
-
+static void Synchronizer_ResumeThreads(void) {
 #ifdef _WIN32
     atomic_store_explicit(&Synchronizer_stopThreads, false,
                           memory_order_release);
@@ -226,7 +283,10 @@ static void Synchronizer_ResumeThreads() {
 }
 #endif // !SCALANATIVE_GC_USE_YIELDPOINT_TRAPS
 
-void Synchronizer_init() {
+// =============================================================================
+// Synchronizer Initialization
+// =============================================================================
+void Synchronizer_init(void) {
     mutex_init(&synchronizerLock);
 #ifdef SCALANATIVE_GC_USE_YIELDPOINT_TRAPS
     scalanative_GC_yieldpoint_trap = YieldPointTrap_init();
@@ -236,9 +296,9 @@ void Synchronizer_init() {
 #ifdef _WIN32
     threadSuspensionEvent = CreateEvent(NULL, true, false, NULL);
     if (threadSuspensionEvent == NULL) {
-        fprintf(stderr, "Failed to setup synchronizer event: errno=%lu\n",
-                GetLastError());
-        exit(1);
+        GC_LOG_ERROR("Failed to setup synchronizer event: errno=%lu",
+                     GetLastError());
+        exit(126);
     }
 #else
     sigemptyset(&signalsBlockedDuringGC);
@@ -246,18 +306,17 @@ void Synchronizer_init() {
     sigaddset(&signalsBlockedDuringGC, SIGTERM);
     if (pthread_mutex_init(&threadSuspension.lock, NULL) != 0 ||
         pthread_cond_init(&threadSuspension.resume, NULL) != 0) {
-        perror("Failed to setup synchronizer lock");
-        exit(1);
+        GC_LOG_ERROR("Failed to setup synchronizer lock: %s", strerror(errno));
+        exit(127);
     }
 #endif
 #endif
 }
 
-// ---------------------
-// Common implementation
-// ---------------------
-
-void Synchronizer_yield() {
+// =============================================================================
+// Common Implementation
+// =============================================================================
+void Synchronizer_yield(void) {
     MutatorThread *self = currentMutatorThread;
     MutatorThread_switchState(self, GC_MutatorThreadState_Unmanaged);
     atomic_thread_fence(memory_order_seq_cst);
@@ -273,7 +332,7 @@ void Synchronizer_yield() {
     atomic_thread_fence(memory_order_seq_cst);
 }
 
-bool Synchronizer_acquire() {
+bool Synchronizer_acquire(void) {
     if (!mutex_tryLock(&synchronizerLock)) {
         scalanative_GC_yield();
         return false;
@@ -281,30 +340,66 @@ bool Synchronizer_acquire() {
 #ifndef _WIN32
     sigprocmask(SIG_BLOCK, &signalsBlockedDuringGC, NULL);
 #endif
-    // Don't allow for registration of any new threads;
+
+    // Don't allow for registration of any new threads
     MutatorThreads_lock();
     Synchronizer_SuspendThreads();
     MutatorThread *self = currentMutatorThread;
     MutatorThread_switchState(self, GC_MutatorThreadState_Unmanaged);
 
+    uint64_t startTime = Time_current_millis();
+    uint64_t lastWarningTime = startTime;
     int activeThreads;
+
     do {
         atomic_thread_fence(memory_order_seq_cst);
         activeThreads = 0;
         MutatorThreads_foreach(mutatorThreads, node) {
             MutatorThread *it = node->value;
-            if ((void *)atomic_load_explicit(&it->stackTop,
-                                             memory_order_consume) == NULL) {
+            // Don't count self - we're the GC thread
+            if (it != self && !MutatorThread_isAtSafepoint(it)) {
                 activeThreads++;
             }
         }
-        if (activeThreads > 0)
+
+        if (activeThreads > 0) {
+            uint64_t now = Time_current_millis();
+            uint64_t elapsed = now - startTime;
+
+            // Periodic warnings about stuck threads
+            if (now - lastWarningTime >= Settings_SyncWarningIntervalMs()) {
+                lastWarningTime = now;
+                GC_LOG_WARN("Waiting for %d thread(s) to reach safepoint "
+                            "(%.1fs elapsed)",
+                            activeThreads, elapsed / 1000.0);
+                Synchronizer_diagnoseStuckThreads(self, activeThreads);
+            }
+
+            // Check for timeout (0 = disabled)
+            if (Settings_SyncTimeoutMs() > 0 &&
+                elapsed >= Settings_SyncTimeoutMs()) {
+                GC_LOG_ERROR(
+                    "FATAL: Timeout after %.1fs waiting for %d thread(s)\n"
+                    "Threads did not reach safepoint which blocks the GC.\n"
+                    "This is likely caused by:\n"
+                    "  - Native/extern call missing @blocking annotation\n"
+                    "  - Thread stuck in infinite loop in native code\n"
+                    "Set SCALANATIVE_GC_SYNC_TIMEOUT_MS=0 to disable timeout\n"
+                    "Current timeout: %llu ms",
+                    elapsed / 1000.0, activeThreads,
+                    (unsigned long long)Settings_SyncTimeoutMs());
+                // Abort - this is the safest option as continuing could corrupt
+                // memory
+                abort();
+            }
+
             thread_yield();
+        }
     } while (activeThreads > 0);
     return true;
 }
 
-void Synchronizer_release() {
+void Synchronizer_release(void) {
     Synchronizer_ResumeThreads();
     MutatorThreads_unlock();
     mutex_unlock(&synchronizerLock);
@@ -315,4 +410,4 @@ void Synchronizer_release() {
 #endif
 }
 
-#endif
+#endif // SCALANATIVE_MULTITHREADING_ENABLED && SCALANATIVE_GC_IMMIX

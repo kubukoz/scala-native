@@ -2,8 +2,8 @@ package org.scalanative.testsuite.javalib.lang
 
 import java.lang._
 
-import org.junit.{Ignore, Test}
 import org.junit.Assert._
+import org.junit.{Ignore, Test}
 
 class ClassTest {
 
@@ -154,15 +154,55 @@ class ClassTest {
   }
 
   @Test def testToString(): Unit = {
-    assertTrue(classOf[java.lang.Class[_]].toString == "class java.lang.Class")
-    assertTrue(
-      classOf[java.lang.Runnable].toString == "interface java.lang.Runnable"
+    assertEquals(
+      "class java.lang.Class",
+      classOf[java.lang.Class[_]].toString()
     )
+    assertEquals(
+      "interface java.lang.Runnable",
+      classOf[java.lang.Runnable].toString()
+    )
+    assertEquals("byte", classOf[scala.Byte].toString())
+    assertEquals("short", classOf[scala.Short].toString())
+    assertEquals("char", classOf[scala.Char].toString())
+    assertEquals("int", classOf[scala.Int].toString())
+    assertEquals("long", classOf[scala.Long].toString())
+    assertEquals("float", classOf[scala.Float].toString())
+    assertEquals("double", classOf[scala.Double].toString())
+    assertEquals("boolean", classOf[scala.Boolean].toString())
+    // assertEquals("size", classOf[scala.scalanative.runtime.RawSize].toString())
+    // assertEquals("pointer", classOf[scala.scalanative.runtime.RawPtr].toString())
   }
 
   @Test def isInterface(): Unit = {
     assertFalse(classOf[java.lang.Class[_]].isInterface)
     assertTrue(classOf[java.lang.Runnable].isInterface)
+  }
+
+  @Test def getInterfaces(): Unit = {
+    def hasInterfaces(cls: Class[_], expected: Set[Class[_]]) = {
+      val interfaces = cls.getInterfaces().toSet
+      val diff = interfaces.diff(expected)
+      assertTrue(
+        s"For ${cls}\nExpected: ${expected}\nGot:${interfaces}",
+        diff.isEmpty
+      )
+    }
+    hasInterfaces(classOf[A], Set(classOf[X]))
+    hasInterfaces(classOf[B], Set(classOf[X], classOf[Y]))
+    hasInterfaces(classOf[C], Set())
+    hasInterfaces(classOf[X], Set())
+    hasInterfaces(classOf[Y], Set(classOf[X]))
+  }
+
+  @Test def getSuperClass(): Unit = {
+    def checkSuperClassOf(cls: Class[_], expected: Class[_]) =
+      assertEquals(cls.toString(), expected, cls.getSuperclass())
+    checkSuperClassOf(classOf[A], classOf[AnyRef])
+    checkSuperClassOf(classOf[B], classOf[A])
+    checkSuperClassOf(classOf[C], classOf[AnyRef])
+    checkSuperClassOf(classOf[X], null)
+    checkSuperClassOf(classOf[Y], null)
   }
 
   private def assertDiffClass(
@@ -222,5 +262,24 @@ class ClassTest {
     val cls2 = Array.empty[Array[String]].getClass
 
     assertDiffClass(cls1, cls2)
+  }
+
+  @Test def classForName(): Unit = {
+    val cls1 = Class.forName("java.lang.String")
+    val cls2 = classOf[String]
+    val cls3 = Class.forName("java.lang.Double")
+
+    assertEqualClass(cls1, cls2)
+    assertDiffClass(cls1, cls3)
+
+    assertThrows(
+      classOf[ClassNotFoundException],
+      () => Class.forName("not.existing.class.name")
+    )
+  }
+
+  @Test def getClassLoader(): Unit = {
+    val cl = getClass().getClassLoader()
+    assertTrue(cl != null)
   }
 }

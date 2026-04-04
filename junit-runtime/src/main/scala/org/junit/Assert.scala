@@ -4,9 +4,11 @@
 package org.junit
 
 import java.util.Objects
-import org.hamcrest.{Matcher, MatcherAssert}
-import org.junit.internal.{ExactComparisonCriteria, InexactComparisonCriteria}
+
 import org.junit.function.ThrowingRunnable
+import org.junit.internal.{ExactComparisonCriteria, InexactComparisonCriteria}
+
+import org.hamcrest.{Matcher, MatcherAssert}
 
 object Assert {
   @noinline
@@ -110,7 +112,7 @@ object Assert {
   def assertNotEquals(unexpected: Float, actual: Float, delta: Float): Unit =
     assertNotEquals(null, unexpected, actual, delta)
 
-  // This deprecation should not be removed, it mapping the deprecation in the JUnit library to match bevaiour on the JVM
+  // This deprecation should not be removed, it maps the deprecation in the JUnit library to match bevaiour on the JVM
   @deprecated(
     "Use assertEquals(double expected, double actual, double " +
       "epsilon) instead",
@@ -124,7 +126,7 @@ object Assert {
     )
   }
 
-  // This deprecation should not be removed, it mapping the deprecation in the JUnit library to match bevaiour on the JVM
+  // This deprecation should not be removed, it maps the deprecation in the JUnit library to match bevaiour on the JVM
   @deprecated(
     "Use assertEquals(String message, double expected, double " +
       "actual, double epsilon) instead",

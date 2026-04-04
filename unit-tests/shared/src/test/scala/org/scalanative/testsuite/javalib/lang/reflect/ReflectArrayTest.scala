@@ -14,8 +14,9 @@ package org.scalanative.testsuite.javalib.lang.reflect
 
 import scala.runtime.BoxedUnit
 
-import org.junit.Test
 import org.junit.Assert._
+import org.junit.Test
+
 import org.scalanative.testsuite.utils.Platform.executingInJVM
 
 class ReflectArrayTest {
@@ -179,7 +180,7 @@ class ReflectArrayTest {
     def check(dimensions: List[Int], array: Array[_]): Unit = {
       assertTrue(array.getClass.isArray)
       dimensions match {
-        case Nil => ()
+        case Nil            => ()
         case current :: Nil =>
           assertEquals(expectedClazz, array.getClass)
           for (i <- 0 until array.length) {

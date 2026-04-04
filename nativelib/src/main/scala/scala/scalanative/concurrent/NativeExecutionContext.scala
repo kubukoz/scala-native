@@ -1,8 +1,8 @@
 package scala.scalanative
 package concurrent
 
-import scala.concurrent.{ExecutionContextExecutor, ExecutionContext}
 import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 
 object NativeExecutionContext {
 
@@ -53,8 +53,8 @@ object NativeExecutionContext {
   private[scalanative] trait WorkStealing { self: QueueExecutionContext =>
 
     /** Apply work-stealing mechanism to help with completion of any tasks
-     *  available for execution.Returns after work-stealing maximal number or
-     *  tasks or there is no more tasks available for execution
+     *  available for execution.Returns after work-stealing maximal number of
+     *  tasks or there are no more tasks available for execution
      *  @param maxSteals
      *    maximal ammount of tasks that can be executed, if <= 0 then no tasks
      *    would be completed

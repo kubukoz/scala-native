@@ -1,8 +1,8 @@
 package scala.scalanative
 package nir
 
-import java.lang.Float.floatToRawIntBits
 import java.lang.Double.doubleToRawLongBits
+import java.lang.Float.floatToRawIntBits
 
 /** A NIR value. */
 sealed abstract class Val {
@@ -27,6 +27,8 @@ sealed abstract class Val {
       Type.Int
     case Val.Long(_) =>
       Type.Long
+    case Val.Int128(_, _) =>
+      Type.Int128
     case Val.Float(_) =>
       Type.Float
     case Val.Double(_) =>
@@ -196,6 +198,33 @@ sealed abstract class Val {
     case _ =>
       this
   }
+
+  /** `true` iff `this` is effectively a nullable value. */
+  def isNullable: Boolean = this match {
+    case _: Val.Global | _: Val.Local | _: Val.Zero =>
+      this.ty match {
+        case ref: nir.Type.Ref => ref.isNullable
+        case ty                => nir.Type.isPtrType(ty)
+      }
+    case Val.Null => true
+    // Const is always a non-nullable pointer to possibly nullable data
+    case _: Val.Const => false
+    // All remaining data types can never be nullable
+    // Val.Struct and Val.ArrayValue are aggregate types, can never be null
+    // Val.ByteString is basically Val.ArrayValue
+    case _ => false
+  }
+
+  /** `true` iff `this` is effectively a literal value. */
+  def isLiteral: Boolean = this match {
+    case _: Val.Global | _: Val.Local | _: Val.Const => false
+    case v: Val.StructValue => v.values.forall(_.isLiteral)
+    case v: Val.ArrayValue  => v.values.forall(_.isLiteral)
+    // All remaining value can be always treated as literals
+    // Val.Zero is effectively literal
+    // Val.ByteString is always a literal
+    case _ => true
+  }
 }
 
 object Val {
@@ -240,6 +269,17 @@ object Val {
 
   /** A 64-bit signed two’s complement integer. */
   final case class Long(value: scala.Long) extends Val
+
+  /** A 128-bit signed two’s complement integer, encoded as two 64‑bit words.
+   *  Not emmited by compiler!
+   */
+  final case class Int128(hi: scala.Long, lo: scala.Long) extends Val {
+    def bigIntValue: math.BigInt = {
+      val hiPart = math.BigInt(hi) << 64
+      val loPart = math.BigInt(lo & 0xffffffffffffffffL)
+      hiPart | loPart
+    }
+  }
 
   /** A 32-bit IEEE 754 single-precision float. */
   final case class Float(value: scala.Float) extends Val {

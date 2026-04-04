@@ -6,17 +6,18 @@
 
 package java.util.concurrent
 
-import java.util.{AbstractQueue, Collection, Iterator, Spliterator, function}
-import java.util.{Arrays, Objects, Spliterators}
-import java.util.{NoSuchElementException}
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.LockSupport
+import java.util.{
+  AbstractQueue, Arrays, Collection, Iterator, NoSuchElementException, Objects,
+  Spliterator, Spliterators, function
+}
+
 import scala.scalanative.libc.stdatomic.AtomicRef
 import scala.scalanative.libc.stdatomic.memory_order.{
-  memory_order_relaxed,
-  memory_order_release
+  memory_order_relaxed, memory_order_release
 }
-import scala.scalanative.runtime.{fromRawPtr, Intrinsics}
+import scala.scalanative.runtime.{Intrinsics, fromRawPtr}
 
 @SerialVersionUID(-3223113410248163686L) class LinkedTransferQueue[E <: AnyRef]
     extends AbstractQueue[E]
@@ -70,7 +71,7 @@ import scala.scalanative.runtime.{fromRawPtr, Intrinsics}
    * status. While there are other possible variants, we implement
    * this here as: for a data-mode node, matching entails CASing an
    * "item" field from a non-null data value to null upon match, and
-   * vice-versa for request nodes, CASing from null to a data
+   * vice versa for request nodes, CASing from null to a data
    * value. (Note that the linearization properties of this style of
    * queue are easy to verify -- elements are made available by
    * linking, and unavailable by matching.) Compared to plain M&S
@@ -713,9 +714,9 @@ import scala.scalanative.runtime.{fromRawPtr, Intrinsics}
 
     advance(null)
 
-    final override def hasNext(): Boolean = nextNode != null
+    override final def hasNext(): Boolean = nextNode != null
 
-    final override def next() = {
+    override final def next() = {
       var p = nextNode
       if (p == null)
         throw new NoSuchElementException()

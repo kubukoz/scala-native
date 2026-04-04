@@ -2,11 +2,13 @@ package scala.scalanative
 package nir
 package serialization
 
+import java.io.{ByteArrayOutputStream, DataOutputStream, OutputStream}
 import java.nio.ByteBuffer
-import java.nio.channels.{WritableByteChannel, Channels}
-import java.io.{DataOutputStream, ByteArrayOutputStream, OutputStream}
-import scala.collection.mutable
+import java.nio.channels.{Channels, WritableByteChannel}
 import java.nio.charset.StandardCharsets
+
+import scala.collection.mutable
+
 import serialization.{Tags => T}
 
 // scalafmt: { maxColumn = 120}
@@ -29,6 +31,10 @@ final class BinarySerializer(channel: WritableByteChannel) {
 
   private val sections = Seq(Header, Offsets, Strings, Positions, Globals, Types, Defns, Vals, Insts)
   private var hasEntryPoints: Boolean = false
+
+  private def nonSerializable(kind: String) = throw new IllegalStateException(
+    s"$kind should not be serialized in .nir files. It only exists in the backend"
+  )
 
   private object Header extends NIRSectionWriter(Prelude.length) {
     def put(): Unit = {
@@ -135,7 +141,12 @@ final class BinarySerializer(channel: WritableByteChannel) {
       case Type.StructValue(tys)        => putTag(T.StructValueType); putTypes(tys)
       case Type.Vararg                  => putTag(T.VarargType)
       case Type.Var(ty)                 => putTag(T.VarType); putType(ty)
-      case Type.Virtual                 => putTag(T.VirtualType)
+      case Type.Virtual                 =>
+        nonSerializable("Type.Virtual")
+      // putTag(T.VirtualType)
+      case Type.Int128 =>
+        nonSerializable("Type.Int128")
+      // putTag(T.Int128Type)
     }
   }
 
@@ -169,7 +180,12 @@ final class BinarySerializer(channel: WritableByteChannel) {
       case Val.Zero(ty)           => putTag(T.ZeroVal); putType(ty)
       case Val.ArrayValue(ty, vs) => putTag(T.ArrayValueVal); putType(ty); putVals(vs)
       case Val.StructValue(vs)    => putTag(T.StructValueVal); putVals(vs)
-      case Val.Virtual(v)         => putTag(T.VirtualVal); putLebUnsignedLong(v)
+      case Val.Virtual(v)         =>
+        nonSerializable("Val.Virtual")
+      // putTag(T.VirtualVal); putLebUnsignedLong(v)
+      case Val.Int128(hi, lo) =>
+        nonSerializable("Val.Int128")
+      // putTag(T.Int128Val); putLebSignedLong(hi); putLebUnsignedLong(lo);
     }
   }
 
@@ -195,14 +211,15 @@ final class BinarySerializer(channel: WritableByteChannel) {
       case Attr.Stub               => putTag(T.StubAttr)
       case Attr.Extern(isBlocking) => putTag(T.ExternAttr); putBool(isBlocking)
       case Attr.Link(s)            => putTag(T.LinkAttr); putString(s)
+      case Attr.LinkCppRuntime     => putTag(T.LinkCppRuntimeAttr)
       case Attr.Define(n)          => putTag(T.DefineAttr); putString(n)
       case Attr.Abstract           => putTag(T.AbstractAttr)
       case Attr.Volatile           => putTag(T.VolatileAttr)
       case Attr.Final              => putTag(T.FinalAttr)
       case Attr.SafePublish        => putTag(T.SafePublishAttr)
 
-      case Attr.LinktimeResolved => putTag(T.LinktimeResolvedAttr)
-      case Attr.UsesIntrinsic    => putTag(T.UsesIntrinsicAttr)
+      case Attr.LinktimeResolved       => putTag(T.LinktimeResolvedAttr)
+      case Attr.UsesIntrinsic          => putTag(T.UsesIntrinsicAttr)
       case Attr.Alignment(size, group) =>
         putTag(T.AlignAttr)
         putLebSignedInt(size)

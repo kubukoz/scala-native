@@ -6,16 +6,14 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
-import scala.collection.mutable
-import scala.collection.immutable
+import scala.annotation.{switch, tailrec}
+import scala.collection.{immutable, mutable}
+import scala.reflect.ClassTag
 import scala.util.control.NonFatal
 
 import scala.scalanative.nir.serialization.{Tags => T}
-import scala.scalanative.util.TypeOps.TypeNarrowing
 import scala.scalanative.util.ScalaStdlibCompat.ArraySeqCompat
-
-import scala.annotation.{tailrec, switch}
-import scala.reflect.ClassTag
+import scala.scalanative.util.TypeOps.TypeNarrowing
 
 class DeserializationException(
     global: nir.Global,
@@ -63,7 +61,7 @@ final class BinaryDeserializer(buffer: ByteBuffer, nirSource: NIRSource) {
       val offset = getLebSignedInt()
       global match {
         case Global.None => false
-        case _ =>
+        case _           =>
           entries(global) = offset
           true
       }
@@ -205,6 +203,7 @@ final class BinaryDeserializer(buffer: ByteBuffer, nirSource: NIRSource) {
     case T.FinalAttr       => Attr.Final
     case T.SafePublishAttr => Attr.SafePublish
 
+    case T.LinkCppRuntimeAttr   => Attr.LinkCppRuntime
     case T.LinktimeResolvedAttr => Attr.LinktimeResolved
     case T.UsesIntrinsicAttr    => Attr.UsesIntrinsic
     case T.AlignAttr            => Attr.Alignment(getLebSignedInt(), getOpt(getString()))
@@ -249,7 +248,7 @@ final class BinaryDeserializer(buffer: ByteBuffer, nirSource: NIRSource) {
       case T.SwitchInst      => Inst.Switch(getVal(), getNext(), getNexts())
       case T.ThrowInst       => Inst.Throw(getVal(), getNext())
       case T.UnreachableInst => Inst.Unreachable(getNext())
-      case T.LinktimeIfInst =>
+      case T.LinktimeIfInst  =>
         Inst.LinktimeIf(getLinktimeCondition(), getNext(), getNext())
     }
   }
@@ -311,8 +310,8 @@ final class BinaryDeserializer(buffer: ByteBuffer, nirSource: NIRSource) {
     val attrs = getAttrs()
     implicit val position: nir.SourcePosition = getPosition()
     (tag: @switch) match {
-      case T.VarDefn   => Defn.Var(attrs, name.narrow[nir.Global.Member], getType(), getVal())
-      case T.ConstDefn => Defn.Const(attrs, name.narrow[nir.Global.Member], getType(), getVal())
+      case T.VarDefn     => Defn.Var(attrs, name.narrow[nir.Global.Member], getType(), getVal())
+      case T.ConstDefn   => Defn.Const(attrs, name.narrow[nir.Global.Member], getType(), getVal())
       case T.DeclareDefn =>
         Defn.Declare(attrs, name.narrow[nir.Global.Member], getType().narrow[Type.Function])
       case T.DefineDefn =>
@@ -427,6 +426,7 @@ final class BinaryDeserializer(buffer: ByteBuffer, nirSource: NIRSource) {
       case T.ArrayType   => Type.Array(getType(), getBool())
       case T.RefType     => Type.Ref(getGlobal().narrow[nir.Global.Top], getBool(), getBool())
       case T.SizeType    => Type.Size
+      case T.Int128Type  => Type.Int128
     }
   }
 
@@ -456,6 +456,7 @@ final class BinaryDeserializer(buffer: ByteBuffer, nirSource: NIRSource) {
       case T.VirtualVal => Val.Virtual(getLebUnsignedLong())
       case T.ClassOfVal => Val.ClassOf(getGlobal().narrow[Global.Top])
       case T.SizeVal    => Val.Size(getLebUnsignedLong())
+      case T.Int128Val  => Val.Int128(getLebSignedLong(), getLebUnsignedLong())
     }
   }
 

@@ -2,7 +2,9 @@ package scala.scalanative.windows
 
 import scala.scalanative.unsafe.{Word => _, _}
 import scalanative.unsigned._
+
 import HandleApi.Handle
+import MinWinBaseApi.FileTimeStruct
 import WinBaseApi.SecurityAttributes
 
 @link("advapi32")
@@ -59,6 +61,15 @@ object ProcessThreadsApi {
     extern
 
   def GetProcessId(handle: Handle): DWord = extern
+
+  def GetProcessTimes(
+      handle: Handle,
+      creationTime: Ptr[FileTimeStruct],
+      exitTime: Ptr[FileTimeStruct],
+      kernelTime: Ptr[FileTimeStruct],
+      userTime: Ptr[FileTimeStruct]
+  ): Boolean = extern
+
   def OpenThreadToken(
       thread: Handle,
       desiredAccess: DWord,

@@ -1,7 +1,7 @@
 package scala.scalanative.build
 
-import org.junit.Test
 import org.junit.Assert._
+import org.junit.Test
 
 class TargetTripleTest {
 
@@ -25,7 +25,9 @@ class TargetTripleTest {
     "i686-pc-windows-msvc" ->
       TargetTriple("i386", "pc", "windows", "msvc"),
     "x86_64-portbld-freebsd13.1" ->
-      TargetTriple("x86_64", "unknown", "freebsd", "unknown")
+      TargetTriple("x86_64", "unknown", "freebsd", "unknown"),
+    "i386-linux-gnu" ->
+      TargetTriple("i386", "unknown", "linux", "gnu")
   )
 
   // samples based on parsed to type

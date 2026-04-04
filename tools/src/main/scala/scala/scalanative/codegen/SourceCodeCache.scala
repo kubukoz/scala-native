@@ -1,12 +1,15 @@
 package scala.scalanative
 package codegen
 
-import scala.scalanative.io.VirtualDirectory
+import java.io.IOException
 import java.nio.file._
 import java.nio.file.attribute.BasicFileAttributes
-import scala.collection.mutable
-import scala.collection.concurrent.TrieMap
+
 import scala.annotation.nowarn
+import scala.collection.concurrent.TrieMap
+import scala.collection.mutable
+
+import scala.scalanative.io.VirtualDirectory
 
 private[codegen] class SourceCodeCache(config: build.Config) {
   lazy val sourceCodeDir = {
@@ -47,6 +50,10 @@ private[codegen] class SourceCodeCache(config: build.Config) {
       java.util.EnumSet.of(FileVisitOption.FOLLOW_LINKS),
       Integer.MAX_VALUE,
       new SimpleFileVisitor[Path] {
+        override def visitFileFailed(
+            file: Path,
+            error: IOException
+        ): FileVisitResult = FileVisitResult.SKIP_SUBTREE
         override def visitFile(
             file: Path,
             attrs: BasicFileAttributes
@@ -56,12 +63,20 @@ private[codegen] class SourceCodeCache(config: build.Config) {
             dir: Path,
             attrs: BasicFileAttributes
         ): FileVisitResult = {
-          val sourcesStream = Files.newDirectoryStream(dir, "*.scala")
-          val hasScalaSources =
-            try sourcesStream.iterator().hasNext()
-            finally sourcesStream.close()
-          if (hasScalaSources) directories += dir
-          FileVisitResult.CONTINUE
+          def shouldSkip = dir.startsWith(config.workDir) || {
+            val dirName = dir.getFileName().toString()
+            dirName.startsWith(".") || dirName == "target"
+          }
+          if (shouldSkip) {
+            FileVisitResult.SKIP_SUBTREE
+          } else {
+            val sourcesStream = Files.newDirectoryStream(dir, "*.scala")
+            val hasScalaSources =
+              try sourcesStream.iterator().hasNext()
+              finally sourcesStream.close()
+            if (hasScalaSources) directories += dir
+            FileVisitResult.CONTINUE
+          }
         }
       }
     )
@@ -176,7 +191,7 @@ private[codegen] class SourceCodeCache(config: build.Config) {
       else {
         def subpathFrom(pivotSubpath: String): Option[Path] =
           pathElements.lastIndexOf(pivotSubpath) match {
-            case -1 => None
+            case -1  => None
             case idx =>
               Some(
                 jarPath

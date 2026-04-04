@@ -1,9 +1,14 @@
 package org.scalanative.testsuite.utils
 
 import java.util.Locale
-// Ported from Scala.js
+
+import scala.scalanative.buildinfo.ScalaNativeBuildInfo
 
 object Platform {
+  class DummyAnnotation extends scala.annotation.StaticAnnotation()
+  type nooptimize = DummyAnnotation
+
+  def scalaVersion: String = ScalaNativeBuildInfo.scalaVersion
 
   final val executingInJVM = true
 
@@ -18,6 +23,13 @@ object Platform {
   final val executingInJVMOnLowerThanJDK15 = jdkVersion < 15
   final val executingInJVMOnLowerThanJDK17 = jdkVersion < 17
   final val executingInJVMOnJDK17 = jdkVersion == 17
+
+  // current usage, adapted from: Scala.js commit: b38201c dated: 2025-02-06
+  def executingInJVMOnLowerThanJDK(version: Int): Boolean =
+    jdkVersion < version
+
+  def executingInJVMWithJDKIn(range: Range): Boolean =
+    range.contains(jdkVersion)
 
   private lazy val jdkVersion = {
     val v = System.getProperty("java.version")
@@ -45,4 +57,5 @@ object Platform {
   final val hasArm64SignalQuirk = false
 
   final val isMultithreadingEnabled = true
+  final val isWeakReferenceSupported = true
 }

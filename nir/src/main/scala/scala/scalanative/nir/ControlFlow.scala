@@ -2,6 +2,7 @@ package scala.scalanative
 package nir
 
 import scala.collection.mutable
+
 import util.unsupported
 
 /** Analysis that's used to answer following questions:
@@ -50,16 +51,14 @@ private[scalanative] object ControlFlow {
       assert(insts.nonEmpty)
 
       val locations = {
-        val entries = mutable.Map.empty[Local, Int]
+        val entries = mutable.Map.empty[Local, (Int, Inst.Label)]
         var i = 0
-
         insts.foreach { inst =>
           inst match {
-            case inst: Inst.Label =>
-              entries(inst.id) = i
-            case _ =>
-              ()
+            case inst: Inst.Label => entries(inst.id) = (i, inst)
+            case _                => ()
           }
+
           i += 1
         }
 
@@ -76,23 +75,19 @@ private[scalanative] object ControlFlow {
       }
 
       def block(local: Local)(implicit pos: SourcePosition): Block =
-        blocks.getOrElse(
+        blocks.getOrElseUpdate(
           local, {
-            val k = locations(local)
-            val Inst.Label(n, params) = insts(k): @unchecked
+            val (k, Inst.Label(n, params)) = locations(local)
 
             // copy all instruction up until and including
             // first control-flow instruction after the label
-            val body = mutable.UnrolledBuffer.empty[Inst]
-            var i = k
-            while ({
-              i += 1
-              body += insts(i)
-              !insts(i).isInstanceOf[Inst.Cf]
-            }) ()
+            val firstInst = k + 1
+            val body = insts.slice(
+              firstInst,
+              insts.indexWhere(_.isInstanceOf[Inst.Cf], from = firstInst) + 1
+            )
 
-            val block = Block(n, params, body.toSeq, isEntry = k == 0)
-            blocks(local) = block
+            val block = Block(n, params, body, isEntry = k == 0)
             todo ::= block
             block
           }

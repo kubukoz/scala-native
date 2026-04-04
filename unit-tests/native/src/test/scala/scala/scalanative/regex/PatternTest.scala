@@ -3,9 +3,8 @@ package regex
 
 import java.util.regex.PatternSyntaxException
 
-import org.junit.Ignore
-import org.junit.Test
 import org.junit.Assert._
+import org.junit.{Ignore, Test}
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
 
@@ -302,7 +301,7 @@ class PatternTest {
     pass("(?>a|aa)aabb", "aaabb")
     pass("(?>aa|a)aabb", "aaabb")
 
-    // quantifiers over look ahead
+    // quantifiers over look-ahead
     passAndFail(".*(?<=abc)*\\.log$", "cde.log", "cde.log")
   }
 
@@ -407,7 +406,7 @@ class PatternTest {
     }
 
     /// Ordered alphabetical by description (second arg).
-    /// Helps ensuring that each scalanative/regex Parser description
+    /// Helps ensure that each scalanative/regex Parser description
     /// matches its JVM equivalent.
     ///
     /// These are _not_ all the JVM parser PatternSyntaxExceptions available.

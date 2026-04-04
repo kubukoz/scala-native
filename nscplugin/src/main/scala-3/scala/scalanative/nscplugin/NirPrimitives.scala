@@ -1,17 +1,18 @@
 package scala.scalanative.nscplugin
 
-import scala.collection.mutable
 import dotty.tools.backend.jvm.DottyPrimitives
 import dotty.tools.dotc.ast.tpd._
-import dotty.tools.dotc.util.ReadOnlyMap
 import dotty.tools.dotc.core._
-import Names.TermName
-import StdNames._
-import Types._
-import Contexts._
-import Symbols._
-import Names._
+import dotty.tools.dotc.util.ReadOnlyMap
+import scala.collection.mutable
+
 import scala.scalanative.nscplugin.NirPrimitives
+
+import Contexts._
+import Names._
+import StdNames._
+import Symbols._
+import Types._
 
 object NirPrimitives {
   final val FirstNirPrimitiveCode = 300
@@ -125,14 +126,14 @@ object NirPrimitives {
 
 class NirPrimitives(using ctx: Context) extends DottyPrimitives(ctx) {
   import NirPrimitives._
-  private lazy val nirPrimitives: ReadOnlyMap[Symbol, Int] = initNirPrimitives
+  protected lazy val nirPrimitives: ReadOnlyMap[Symbol, Int] = initNirPrimitives
+
+  // Variant for source compatibility due to changes method signature
+  def getPrimitiveCompat(app: Apply, tpe: Type): Int =
+    nirPrimitives.getOrElse(app.fun.symbol, super.getPrimitive(app, tpe))
 
   override def getPrimitive(sym: Symbol): Int =
     nirPrimitives.getOrElse(sym, super.getPrimitive(sym))
-
-  override def getPrimitive(app: Apply, tpe: Type)(using Context): Int =
-    nirPrimitives.getOrElse(app.fun.symbol, super.getPrimitive(app, tpe))
-
   override def isPrimitive(sym: Symbol): Boolean = {
     nirPrimitives.contains(sym) || super.isPrimitive(sym)
   }

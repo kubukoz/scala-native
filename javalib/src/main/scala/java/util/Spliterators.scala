@@ -10,9 +10,9 @@ import Spliterator._
  *
  *  It is most empathically __NOT__ intended for production use.
  *
- *  The limitations of the this implementation may not be as strong as they
- *  appear at first blush. Many/most classes which extend Spliterator (no s)
- *  supply more competent and efficient implementations.
+ *  The limitations of this implementation may not be as strong as they appear
+ *  at first blush. Many/most classes which extend Spliterator (no s) supply
+ *  more competent and efficient implementations.
  *
  *  The implementation of methods on Spliterators are, to current knowledge,
  *  robust. Many of these methods return spliterators. Those spliterators have
@@ -21,9 +21,7 @@ import Spliterator._
  *  Future evolutions should, over time, remove these limitations:
  *
  *    - spliterators specified by Java as late-binding may not be late-binding.
- *
  *    - spliterators never check for concurrent modification.
- *
  *    - A number of spliterator methods have JVM descriptions of what happens
  *      after iteration starts and one of certain methods, say, trySplit() is
  *      called. This implementation may not follow the JVM description. Even in
@@ -46,7 +44,7 @@ import Spliterator._
  *      need to be reduced.
  *
  *      For example, an individual development-only Test
- *      in SpliteratorsTrySplitTest showed an an un-optimized Scala Native
+ *      in SpliteratorsTrySplitTest showed an un-optimized Scala Native
  *      executable having results matching the same Test on JVM but taking
  *      approximately 50% longer (a minute or so), possibly due to swapping
  *      caused by higher memory usage.
@@ -54,19 +52,19 @@ import Spliterator._
 
 object Spliterators {
 
-  private final val sizedCharacteristicsMask =
+  private[util] final val sizedCharacteristicsMask =
     Spliterator.SIZED | Spliterator.SUBSIZED
 
-  private def isMaskSet(characteristics: Int, mask: Int): Boolean =
+  private[util] def isMaskSet(characteristics: Int, mask: Int): Boolean =
     (characteristics & mask) == mask
 
-  private def maskOff(characteristics: Int, mask: Int): Int =
+  private[util] def maskOff(characteristics: Int, mask: Int): Int =
     characteristics & ~mask
 
-  private def maskOn(characteristics: Int, mask: Int): Int =
+  private[util] def maskOn(characteristics: Int, mask: Int): Int =
     characteristics | mask
 
-  private def maybeSetSizedCharacteristics(characteristics: Int): Int = {
+  private[util] def maybeSetSizedCharacteristics(characteristics: Int): Int = {
     if (isMaskSet(characteristics, Spliterator.CONCURRENT)) characteristics
     else maskOn(characteristics, sizedCharacteristicsMask)
   }
@@ -364,7 +362,7 @@ object Spliterators {
       def hasNext(): Boolean = {
         if (cached.nonEmpty) true
         else {
-          spliterator.tryAdvance((e: Double) => (cached = Some(e)))
+          spliterator.tryAdvance { (e: Double) => cached = Some(e) }
           cached.nonEmpty
         }
       }
@@ -391,7 +389,7 @@ object Spliterators {
       def hasNext(): Boolean = {
         if (cached.nonEmpty) true
         else {
-          spliterator.tryAdvance((e: Int) => (cached = Some(e)))
+          spliterator.tryAdvance { (e: Int) => cached = Some(e) }
           cached.nonEmpty
         }
       }
@@ -418,7 +416,7 @@ object Spliterators {
       def hasNext(): Boolean = {
         if (cached.nonEmpty) true
         else {
-          spliterator.tryAdvance((e: Long) => (cached = Some(e)))
+          spliterator.tryAdvance { (e: Long) => cached = Some(e) }
           cached.nonEmpty
         }
       }
@@ -445,7 +443,7 @@ object Spliterators {
       def hasNext(): Boolean = {
         if (cached.nonEmpty) true
         else {
-          spliterator.tryAdvance((e: T) => (cached = Some(e)))
+          spliterator.tryAdvance { (e: T) => cached = Some(e) }
           cached.nonEmpty
         }
       }

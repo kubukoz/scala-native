@@ -1,5 +1,8 @@
 scalalib/src/
 scala-partest/fetchedSources/
+# Generated from template
+scripted-tests/scala3/cross-version-compat/build.sbt
+
 target/
 _build/
 *.dot
@@ -7,6 +10,7 @@ _build/
 .idea
 scripts/.coursier
 scripts/.scalafmt*
+scripts/.scala-cli*
 sbt-crossproject/
 local.sbt
 .ammonite/
@@ -22,9 +26,6 @@ bin/
 .externalToolBuilders/
 .cache*
 
-# scala-cli
-**/.scala-build
-
 # metals
 **/.bloop/
 /.metals/
@@ -38,6 +39,7 @@ bin/
 
 # vscode
 /.vscode/
+/.cursor/
 
 # vim
 *.swp
@@ -45,8 +47,7 @@ bin/
 # Virtual env generated dependencies, for generating docs
 .venv
 
-# Configuration for clangd
-**/compile_flags.txt
-
 # macOS
 .DS_Store
+.devenv
+.direnv

@@ -3,10 +3,10 @@ package org.scalanative.testsuite.utils
 // See also the scala.scalanative.runtime.Platform package.
 
 import scala.scalanative.buildinfo.ScalaNativeBuildInfo
-
 import scala.scalanative.runtime
 
 object Platform {
+  type nooptimize = scala.scalanative.annotation.nooptimize
 
   def scalaVersion: String = ScalaNativeBuildInfo.scalaVersion
 
@@ -18,11 +18,17 @@ object Platform {
 
   final val hasCompliantArrayIndexOutOfBounds = true
 
+  // historical usage, kept to avoid cascading changes.
   final val executingInJVMOnJDK8OrLower = false
   final val executingInJVMOnLowerThenJDK11 = false
   final val executingInJVMOnLowerThanJDK15 = false
   final val executingInJVMOnLowerThanJDK17 = false
   final val executingInJVMOnJDK17 = false
+
+  // current usage, adapted from: Scala.js commit: b38201c dated: 2025-02-06
+  def executingInJVMOnLowerThanJDK(version: Int): Boolean = false
+
+  def executingInJVMWithJDKIn(range: Range): Boolean = false
 
   final val hasCompliantAsInstanceOfs = true
 
@@ -55,4 +61,6 @@ object Platform {
   final val isMultithreadingEnabled =
     scala.scalanative.meta.LinktimeInfo.isMultithreadingEnabled
 
+  final val isWeakReferenceSupported =
+    scala.scalanative.meta.LinktimeInfo.isWeakReferenceSupported
 }

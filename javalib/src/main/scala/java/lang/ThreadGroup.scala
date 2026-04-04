@@ -1,11 +1,13 @@
 package java.lang
 
-import java.util.{Arrays, Map, HashMap, List, ArrayList}
 import java.io.PrintStream
 import java.lang.Thread.UncaughtExceptionHandler
 import java.lang.ref.WeakReference
+import java.util.ScalaOps._
+import java.util.{ArrayList, Arrays, HashMap, List, Map}
 
 import scala.annotation.tailrec
+
 import scala.scalanative.runtime.NativeThread
 import scala.scalanative.runtime.javalib.Proxy
 
@@ -77,7 +79,7 @@ class ThreadGroup(
   def isDestroyed(): scala.Boolean = false
 
   def activeCount(): Int = {
-    NativeThread.Registry.aliveThreads
+    NativeThread.Registry.aliveThreadsIterator.scalaOps
       .count { nativeThread =>
         val group = nativeThread.thread.getThreadGroup()
         this.parentOf(group)
@@ -109,19 +111,18 @@ class ThreadGroup(
     if (out == null) throw new NullPointerException()
     if (out.length == 0) 0
     else {
-      val aliveThreads = NativeThread.Registry.aliveThreads.toArray
-      @tailrec def loop(idx: Int, included: Int): Int =
-        if (idx == aliveThreads.length || included == out.length) included
+      val aliveThreadsIterator = NativeThread.Registry.aliveThreadsIterator
+      @tailrec def loop(included: Int): Int =
+        if (!aliveThreadsIterator.hasNext() || included == out.length) included
         else {
-          val thread = aliveThreads(idx).thread
+          val thread = aliveThreadsIterator.next().thread
           val group = thread.getThreadGroup()
-          val nextIdx = idx + 1
           if ((group eq this) || (recurse && this.parentOf(group))) {
             out(included) = thread
-            loop(nextIdx, included + 1)
-          } else loop(nextIdx, included)
+            loop(included + 1)
+          } else loop(included)
         }
-      loop(0, 0)
+      loop(0)
     }
   }
 
@@ -153,7 +154,7 @@ class ThreadGroup(
   }
 
   final def interrupt(): Unit = {
-    for (nativeThread <- NativeThread.Registry.aliveThreads) {
+    for (nativeThread <- NativeThread.Registry.aliveThreadsIterator.scalaOps) {
       val thread = nativeThread.thread
       val group = thread.getThreadGroup()
       if (this.parentOf(group)) thread.interrupt()
@@ -162,7 +163,7 @@ class ThreadGroup(
 
   def list(): Unit = {
     val groupThreads = new HashMap[ThreadGroup, List[Thread]]
-    for (nativeThread <- NativeThread.Registry.aliveThreads) {
+    for (nativeThread <- NativeThread.Registry.aliveThreadsIterator.scalaOps) {
       val thread = nativeThread.thread
       val group = thread.getThreadGroup()
       if (this.parentOf(group)) {
@@ -185,7 +186,7 @@ class ThreadGroup(
       if (indent.isEmpty()) " " * 4
       else indent * 2
     map.get(this) match {
-      case null => ()
+      case null    => ()
       case threads =>
         threads.forEach { thread =>
           out.print(newIndent)
@@ -222,7 +223,7 @@ class ThreadGroup(
         Thread.getDefaultUncaughtExceptionHandler() match {
           case null =>
             val threadName = "\"" + thread.getName() + "\""
-            System.err.print(s"Exception in thread $threadName")
+            System.err.print(s"Exception in thread $threadName ")
             throwable.printStackTrace(System.err)
           case handler =>
             Proxy.executeUncaughtExceptionHandler(handler, thread, throwable)
@@ -261,7 +262,7 @@ class ThreadGroup(
     var i = 0
     while (i < subgroups) {
       weekSubgroups(i).get() match {
-        case null => removeGroupAtIndex(i)
+        case null  => removeGroupAtIndex(i)
         case group =>
           snapshot.add(group)
           i += 1

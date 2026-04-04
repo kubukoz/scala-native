@@ -5,13 +5,12 @@ import java.nio.file.{Files, Path}
 
 import scala.util.Try
 
-import org.junit.Test
 import org.junit.Assert._
+import org.junit.Test
 
 import org.scalanative.testsuite.javalib.io.IoTestHelpers.withTemporaryDirectory
-
-import org.scalanative.testsuite.utils.Platform.isWindows
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
+import org.scalanative.testsuite.utils.Platform.isWindows
 
 class FileInputStreamTest {
   // On JVM new File(".") is not valid input file
@@ -82,7 +81,6 @@ class FileInputStreamTest {
       try {
         // current position less than file size.
         assertEquals("available pos < size", str.length(), fis.available())
-        // 2023-06-15 11:21 -0400 FIXME
 
         // move current position to > than file size.
         val channel = fis.getChannel()

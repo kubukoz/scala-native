@@ -2,6 +2,7 @@ package scala.scalanative
 package linker
 
 import scala.collection.mutable
+
 import scala.scalanative.build._
 import scala.scalanative.util.unsupported
 
@@ -25,14 +26,17 @@ private[linker] trait LinktimeValueResolver { self: Reach =>
       s"$linktimeInfo.isMultithreadingEnabled" -> conf.multithreadingSupport,
       s"$linktimeInfo.isWeakReferenceSupported" -> {
         conf.gc == GC.Immix ||
-        conf.gc == GC.Commix
+        conf.gc == GC.Commix ||
+        conf.gc == GC.Boehm
       },
       s"$linktimeInfo.is32BitPlatform" -> conf.is32BitPlatform,
       s"$linktimeInfo.enabledSanitizer" -> conf.sanitizer
         .map(_.name)
         .getOrElse(""),
-      s"$linktimeInfo.isMsys" -> Platform.isMsys,
-      s"$linktimeInfo.isCygwin" -> Platform.isCygwin,
+      s"$linktimeInfo.isMsys" -> config.targetsMsys,
+      s"$linktimeInfo.isCygwin" -> config.targetsCygwin,
+      s"$linktimeInfo.runtimeVersion" -> nir.Versions.current,
+      s"$linktimeInfo.garbageCollector" -> conf.gc.name,
       s"$linktimeInfo.target.arch" -> triple.arch,
       s"$linktimeInfo.target.vendor" -> triple.vendor,
       s"$linktimeInfo.target.os" -> triple.os,
@@ -104,10 +108,10 @@ private[linker] trait LinktimeValueResolver { self: Reach =>
     }
 
     def isRuntimeOnly(inst: nir.Inst): Boolean = inst match {
-      case nir.Inst.Label(_, _)             => false
-      case nir.Inst.LinktimeIf(_, _, _)     => false
-      case nir.Inst.Jump(_: nir.Next.Label) => false
-      case nir.Inst.Ret(_)                  => false
+      case nir.Inst.Label(_, _)               => false
+      case nir.Inst.LinktimeIf(_, _, _)       => false
+      case nir.Inst.Jump(_: nir.Next.Label)   => false
+      case nir.Inst.Ret(_)                    => false
       case nir.Inst.Let(_, op, nir.Next.None) =>
         op match {
           case nir.Op.Call(_, nir.Val.Global(name, _), _) =>
@@ -194,23 +198,28 @@ private[linker] trait LinktimeValueResolver { self: Reach =>
         (ComparableVal.fromNir(condVal), resolvedValue) match {
           case ComparableTuple(ordering, condition, resolved) =>
             val comparsionFn = comparison match {
-              case nir.Comp.Ieq | nir.Comp.Feq => ordering.equiv _
+              case nir.Comp.Ieq | nir.Comp.Feq =>
+                ordering.equiv(_, _)
               case nir.Comp.Ine | nir.Comp.Fne =>
                 !ordering.equiv(_: Any, _: Any)
-              case nir.Comp.Sgt | nir.Comp.Ugt | nir.Comp.Fgt => ordering.gt _
-              case nir.Comp.Sge | nir.Comp.Uge | nir.Comp.Fge => ordering.gteq _
-              case nir.Comp.Slt | nir.Comp.Ult | nir.Comp.Flt => ordering.lt _
-              case nir.Comp.Sle | nir.Comp.Ule | nir.Comp.Fle => ordering.lteq _
+              case nir.Comp.Sgt | nir.Comp.Ugt | nir.Comp.Fgt =>
+                ordering.gt(_, _)
+              case nir.Comp.Sge | nir.Comp.Uge | nir.Comp.Fge =>
+                ordering.gteq(_, _)
+              case nir.Comp.Slt | nir.Comp.Ult | nir.Comp.Flt =>
+                ordering.lt(_, _)
+              case nir.Comp.Sle | nir.Comp.Ule | nir.Comp.Fle =>
+                ordering.lteq(_, _)
             }
 
             comparsionFn(resolved.value, condition.value)
 
-          // In case if we cannot get common Ordering that can be used, eg.: comparison with Null
+          // In case if we cannot get common Ordering that can be used, e.g.: comparison with Null
           case (ComparableVal(condition, _), ComparableVal(resolved, _)) =>
             comparison match {
               case nir.Comp.Ieq | nir.Comp.Feq => resolved == condition
               case nir.Comp.Ine | nir.Comp.Fne => resolved != condition
-              case _ =>
+              case _                           =>
                 throw new LinkingException(
                   s"Unsupported link-time comparison $comparison between types ${condVal.ty} and ${resolvedValue.nirValue.ty}"
                 )
@@ -319,7 +328,7 @@ private[linker] object LinktimeValueResolver {
         case v: Float  => ComparableVal(v, nir.Val.Float(v))
         case v: Double => ComparableVal(v, nir.Val.Double(v))
         case v: String => ComparableVal(v, nir.Val.String(v))
-        case other =>
+        case other     =>
           throw new LinkingException(
             s"Unsupported value for link-time resolving: $other"
           )
@@ -339,7 +348,7 @@ private[linker] object LinktimeValueResolver {
         case nir.Val.Float(value)  => ComparableVal(value, v)
         case nir.Val.Double(value) => ComparableVal(value, v)
         case nir.Val.Null          => ComparableVal(null, v)
-        case other =>
+        case other                 =>
           throw new LinkingException(
             s"Unsupported NIR value for link-time resolving: $other"
           )

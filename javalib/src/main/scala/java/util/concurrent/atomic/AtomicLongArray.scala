@@ -6,20 +6,21 @@
 
 package java.util.concurrent.atomic
 
+import java.util.Arrays
+import java.util.function.{LongBinaryOperator, LongUnaryOperator}
+
 import scala.annotation.tailrec
 import scala.language.implicitConversions
+
 import scala.scalanative.annotation.alwaysinline
-import scala.scalanative.unsafe._
 import scala.scalanative.libc.stdatomic.AtomicLongLong
 import scala.scalanative.libc.stdatomic.memory_order._
-
-import java.util.function.{LongBinaryOperator, LongUnaryOperator}
-import java.util.Arrays
 import scala.scalanative.runtime.LongArray
+import scala.scalanative.unsafe._
 
 @SerialVersionUID(-2308431214976778248L)
 class AtomicLongArray extends Serializable {
-  final private var array: Array[Long] = null
+  private final var array: Array[Long] = null
 
   @alwaysinline
   private[concurrent] def nativeArray: LongArray = array.asInstanceOf[LongArray]
@@ -181,11 +182,9 @@ class AtomicLongArray extends Serializable {
       expectedValue: Long,
       newValue: Long
   ): Boolean = {
-    val ref = nativeArray.at(i)
-    if (!ref == expectedValue) {
-      !ref = newValue
-      true
-    } else false
+    nativeArray
+      .at(i)
+      .compareExchangeWeak(expectedValue, newValue, memory_order_relaxed)
   }
 
   /** Atomically increments the value of the element at index {@code i}, with
@@ -198,7 +197,7 @@ class AtomicLongArray extends Serializable {
    *  @return
    *    the previous value
    */
-  final def getAndIncrement()(i: Int): Long = {
+  final def getAndIncrement(i: Int): Long = {
     nativeArray.at(i).fetchAdd(1)
   }
 

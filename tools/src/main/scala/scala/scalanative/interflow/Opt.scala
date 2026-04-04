@@ -1,9 +1,10 @@
 package scala.scalanative
 package interflow
 
-import scala.scalanative.nir.Defn.Define.DebugInfo
-import scala.scalanative.linker._
 import scala.collection.mutable
+
+import scala.scalanative.linker._
+import scala.scalanative.nir.Defn.Define.DebugInfo
 import scala.scalanative.util.ScopedVar.scopedPushIf
 
 private[interflow] trait Opt { self: Interflow =>
@@ -11,18 +12,8 @@ private[interflow] trait Opt { self: Interflow =>
   def shallOpt(name: nir.Global.Member): Boolean = {
     val defn =
       getOriginal(originalName(name))
-    val noUnwind = defn.insts.forall {
-      case nir.Inst.Let(_, _, unwind) =>
-        unwind == nir.Next.None
-      case nir.Inst.Throw(_, unwind) =>
-        unwind == nir.Next.None
-      case nir.Inst.Unreachable(unwind) =>
-        unwind == nir.Next.None
-      case _ =>
-        true
-    }
 
-    defn.attrs.opt != nir.Attr.NoOpt && noUnwind
+    defn.attrs.opt != nir.Attr.NoOpt && !defn.hasUnwind
   }
 
   def opt(name: nir.Global.Member): nir.Defn.Define =
@@ -47,7 +38,7 @@ private[interflow] trait Opt { self: Interflow =>
         } else debugInfo
         origdefn.copy(
           name = name,
-          attrs = origdefn.attrs.copy(opt = nir.Attr.DidOpt),
+          attrs = origdefn.attrs.withOpt(nir.Attr.DidOpt),
           ty = nir.Type.Function(argtys, retty),
           insts = insts,
           debugInfo = newDebugInfo

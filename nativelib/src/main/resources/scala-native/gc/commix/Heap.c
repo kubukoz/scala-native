@@ -1,16 +1,16 @@
-#include "immix_commix/utils/Time.h"
 #if defined(SCALANATIVE_GC_COMMIX)
 
 #include <stdlib.h>
 #include <stdio.h>
 #include "Heap.h"
-#include "immix_commix/Log.h"
+#include "shared/Log.h"
 #include "Allocator.h"
 #include "LargeAllocator.h"
 #include "Marker.h"
 #include "State.h"
 #include "immix_commix/utils/MathUtils.h"
-#include "immix_commix/StackTrace.h"
+#include "StackTrace.h"
+#include "shared/Time.h"
 #include "Settings.h"
 #include "shared/MemoryInfo.h"
 #include "shared/MemoryMap.h"
@@ -24,9 +24,9 @@
 #include "immix_commix/Synchronizer.h"
 
 void Heap_exitWithOutOfMemory(const char *details) {
-    fprintf(stderr, "Out of heap space %s\n", details);
+    GC_LOG_ERROR("Out of heap space %s", details);
     StackTrace_PrintStackTrace();
-    exit(1);
+    exit(131);
 }
 
 bool Heap_isGrowingPossible(Heap *heap, uint32_t incrementInBlocks) {
@@ -41,6 +41,8 @@ size_t Heap_getMemoryLimit() {
         return memorySize;
     }
 }
+
+size_t Heap_getMemoryUsed(Heap *heap) { return heap->heapSize; }
 
 /**
  * Maps `MAX_SIZE` of memory and returns the first address aligned on
@@ -93,26 +95,23 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
     size_t memoryLimit = Heap_getMemoryLimit();
 
     if (maxHeapSize < MIN_HEAP_SIZE) {
-        fprintf(stderr, "GC_MAXIMUM_HEAP_SIZE too small to initialize heap.\n");
-        fprintf(stderr, "Minimum required: %zum \n",
-                (size_t)(MIN_HEAP_SIZE / 1024 / 1024));
-        fflush(stderr);
-        exit(1);
+        GC_LOG_ERROR("GC_MAXIMUM_HEAP_SIZE too small to initialize heap. "
+                     "Minimum required: %zum",
+                     (size_t)(MIN_HEAP_SIZE / 1024 / 1024));
+        exit(132);
     }
 
     if (minHeapSize > memoryLimit) {
-        fprintf(stderr, "GC_INITIAL_HEAP_SIZE is too large.\n");
-        fprintf(stderr, "Maximum possible: %zug \n",
-                memoryLimit / 1024 / 1024 / 1024);
-        fflush(stderr);
-        exit(1);
+        GC_LOG_ERROR("GC_INITIAL_HEAP_SIZE is too large. "
+                     "Maximum possible: %zug",
+                     memoryLimit / 1024 / 1024 / 1024);
+        exit(133);
     }
 
     if (maxHeapSize < minHeapSize) {
-        fprintf(stderr, "GC_MAXIMUM_HEAP_SIZE should be at least "
-                        "GC_INITIAL_HEAP_SIZE\n");
-        fflush(stderr);
-        exit(1);
+        GC_LOG_ERROR("GC_MAXIMUM_HEAP_SIZE should be at least "
+                     "GC_INITIAL_HEAP_SIZE");
+        exit(134);
     }
 
     if (minHeapSize < MIN_HEAP_SIZE) {
@@ -165,6 +164,15 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
 
     // Init heap for small objects
     word_t *heapStart = Heap_mapAndAlign(maxHeapSize, BLOCK_TOTAL_SIZE);
+    if (!heapStart) {
+        GC_LOG_ERROR("Failed to allocate heap space, "
+                     "requested size=%.2fMB, available memory=%.2fMB. "
+                     "Consider setting GC_MAXIMUM_HEAP_SIZE env variable "
+                     "to limit maximal heap size",
+                     maxHeapSize / (1024.0 * 1024.0),
+                     getFreeMemorySize() / (1024.0 * 1024.0));
+        exit(134);
+    }
     heap->heapSize = minHeapSize;
     heap->heapStart = heapStart;
     heap->heapEnd = heapStart + minHeapSize / WORD_SIZE;
@@ -241,6 +249,7 @@ void Heap_Collect(Heap *heap) {
                               GC_MutatorThreadState_Unmanaged);
     assert(Sweeper_IsSweepDone(heap));
 #endif
+    heap->gcCollectionStart_ns = Time_current_nanos();
     Stats *stats = Stats_OrNull(heap->stats);
     Stats_CollectionStarted(stats);
 #ifdef GC_ASSERTIONS
@@ -274,15 +283,11 @@ bool Heap_shouldGrow(Heap *heap) {
     uint32_t unavailableBlockCount =
         blockCount - (freeBlockCount + recycledBlockCount);
 
-#ifdef DEBUG_PRINT
-    printf("\n\n Max mark time ratio: %lf \n", heap->maxMarkTimeRatio);
-    printf("Min free ratio: %lf \n", heap->minFreeRatio);
-    printf("Block count: %" PRIu32 "\n", blockCount);
-    printf("Unavailable: %" PRIu32 "\n", unavailableBlockCount);
-    printf("Free: %" PRIu32 "\n", freeBlockCount);
-    printf("Recycled: %" PRIu32 "\n", recycledBlockCount);
-    fflush(stdout);
-#endif
+    GC_LOG_DEBUG("Max mark time ratio: %lf, Min free ratio: %lf, "
+                 "Block count: %" PRIu32 ", Unavailable: %" PRIu32
+                 ", Free: %" PRIu32 ", Recycled: %" PRIu32,
+                 heap->maxMarkTimeRatio, heap->minFreeRatio, blockCount,
+                 unavailableBlockCount, freeBlockCount, recycledBlockCount);
 
     uint64_t timeInMark = heap->mark.currentEnd_ns - heap->mark.currentStart_ns;
     uint64_t timeTotal = heap->mark.currentEnd_ns - heap->mark.lastEnd_ns;
@@ -328,11 +333,8 @@ void Heap_Grow(Heap *heap, uint32_t incrementInBlocks) {
     }
     size_t incrementInBytes = incrementInBlocks * SPACE_USED_PER_BLOCK;
 
-#ifdef DEBUG_PRINT
-    printf("Growing heap by %zu bytes, to %zu bytes\n", incrementInBytes,
-           heap->heapSize + incrementInBytes);
-    fflush(stdout);
-#endif
+    GC_LOG_INFO("Growing heap by %zu bytes, to %zu bytes", incrementInBytes,
+                heap->heapSize + incrementInBytes);
 
     word_t *heapEnd = heap->heapEnd;
     heap->heapEnd = heapEnd + incrementInBlocks * WORDS_IN_BLOCK;

@@ -1,8 +1,8 @@
 package scala.scalanative
 package runtime
 
-import scalanative.unsafe._
 import scala.scalanative.unsigned._
+import scalanative.unsafe._
 
 object Intrinsics {
   private[runtime] object internal {
@@ -125,7 +125,7 @@ object Intrinsics {
   def elemRawPtr(rawptr: RawPtr, offset: RawSize): RawPtr =
     intrinsic
 
-    /** Intrinsified computation of derived raw pointer. */
+  /** Intrinsified computation of derived raw pointer. */
   def elemRawPtr(rawptr: RawPtr, offset: Int): RawPtr =
     intrinsic
 
@@ -150,7 +150,7 @@ object Intrinsics {
   /** Intrinsified cast that reinterprets raw pointer as an int. */
   def castRawPtrToInt(rawptr: RawPtr): Int = intrinsic
 
-  /** Intrinsified cast that reinterprets raw pointer as an long. */
+  /** Intrinsified cast that reinterprets raw pointer as a long. */
   def castRawPtrToLong(rawptr: RawPtr): Long = intrinsic
 
   /** Intrinsified cast that reinterprets int as a raw pointer. */
@@ -194,4 +194,7 @@ object Intrinsics {
   def unsignedOf(value: Int): UInt = intrinsic
   def unsignedOf(value: Long): ULong = intrinsic
   def unsignedOf(value: RawSize): USize = intrinsic
+
+  def multiplyHigh(x: scala.Long, y: scala.Long): scala.Long = intrinsic
+  def unsignedMultiplyHigh(x: scala.Long, y: scala.Long): scala.Long = intrinsic
 }

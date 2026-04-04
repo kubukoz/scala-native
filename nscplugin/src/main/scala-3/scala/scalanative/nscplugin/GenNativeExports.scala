@@ -1,18 +1,17 @@
 package scala.scalanative
 package nscplugin
 
+import dotty.tools.dotc.ast.tpd._
+import dotty.tools.dotc.{core, report}
 import scala.language.implicitConversions
 
-import dotty.tools.dotc.ast.tpd._
-import dotty.tools.dotc.core
-import core.Contexts._
-import core.Symbols._
-import core.Flags._
-import core.Annotations.*
-import dotty.tools.dotc.report
 import scala.scalanative.nscplugin.CompilerCompat.SymUtilsCompat.*
-
 import scala.scalanative.util.ScopedVar.scoped
+
+import core.Annotations.*
+import core.Contexts._
+import core.Flags._
+import core.Symbols._
 
 trait GenNativeExports(using Context):
   self: NirCodeGen =>
@@ -75,7 +74,8 @@ trait GenNativeExports(using Context):
     isExtern
 
   private def checkIsPublic(s: Symbol): Unit =
-    if !s.isPublic then
+    // allow package private
+    if s.is(Private) || s.is(Protected) then
       report.error(
         "Exported members needs to be defined in public scope",
         s.srcPos
@@ -109,7 +109,7 @@ trait GenNativeExports(using Context):
     else
       checkAccessorAnnotation(member)
       member.getAnnotation(defnNir.ExportAccessorsClass) match {
-        case None => Nil
+        case None             => Nil
         case Some(annotation) =>
           def accessorExternSig(prefix: String) =
             val nir.Sig.Extern(id) = genExternSig(member)
@@ -158,7 +158,9 @@ trait GenNativeExports(using Context):
     ) = genExternMethodSig(member)
 
     val defn = new nir.Defn.Define(
-      attrs = nir.Attrs(inlineHint = nir.Attr.NoInline, isExtern = true),
+      attrs = nir.Attrs.None
+        .withInlineHint(nir.Attr.NoInline)
+        .withIsExtern(true),
       name = externName,
       ty = exportedFunctionType,
       insts = withFreshExprBuffer { buf ?=>

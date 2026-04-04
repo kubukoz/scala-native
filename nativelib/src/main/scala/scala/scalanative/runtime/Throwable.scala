@@ -1,0 +1,154 @@
+package scala.scalanative.runtime
+
+import java.nio.charset.{Charset, StandardCharsets}
+
+import scala.scalanative.meta.LinktimeInfo
+import scala.scalanative.unsafe._
+
+abstract class Throwable @noinline protected (
+    writableStackTrace: scala.Boolean
+) {
+  self: java.lang.Throwable =>
+
+  protected var stackTrace: scala.Array[StackTraceElement] = _
+  private var rawStackTrace: scala.Array[Long] = _
+  private[runtime] var onCatchHandler: CFuncPtr1[Throwable, Unit] = null
+  private val exceptionWrapper: BlobArray =
+    Throwable.ffi.sizeOfExceptionWrapper match {
+      case 0    => null // unused
+      case size =>
+        // Not null only when we use custom exception handling without C++
+        // struct ExceptionWrapper { Throwable, _UnwindException }
+        val blob = BlobArray.alloc(size)
+        Intrinsics.storeObject(blob.atRawUnsafe(0), this)
+        blob
+    }
+
+  if (writableStackTrace)
+    fillInStackTrace()
+
+  def fillInStackTrace(): Throwable = {
+    // currentStackTrace should be handling exclusion in its own
+    // critical section, but does not. So do
+    if (writableStackTrace) this.synchronized {
+      // Collect stack trace lazilly (only IP addresses), materialize StackTraceElements on demand
+      this.rawStackTrace = StackTrace.currentRawStackTrace()
+    }
+    this
+  }
+
+  def setStackTrace(stackTrace: scala.Array[StackTraceElement]): Unit = {
+    if (writableStackTrace) this.synchronized {
+      var i = 0
+      while (i < stackTrace.length) {
+        if (stackTrace(i) eq null)
+          throw new NullPointerException()
+        i += 1
+      }
+      this.stackTrace = stackTrace.clone()
+    }
+  }
+
+  def getStackTrace(): scala.Array[StackTraceElement] = {
+    // Be robust! Test this.stackTrace against null rather than relying upon
+    // the value of writableStackTrace.
+    //
+    // subclass scala.util.control.NoStackTrace overrides fillInStackTrace()
+    // so that it never touches this.stackTrace. This creates the situation
+    // where writeableStackTrace is true and this.stackTrace is null.
+    //
+    // If scala code creates this situation, then by the Gell-Mann principle
+    // user code in the wild is bound to do so.
+    //
+    // If stackTrace is null, no profit to calling fillInStackTrace().
+    // If writableStackTrace is true, then fillInStackTrace has already
+    // been called in the constructor. If the stack is not writable, then
+    // it can not be filled in.
+    if (stackTrace != null) stackTrace.clone()
+    else if (rawStackTrace != null) this.synchronized {
+      if (stackTrace == null) {
+        stackTrace = StackTrace.materializeStackTrace(rawStackTrace)
+        rawStackTrace = null
+      }
+      stackTrace.clone()
+    }
+    else new scala.Array[StackTraceElement](0) // as specified by Java 8.
+  }
+
+  // Variation of Throwable.printStackTrace that prints using printf (System.out requires synchronization)
+  def showStackTrace(): Unit = {
+    val stacktrace = this.getStackTrace()
+
+    usingCString(this.toString()) {
+      ffi.printf(c"%s\n", _)
+    }
+    if (stacktrace.isEmpty) ffi.printf(c"\n")
+    else {
+      var i = 0
+      var duplicates = 0
+      while (i < stacktrace.length) {
+        val trace = stacktrace(i)
+        if (i > 0 && (trace eq stacktrace(i - 1))) duplicates += 1
+        else {
+          if (duplicates > 0)
+            usingCString(stacktrace(i - 1).toString()) { trace =>
+              ffi.printf(
+                c"\tat %s (called recursively %d times)\n",
+                trace,
+                duplicates
+              )
+            }
+          duplicates = 0
+          usingCString(trace.toString()) { trace =>
+            ffi.printf(c"\tat %s\n", trace)
+          }
+        }
+        i += 1
+      }
+    }
+  }
+
+  // Candidate for being included in unsafe package
+  // Can be implemented more efficently using Scala 3 inlines
+  private def usingCString[T](
+      str: String,
+      charset: Charset = Charset.defaultCharset()
+  )(
+      usage: CString => T
+  ): T = usage {
+    if (str == null) null
+    else {
+      val bytes = str.getBytes(charset)
+      if (bytes.length == 0) c""
+      else {
+        val len = bytes.length
+        val rawSize = Intrinsics.castIntToRawSizeUnsigned(len + 1)
+        val cstr: CString = fromRawPtr(Intrinsics.stackalloc[CChar](rawSize))
+        ffi.memcpy(toRawPtr(cstr), toRawPtr(bytes.at(0)), rawSize)
+        cstr(len) = 0.toByte
+        cstr
+      }
+    }
+  }
+}
+
+private object Throwable {
+  @resolvedAtLinktime
+  private def usingCxxExceptions: Boolean = LinktimeInfo.isWindows
+
+  @extern private object ffi {
+    @name("scalanative_Throwable_sizeOfExceptionWrapper")
+    def sizeOfExceptionWrapper: Int = extern
+  }
+
+  @exported("scalanative_Throwable_showStackTrace")
+  def showStackTrace(self: Throwable): Unit = self.showStackTrace()
+
+  @exported("scalanative_Throwable_exceptionWrapper")
+  def exceptionWrapper(self: Throwable): RawPtr =
+    self.exceptionWrapper.atRawUnsafe(0)
+
+  @exported("scalanative_Throwable_onCatchHandler")
+  def onCatchHandler(self: Throwable): CFuncPtr1[Throwable, Unit] /* | Null*/ =
+    self.onCatchHandler
+}

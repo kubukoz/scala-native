@@ -16,7 +16,7 @@ object LongAdder {
   // without unnecessary parent class info.
   @SerialVersionUID(7249069246863182397L)
   private class SerializationProxy(a: LongAdder) extends Serializable {
-    final private var value = a.sum
+    private final var value = a.sum
 
     private def readResolve = {
       val a = new LongAdder
@@ -28,24 +28,23 @@ object LongAdder {
 
 @SerialVersionUID(7249069246863182397L)
 class LongAdder() extends Striped64 with Serializable {
+  import Striped64.{Cell, getProbe}
 
   def add(x: Long): Unit = {
-    var cs: Array[Striped64.Cell] = null.asInstanceOf[Array[Striped64.Cell]]
-    var b = 0L
-    var v = 0L
-    var m = 0
-    var c: Striped64.Cell = null
-    if ({ cs = cells; cs != null || !casBase({ b = base; b }, b + x) }) {
-      val index = Striped64.getProbe()
+    var cs: Array[Cell] = null
+    var b: Long = 0
+    var v: Long = 0
+    var m: Int = 0
+    var c: Cell = null
+
+    if ({ cs = cells; cs != null } || !casBase({ b = base; b }, b + x)) {
+      val index = getProbe()
       var uncontended = true
-      if ({
-        m = cs.length;
-        c = cs(index & m);
-        v = c.value;
-        uncontended = c.cas(v, v + x);
-        cs == null || m < 0 || c == null || !uncontended
-      })
+      if (cs == null || { m = cells.length - 1; m < 0 } ||
+          { c = cells(index & m); c == null } ||
+          { uncontended = c.cas({ v = c.value; v }, v + x); !uncontended }) {
         longAccumulate(x, null, uncontended, index)
+      }
     }
   }
 

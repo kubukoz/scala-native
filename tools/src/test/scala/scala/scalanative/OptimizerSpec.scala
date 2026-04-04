@@ -1,9 +1,10 @@
 package scala.scalanative
 
-import scala.scalanative.build.{Config, NativeConfig, Mode, ScalaNative}
-import scala.concurrent._
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent._
 import scala.concurrent.duration._
+
+import scala.scalanative.build.{Config, Mode, NativeConfig, ScalaNative}
 import scala.scalanative.linker.ReachabilityAnalysis
 
 /** Base class to test the optimizer */
@@ -59,7 +60,7 @@ object OptimizerSpec {
       TestModule.member(nir.Rt.ScalaMainSig.copy(scope = nir.Sig.Scope.Public))
 
     def unapply(name: nir.Global): Boolean = name match {
-      case CompanionMain => true
+      case CompanionMain                      => true
       case nir.Global.Member(TestModule, sig) =>
         sig.unmangled match {
           case nir.Sig.Duplicate(of, _) =>

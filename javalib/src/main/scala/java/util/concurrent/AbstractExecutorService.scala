@@ -6,9 +6,9 @@
 
 package java.util.concurrent
 
-import java.util
-import java.lang
 import java.util.concurrent.TimeUnit._
+import java.{lang, util}
+
 import scala.annotation.tailrec
 
 abstract class AbstractExecutorService() extends ExecutorService {
@@ -103,7 +103,7 @@ abstract class AbstractExecutorService() extends ExecutorService {
             } else if (timed)
               ecs.poll(nanos, TimeUnit.NANOSECONDS) match {
                 case null => throw new TimeoutException()
-                case f =>
+                case f    =>
                   nanos = deadline - System.nanoTime()
                   f
               }
@@ -222,7 +222,7 @@ abstract class AbstractExecutorService() extends ExecutorService {
                 false
               } catch {
                 case _: CancellationException | _: ExecutionException => false
-                case _: TimeoutException =>
+                case _: TimeoutException                              =>
                   lastIdx = i
                   true
               }

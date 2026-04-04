@@ -2,6 +2,7 @@ package scala.scalanative
 package linker
 
 import scala.collection.mutable
+
 import scala.scalanative.linker.LinktimeIntrinsicCallsResolver.FoundServiceProviders
 
 sealed abstract class Info {
@@ -16,6 +17,8 @@ sealed abstract class ScopeInfo extends Info {
   val members = mutable.UnrolledBuffer.empty[MemberInfo]
   val calls = mutable.Set.empty[nir.Sig]
   val responds = mutable.Map.empty[nir.Sig, nir.Global.Member]
+
+  def methods = calls.toSeq.filter(_.isVirtual)
 
   def isClass: Boolean = this.isInstanceOf[Class]
   def isTrait: Boolean = this.isInstanceOf[Trait]
@@ -243,6 +246,7 @@ object ReachabilityAnalysis {
       val infos: mutable.Map[nir.Global, Info],
       val entries: Seq[nir.Global],
       val links: Seq[nir.Attr.Link],
+      val linkCppRuntime: Boolean,
       val preprocessorDefinitions: Seq[nir.Attr.Define],
       val defns: Seq[nir.Defn],
       val dynsigs: Seq[nir.Sig],
@@ -260,5 +264,87 @@ object ReachabilityAnalysis {
       infos(nir.Rt.StringCountName).asInstanceOf[Field]
     lazy val StringCachedHashCodeField = infos(nir.Rt.StringCachedHashCodeName)
       .asInstanceOf[Field]
+
+    private[scalanative] object references {
+      // Currently unused, useful for debugging
+      @scala.annotation.nowarn("msg=Non local returns are no longer supported")
+      def pathBetween(
+          symbol: nir.Global.Member,
+          from: nir.Global.Member
+      ): Option[List[nir.Global.Member]] = {
+        val todo = mutable.Queue(List(from)) // Queue stores paths
+        val visited = mutable.HashSet.empty[nir.Global.Member]
+
+        while (todo.nonEmpty) {
+          val path = todo.dequeue()
+          val current = path.last
+
+          if (visited.add(current)) {
+            methodDirectSymbolRefs.get(current).foreach { neighbors =>
+              neighbors.foreach { neighbor =>
+                val newPath = path :+ neighbor
+                if (neighbor == symbol) return Some(newPath)
+                todo.enqueue(newPath)
+              }
+            }
+          }
+        }
+        None
+      }
+
+      def isReachable(
+          symbol: nir.Global.Member,
+          from: nir.Global.Member
+      ): Boolean = {
+        val todo = mutable.Queue.empty[nir.Global.Member]
+        methodDirectSymbolRefs.get(from).foreach(todo ++= _)
+        val visited = mutable.HashSet.empty[nir.Global.Member]
+        while (todo.nonEmpty) {
+          val next = todo.dequeue()
+          if (visited.add(next)) {
+            if (next == symbol) return true
+            methodDirectSymbolRefs.get(next).foreach(todo ++= _)
+          }
+        }
+        false
+      }
+
+      def isSelfRecursive(symbol: nir.Global.Member): Boolean =
+        isReachable(symbol = symbol, from = symbol)
+
+      // Graph of direct references between symbols
+      lazy val methodDirectSymbolRefs
+          : Map[nir.Global.Member, Set[nir.Global.Member]] = {
+        val buf = collection.immutable.HashMap
+          .newBuilder[nir.Global.Member, Set[nir.Global.Member]]
+        buf.sizeHint(defns.size)
+
+        defns.foreach { defn =>
+          infos.get(defn.name).foreach {
+            case method: linker.Method =>
+              val symbols = mutable.Set.empty[nir.Global.Member]
+              new nir.Traverse {
+                override def onVal(value: nir.Val): Unit = value match {
+                  case nir.Val.Global(sym: nir.Global.Member, _) =>
+                    symbols += sym
+                  case _ => super.onVal(value)
+                }
+                override def onOp(op: nir.Op): Unit = op match {
+                  case nir.Op.Method(v, sig) =>
+                    v.ty match {
+                      case owner: nir.Type.RefKind =>
+                        symbols += owner.className.member(sig)
+                      case _ => ()
+                    }
+                  case _ => super.onOp(op)
+                }
+              }.onInsts(method.insts)
+              buf += ((method.name, symbols.toSet))
+            case _ => ()
+          }
+        }
+        buf.result()
+      }
+    }
   }
 }

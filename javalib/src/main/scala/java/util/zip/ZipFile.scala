@@ -3,18 +3,11 @@ package java.util.zip
 // Ported from Apache Harmony. Extensively changed for Scala Native.
 
 import java.io.{
-  BufferedInputStream,
-  Closeable,
-  File,
-  InputStream,
-  RandomAccessFile
+  BufferedInputStream, Closeable, File, InputStream, RandomAccessFile
 }
-
 import java.nio.charset.{Charset, StandardCharsets}
-
+import java.util.{Enumeration, stream => jus}
 import java.{util => ju}
-import java.util.Enumeration
-import java.util.{stream => jus}
 
 class ZipFile(file: File, mode: Int, charset: Charset) extends Closeable {
   def this(file: File, mode: Int) = this(file, mode, StandardCharsets.UTF_8)
@@ -68,9 +61,9 @@ class ZipFile(file: File, mode: Int, charset: Charset) extends Closeable {
 
   /* The magic number 64 is a guess.
    * With the defaults of 16 entries and a 0.75 load factor, the map will
-   * resize at 12 entires.  Seems like most zip archives will have more than
+   * resize at 12 entries.  Seems like most zip archives will have more than
    * that number. With specified 64 entries and the default load factor,
-   * the map will resize at 48 entries & the "growth" will be be larger to
+   * the map will resize at 48 entries & the "growth" will be larger to
    * boot. The number could probably be more like 128 or so.
    */
 

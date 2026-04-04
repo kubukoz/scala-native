@@ -2,6 +2,8 @@ package scala.scalanative
 package linker
 
 import scala.collection.mutable
+
+import scala.scalanative.build.Logger
 import scalanative.io.VirtualDirectory
 import scalanative.util.Scope
 
@@ -19,7 +21,7 @@ object ClassLoader {
 
   def fromDisk(config: build.Config)(implicit in: Scope): ClassLoader = {
     val classpath = config.classPath.map { path =>
-      ClassPath(VirtualDirectory.real(path))
+      ClassPath(VirtualDirectory.real(path), config.logger)
     }
     new FromDisk(classpath)
   }

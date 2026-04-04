@@ -7,10 +7,10 @@ import scala.tools.nsc
 trait NirGenExports[G <: nsc.Global with Singleton] {
   self: NirGenPhase[G] with NirGenType[G] =>
   import global._
-  import definitions._
+  import global.definitions._
+
   import nirAddons._
   import nirDefinitions._
-  import SimpleType._
 
   case class ExportedSymbol(symbol: Symbol, defn: nir.Defn.Define)
 
@@ -61,7 +61,8 @@ trait NirGenExports[G <: nsc.Global with Singleton] {
     !s.isMethod && s.isTerm && !s.isModule
 
   private def checkIsPublic(s: Symbol): Unit =
-    if (!s.isPublic) {
+    // allow package private
+    if (s.isPrivate || s.isProtected) {
       reporter.error(
         s.pos,
         "Exported members needs to be defined in public scope"
@@ -91,7 +92,7 @@ trait NirGenExports[G <: nsc.Global with Singleton] {
     if (isField(member)) {
       checkAccessorAnnotation(member)
       member.getAnnotation(ExportAccessorsClass) match {
-        case None => Nil
+        case None             => Nil
         case Some(annotation) =>
           def accessorExternSig(prefix: String) = {
             val nir.Sig.Extern(id) = genExternSig(member)
@@ -153,7 +154,8 @@ trait NirGenExports[G <: nsc.Global with Singleton] {
     ) = genExternMethodSig(member)
 
     val defn = nir.Defn.Define(
-      attrs = nir.Attrs(inlineHint = nir.Attr.NoInline, isExtern = true),
+      attrs =
+        nir.Attrs.None.withInlineHint(nir.Attr.NoInline).withIsExtern(true),
       name = externName,
       ty = exportedFunctionType,
       insts = curStatBuffer.withFreshExprBuffer { implicit buf: ExprBuffer =>

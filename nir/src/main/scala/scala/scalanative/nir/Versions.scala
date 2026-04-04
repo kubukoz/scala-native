@@ -22,16 +22,15 @@ object Versions {
    * new version of the toolchain.
    */
   final val compat: Int = 6 // a.k.a. MAJOR version
-  final val revision: Int = 10 // a.k.a. MINOR version
+  final val revision: Int = 11 // a.k.a. MINOR version
+  case class Version(compat: Int, revision: Int)
 
   /* Current public release version of Scala Native. */
-  final val current: String = "0.5.1-SNAPSHOT"
+  final val current: String = ScalaNativeBuildInfo.version
   final val currentBinaryVersion: String = binaryVersion(current)
 
   private object FullVersion {
-    final val FullVersionRE = """^(\d+)\.(\d+)\.(\d+)(-.*)?$""".r
-
-    private def preRelease(s: String) = Option(s).map(_.stripPrefix("-"))
+    final val FullVersionRE = """^(\d+)\.(\d+)\.(\d+)([-+].*)?$""".r
 
     def unapply(version: String): Option[(Int, Int, Int, Option[String])] = {
       version match {
@@ -41,7 +40,7 @@ object Versions {
               major.toInt,
               minor.toInt,
               patch.toInt,
-              preRelease(preReleaseString)
+              Option(preReleaseString)
             )
           )
         case _ => None
@@ -49,11 +48,12 @@ object Versions {
     }
   }
 
-  private[nir] def binaryVersion(full: String): String = full match {
+  private[scalanative] def binaryVersion(full: String): String = full match {
     case FullVersion(0, minor, 0, Some(suffix)) => full
     case FullVersion(0, minor, _, _)            => s"0.$minor"
-    case FullVersion(major, 0, 0, Some(suffix)) => s"$major.0-$suffix"
+    case FullVersion(major, 0, 0, Some(suffix)) => s"$major.0$suffix"
     case FullVersion(major, _, _, _)            => major.toString
+    case _                                      => full
   }
 
 }

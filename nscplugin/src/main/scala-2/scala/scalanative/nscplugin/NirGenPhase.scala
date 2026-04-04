@@ -3,15 +3,15 @@ package nscplugin
 
 import java.nio.file.{Path => JPath, Paths => JPaths}
 import java.util.stream.{Stream => JStream}
-import java.util.function.{Consumer => JConsumer}
+
 import scala.collection.mutable
 import scala.language.implicitConversions
-import nir.Defn.Define.DebugInfo
-import scala.scalanative.util.ScopedVar.scoped
-import scala.tools.nsc.plugins._
-import scala.tools.nsc.{Global, util => _, _}
 import scala.reflect.internal.util.{SourceFile => CompilerSourceFile}
-import scala.tools.nsc
+import scala.tools.nsc.{util => _, _}
+
+import scala.scalanative.util.ScopedVar.scoped
+
+import nir.Defn.Define.DebugInfo
 
 abstract class NirGenPhase[G <: Global with Singleton](override val global: G)
     extends NirPhase[G](global)
@@ -25,7 +25,8 @@ abstract class NirGenPhase[G <: Global with Singleton](override val global: G)
     with NirGenExports[G] {
 
   import global._
-  import definitions._
+  import global.definitions._
+
   import nirAddons._
 
   val phaseName = "scalanative-genNIR"
@@ -44,13 +45,13 @@ abstract class NirGenPhase[G <: Global with Singleton](override val global: G)
   protected val curUnwindHandler = new util.ScopedVar[Option[nir.Local]]
   protected val curStatBuffer = new util.ScopedVar[StatBuffer]
   protected val cachedMethodSig =
-    collection.mutable.Map.empty[(Symbol, Boolean), nir.Type.Function]
+    collection.mutable.Map.empty[(Symbol, Boolean, Boolean), nir.Type.Function]
 
   protected var curScopes =
     new util.ScopedVar[mutable.Set[DebugInfo.LexicalScope]]
   protected val curFreshScope = new util.ScopedVar[nir.Fresh]
   protected val curScopeId = new util.ScopedVar[nir.ScopeId]
-  implicit protected def getScopeId: nir.ScopeId = curScopeId.get
+  protected implicit def getScopeId: nir.ScopeId = curScopeId.get
   protected def initFreshScope(rhs: Tree) = nir.Fresh(rhs match {
     case _: Block => -1L // Conpensate the top-level block
     case _        => 0L
@@ -58,7 +59,7 @@ abstract class NirGenPhase[G <: Global with Singleton](override val global: G)
 
   protected def unwind(implicit fresh: nir.Fresh): nir.Next =
     curUnwindHandler.get.fold[nir.Next](nir.Next.None) { handler =>
-      val exc = nir.Val.Local(fresh(), nir.Rt.Object)
+      val exc = nir.Val.Local(fresh(), nir.Rt.Throwable)
       nir.Next.Unwind(exc, nir.Next.Label(handler, Seq(exc)))
     }
 
@@ -114,12 +115,12 @@ abstract class NirGenPhase[G <: Global with Singleton](override val global: G)
         val regularDefns = statBuffer.toSeq.toList
 
         /* #4148 Add generated static forwarder classes, except those that
-         * would collide with regular classes on case insensitive file
+         * would collide with regular classes on case-insensitive file
          * systems.
          */
 
         /* I could not find any reference anywhere about what locale is used
-         * by case insensitive file systems to compare case-insensitively.
+         * by case-insensitive file systems to compare case-insensitively.
          * In doubt, force the English locale, which is probably going to do
          * the right thing in virtually all cases (especially if users stick
          * to ASCII class names), and it has the merit of being deterministic,

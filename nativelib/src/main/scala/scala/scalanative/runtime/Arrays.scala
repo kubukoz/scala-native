@@ -40,6 +40,7 @@ sealed abstract class Array[T]
 
   /** Number of elements of the array. */
   @inline def length: Int = {
+    // Mostly unused, typically Array.length is emitted as nir.Op.ArrayLength op
     val rawptr = castObjectToRawPtr(this)
     val lenptr = elemRawPtr(rawptr, MemoryLayout.Array.LengthOffset)
     loadInt(lenptr)
@@ -116,6 +117,9 @@ object Array {
     }
   }
 
+  @deprecated(
+     "Incorrect results, will be removed. Use `java.util.Arrays` instead",
+     "0.5.9")
   def compare(left: AnyRef,
               leftPos: Int,
               right: AnyRef,
@@ -136,6 +140,9 @@ object Array {
     }
   }
 
+  @deprecated(
+     "Incorrect results, will be removed. Use `java.util.Arrays` instead",
+     "0.5.9")
   def compare(left: Array[_],
               leftPos: Int,
               right: Array[_],
@@ -144,7 +151,7 @@ object Array {
     if (left == null || right == null) {
       throw new NullPointerException()
     } else if (left.getClass != right.getClass) {
-      throw new ArrayStoreException("Invalid array copy.")
+      throw new ArrayStoreException("Invalid array comparison.")
     } else if (len < 0) {
       throw new ArrayIndexOutOfBoundsException("length is negative")
     } else if (leftPos < 0 || leftPos + len > left.length) {
@@ -203,7 +210,7 @@ object BooleanArray {
       throw new NegativeArraySizeException
     }
     val arrcls  = classOf[BooleanArray]
-    val arr = GC.alloc_array(arrcls, length, 1) 
+    val arr = GC.alloc_array(arrcls, length, 1)
     val array = castRawPtrToObject(arr).asInstanceOf[BooleanArray]
     array
   }
@@ -227,7 +234,7 @@ object BooleanArray {
       val dst  = arr.atRawUnsafe(0)
       val src  = data
       val size = castIntToRawSizeUnsigned(1 * length)
-      ffi.memcpy(dst, src, size)
+      ffi.memcpy(dst, src, size): Unit
     }
     arr
   }
@@ -274,7 +281,7 @@ object CharArray {
       throw new NegativeArraySizeException
     }
     val arrcls  = classOf[CharArray]
-    val arr = GC.alloc_array(arrcls, length, 2) 
+    val arr = GC.alloc_array(arrcls, length, 2)
     val array = castRawPtrToObject(arr).asInstanceOf[CharArray]
     array
   }
@@ -298,7 +305,7 @@ object CharArray {
       val dst  = arr.atRawUnsafe(0)
       val src  = data
       val size = castIntToRawSizeUnsigned(2 * length)
-      ffi.memcpy(dst, src, size)
+      ffi.memcpy(dst, src, size): Unit
     }
     arr
   }
@@ -345,7 +352,7 @@ object ByteArray {
       throw new NegativeArraySizeException
     }
     val arrcls  = classOf[ByteArray]
-    val arr = GC.alloc_array(arrcls, length, 1) 
+    val arr = GC.alloc_array(arrcls, length, 1)
     val array = castRawPtrToObject(arr).asInstanceOf[ByteArray]
     array
   }
@@ -369,7 +376,7 @@ object ByteArray {
       val dst  = arr.atRawUnsafe(0)
       val src  = data
       val size = castIntToRawSizeUnsigned(1 * length)
-      ffi.memcpy(dst, src, size)
+      ffi.memcpy(dst, src, size): Unit
     }
     arr
   }
@@ -416,7 +423,7 @@ object ShortArray {
       throw new NegativeArraySizeException
     }
     val arrcls  = classOf[ShortArray]
-    val arr = GC.alloc_array(arrcls, length, 2) 
+    val arr = GC.alloc_array(arrcls, length, 2)
     val array = castRawPtrToObject(arr).asInstanceOf[ShortArray]
     array
   }
@@ -440,7 +447,7 @@ object ShortArray {
       val dst  = arr.atRawUnsafe(0)
       val src  = data
       val size = castIntToRawSizeUnsigned(2 * length)
-      ffi.memcpy(dst, src, size)
+      ffi.memcpy(dst, src, size): Unit
     }
     arr
   }
@@ -487,7 +494,7 @@ object IntArray {
       throw new NegativeArraySizeException
     }
     val arrcls  = classOf[IntArray]
-    val arr = GC.alloc_array(arrcls, length, 4) 
+    val arr = GC.alloc_array(arrcls, length, 4)
     val array = castRawPtrToObject(arr).asInstanceOf[IntArray]
     array
   }
@@ -511,7 +518,7 @@ object IntArray {
       val dst  = arr.atRawUnsafe(0)
       val src  = data
       val size = castIntToRawSizeUnsigned(4 * length)
-      ffi.memcpy(dst, src, size)
+      ffi.memcpy(dst, src, size): Unit
     }
     arr
   }
@@ -558,7 +565,7 @@ object LongArray {
       throw new NegativeArraySizeException
     }
     val arrcls  = classOf[LongArray]
-    val arr = GC.alloc_array(arrcls, length, 8) 
+    val arr = GC.alloc_array(arrcls, length, 8)
     val array = castRawPtrToObject(arr).asInstanceOf[LongArray]
     array
   }
@@ -582,7 +589,7 @@ object LongArray {
       val dst  = arr.atRawUnsafe(0)
       val src  = data
       val size = castIntToRawSizeUnsigned(8 * length)
-      ffi.memcpy(dst, src, size)
+      ffi.memcpy(dst, src, size): Unit
     }
     arr
   }
@@ -629,7 +636,7 @@ object FloatArray {
       throw new NegativeArraySizeException
     }
     val arrcls  = classOf[FloatArray]
-    val arr = GC.alloc_array(arrcls, length, 4) 
+    val arr = GC.alloc_array(arrcls, length, 4)
     val array = castRawPtrToObject(arr).asInstanceOf[FloatArray]
     array
   }
@@ -653,7 +660,7 @@ object FloatArray {
       val dst  = arr.atRawUnsafe(0)
       val src  = data
       val size = castIntToRawSizeUnsigned(4 * length)
-      ffi.memcpy(dst, src, size)
+      ffi.memcpy(dst, src, size): Unit
     }
     arr
   }
@@ -700,7 +707,7 @@ object DoubleArray {
       throw new NegativeArraySizeException
     }
     val arrcls  = classOf[DoubleArray]
-    val arr = GC.alloc_array(arrcls, length, 8) 
+    val arr = GC.alloc_array(arrcls, length, 8)
     val array = castRawPtrToObject(arr).asInstanceOf[DoubleArray]
     array
   }
@@ -724,7 +731,7 @@ object DoubleArray {
       val dst  = arr.atRawUnsafe(0)
       val src  = data
       val size = castIntToRawSizeUnsigned(8 * length)
-      ffi.memcpy(dst, src, size)
+      ffi.memcpy(dst, src, size): Unit
     }
     arr
   }
@@ -771,7 +778,7 @@ object ObjectArray {
       throw new NegativeArraySizeException
     }
     val arrcls  = classOf[ObjectArray]
-    val arr = GC.alloc_array(arrcls, length, castRawSizeToInt(Intrinsics.sizeOf[RawPtr])) 
+    val arr = GC.alloc_array(arrcls, length, castRawSizeToInt(Intrinsics.sizeOf[RawPtr]))
     val array = castRawPtrToObject(arr).asInstanceOf[ObjectArray]
     array
   }
@@ -795,7 +802,7 @@ object ObjectArray {
       val dst  = arr.atRawUnsafe(0)
       val src  = data
       val size = castIntToRawSizeUnsigned(castRawSizeToInt(Intrinsics.sizeOf[RawPtr]) * length)
-      ffi.memcpy(dst, src, size)
+      ffi.memcpy(dst, src, size): Unit
     }
     arr
   }
@@ -863,7 +870,7 @@ object BlobArray {
       throw new NegativeArraySizeException
     }
     val arrcls  = classOf[BlobArray]
-    val arr = GC.alloc_array(arrcls, length, 1) 
+    val arr = GC.alloc_array(arrcls, length, 1)
     val array = castRawPtrToObject(arr).asInstanceOf[BlobArray]
     array.setScannableLimitUnsafe(length)
     array
@@ -888,7 +895,7 @@ object BlobArray {
       val dst  = arr.atRawUnsafe(0)
       val src  = data
       val size = castIntToRawSizeUnsigned(1 * length)
-      ffi.memcpy(dst, src, size)
+      ffi.memcpy(dst, src, size): Unit
     }
     arr
   }

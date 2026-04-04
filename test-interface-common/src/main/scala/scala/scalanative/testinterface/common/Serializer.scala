@@ -3,6 +3,7 @@ package scala.scalanative.testinterface.common
 // Ported from Scala.js
 
 import sbt.testing._
+
 import java.io._
 
 private[testinterface] trait Serializer[T] {
@@ -247,7 +248,7 @@ private[testinterface] object Serializer {
       case Suite       => new SuiteSelector()
       case Test        => new TestSelector(in.read[String]())
       case NestedSuite => new NestedSuiteSelector(in.read[String]())
-      case NestedTest =>
+      case NestedTest  =>
         new NestedTestSelector(in.read[String](), in.read[String]())
       case TestWildcard => new TestWildcardSelector(in.read[String]())
       case t            => throw new IOException(s"Unknown Selector type: $t")

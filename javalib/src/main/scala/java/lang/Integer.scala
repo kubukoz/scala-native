@@ -1,8 +1,9 @@
 package java.lang
 
-import scalanative.runtime.Intrinsics.{divUInt, remUInt, intToULong}
-import scalanative.runtime.LLVMIntrinsics
 import java.lang.constant.{Constable, ConstantDesc}
+
+import scalanative.runtime.Intrinsics.{divUInt, intToULong, remUInt}
+import scalanative.runtime.LLVMIntrinsics
 
 final class Integer(val _value: scala.Int)
     extends Number
@@ -168,18 +169,11 @@ final class Integer(val _value: scala.Int)
   protected def %(x: scala.Double): scala.Double = _value % x
 }
 
-private[lang] object IntegerDecimalScale {
-  private[lang] val decimalScale: Array[scala.Int] = Array(1000000000,
-    100000000, 10000000, 1000000, 100000, 10000, 1000, 100, 10, 1)
-}
-
 private[lang] object IntegerCache {
   private[lang] val cache = new Array[java.lang.Integer](256)
 }
 
 object Integer {
-  import IntegerDecimalScale.decimalScale
-
   final val TYPE = scala.Predef.classOf[scala.scalanative.runtime.PrimitiveInt]
   final val MIN_VALUE = -2147483648
   final val MAX_VALUE = 2147483647
@@ -425,113 +419,29 @@ object Integer {
   }
 
   def toString(i: scala.Int): String = {
-    if (i == 0) {
-      "0"
-    } else {
+    if (i == 0) { "0" }
+    else if (i == java.lang.Integer.MIN_VALUE) { "-2147483648" }
+    else if (i == java.lang.Integer.MAX_VALUE) { "2147483647" }
+    else {
       val negative = i < 0
-
-      if (i < 1000 && i > -1000) {
-        val buffer = new Array[Char](4)
-        val positive_value =
-          if (negative) -i
-          else i
-        var first_digit = 0
-        if (negative) {
-          buffer(0) = '-'
-          first_digit += 1
-        }
-
-        var last_digit = first_digit
-        var quot = positive_value
-        while ({
-          val res = quot / 10
-          var digit_value = quot - ((res << 3) + (res << 1))
-          digit_value += '0'
-          buffer(last_digit) = digit_value.toChar
-          last_digit += 1
-          quot = res
-          quot != 0
-        }) ()
-
-        val count = last_digit
-        last_digit -= 1
-        while ({
-          val tmp = buffer(last_digit)
-          buffer(last_digit) = buffer(first_digit)
-          last_digit -= 1
-          buffer(first_digit) = tmp
-          first_digit += 1
-          first_digit < last_digit
-        }) ()
-
-        new String(buffer, 0, count)
-      } else if (i == MIN_VALUE) {
-        "-2147483648"
-      } else {
-        val buffer = new Array[Char](11)
-        var positive_value = if (negative) -i else i
-        var first_digit = 0
-        if (negative) {
-          buffer(0) = '-'
-          first_digit += 1
-        }
-
-        var last_digit = first_digit
-        var count = 0
-        var number = 0
-        var start = false
-        var k = 0
-        while (k < 9) {
-          count = 0
-          number = decimalScale(k)
-
-          if (positive_value < number) {
-            if (start) {
-              buffer(last_digit) = '0'
-              last_digit += 1
-            }
-          } else {
-            if (k > 0) {
-              number = decimalScale(k) << 3
-              if (positive_value >= number) {
-                positive_value -= number
-                count += 8
-              }
-
-              number = decimalScale(k) << 2
-              if (positive_value >= number) {
-                positive_value -= number
-                count += 4
-              }
-            }
-            number = decimalScale(k) << 1
-            if (positive_value >= number) {
-              positive_value -= number
-              count += 2
-            }
-            if (positive_value >= decimalScale(k)) {
-              positive_value -= decimalScale(k)
-              count += 1
-            }
-            if (count > 0 && !start) {
-              start = true
-            }
-            if (start) {
-              buffer(last_digit) = (count + '0').toChar
-              last_digit += 1
-            }
-          }
-
-          k += 1
-        }
-
-        buffer(last_digit) = (positive_value + '0').toChar
-        last_digit += 1
-        count = last_digit
-        last_digit -= 1
-
-        new String(buffer, 0, count)
+      val bufferSize = if (i < 1000 && i > -1000) 4 else 11
+      val buffer = new Array[Char](bufferSize)
+      var positiveValue = Math.abs(i)
+      var offset = bufferSize - 1
+      while (positiveValue != 0 && offset > 0) {
+        val next = positiveValue / 10
+        buffer(offset) = ((positiveValue - next * 10) + '0').toChar
+        offset = offset - 1
+        positiveValue = next
       }
+
+      if (negative) {
+        buffer(offset) = '-'
+      } else {
+        offset = offset + 1
+      }
+
+      new String(buffer, offset, bufferSize - offset)
     }
   }
 
@@ -698,4 +608,88 @@ object Integer {
       new String(buffer)
     }
   }
+
+  /** @since JDK 19 */
+  // Ported from Scala.js, revision: f335260, dated 2025-06-21.
+
+  def compress(i: scala.Int, mask: scala.Int): scala.Int = {
+    // Hacker's Delight, Section 7-4, Figure 7-10
+
+    val LogBitSize = 5 // log_2(32)
+
+    // !!! Verbatim copy-paste of Long.compress
+
+    var m = mask
+    var x = i & mask // clear irrelevant bits
+    var mk = ~m << 1 // we will count 0's to right
+
+    var j = 0 // i in Hacker's Delight, but we already have an i
+    while (j < LogBitSize) {
+      val mp = parallelSuffix(mk)
+      val mv = mp & m // bits to move
+      m = (m ^ mv) | (mv >>> (1 << j)) // compress m
+      val t = x & mv
+      x = (x ^ t) | (t >>> (1 << j)) // compress x
+      mk = mk & ~mp
+      j += 1
+    }
+
+    x
+  }
+
+  /** @since JDK 19 */
+  // Ported from Scala.js, revision: f335260, dated 2025-06-21.
+
+  def expand(i: scala.Int, mask: scala.Int): scala.Int = {
+    // Hacker's Delight, Section 7-5, Figure 7-12
+
+    val LogBitSize = 5 // log_2(32)
+
+    val array = new Array[scala.Int](LogBitSize)
+
+    // !!! Verbatim copy-paste of Long.expand
+
+    var m = mask
+    var x = i
+    var mk = ~m << 1 // we will count 0's to right
+
+    var j = 0 // i in Hacker's Delight, but we already have an i
+    while (j < LogBitSize) {
+      val mp = parallelSuffix(mk)
+      val mv = mp & m // bits to move
+      array(j) = mv
+      m = (m ^ mv) | (mv >>> (1 << j)) // compress m
+      mk = mk & ~mp
+      j += 1
+    }
+
+    j = LogBitSize - 1
+    while (j >= 0) {
+      val mv = array(j)
+      val t = x << (1 << j)
+
+      /* See the last line of the section text, but there is a mistake in the
+       * book: y should be t. There is no y in this algorithm, so it doesn't
+       * make sense. Plugging t instead matches the formula (c) of "Exchanging
+       * Corresponding Fields of Registers" in Section 2-20.
+       */
+      x = ((x ^ t) & mv) ^ x
+
+      j -= 1
+    }
+
+    x & mask // clear out extraneous bits
+  }
+
+  // Ported from Scala.js, revision: f335260, dated 2025-06-21.
+  @inline
+  private def parallelSuffix(x: Int): Int = {
+    // Hacker's Delight, Section 5-2
+    var y = x ^ (x << 1)
+    y = y ^ (y << 2)
+    y = y ^ (y << 4)
+    y = y ^ (y << 8)
+    y ^ (y << 16)
+  }
+
 }

@@ -2,27 +2,28 @@ package java.lang
 
 import java.io._
 import java.nio.charset.StandardCharsets
-import java.util.{Collections, HashMap, Map, Properties, WindowsHelperMethods}
+import java.util.WindowsHelperMethods
+import java.{util => ju}
+
+import scala.scalanative.ffi.time
+import scala.scalanative.meta.LinktimeInfo.isWindows
 import scala.scalanative.posix.pwdOps._
 import scala.scalanative.posix.{pwd, unistd}
-import scala.scalanative.meta.LinktimeInfo.isWindows
-import scala.scalanative.runtime.{Intrinsics, Platform}
 import scala.scalanative.runtime.javalib.Proxy
-import scala.scalanative.ffi.time
+import scala.scalanative.runtime.{Intrinsics, Platform}
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 import scala.scalanative.windows.FileApi._
 import scala.scalanative.windows.FileApiExt.MAX_PATH
+import scala.scalanative.windows.ProcessEnvApi._
 import scala.scalanative.windows.UserEnvApi._
 import scala.scalanative.windows.WinBaseApi._
-import scala.scalanative.windows.ProcessEnvApi._
-import scala.scalanative.windows.winnt.AccessToken
 import scala.scalanative.windows.WinNlsApi._
+import scala.scalanative.windows.winnt.AccessToken
 
 final class System private ()
 
 object System {
-  import SystemProperties.systemProperties
   import EnvVars.envVars
 
   def arraycopy(
@@ -56,24 +57,24 @@ object System {
   def err: PrintStream = Streams.err
   def err_=(v: PrintStream) = Streams.err = v
 
-  def getProperties(): Properties = systemProperties
+  def getProperties(): ju.Properties = SystemProperties.getProperties()
 
   def clearProperty(key: String): String =
-    systemProperties.remove(key).asInstanceOf[String]
+    SystemProperties.remove(key).asInstanceOf[String]
 
   def getProperty(key: String): String =
-    systemProperties.getProperty(key)
+    SystemProperties.getProperty(key)
 
   def getProperty(key: String, default: String): String =
-    systemProperties.getProperty(key, default)
+    SystemProperties.getProperty(key, default)
 
   def setProperty(key: String, value: String): String =
-    systemProperties.setProperty(key, value).asInstanceOf[String]
+    SystemProperties.setProperty(key, value).asInstanceOf[String]
 
   def nanoTime(): scala.Long = time.scalanative_nano_time()
   def currentTimeMillis(): scala.Long = time.scalanative_current_time_millis()
 
-  def getenv(): Map[String, String] = envVars
+  def getenv(): ju.Map[String, String] = envVars
   def getenv(key: String): String = envVars.get(key.toUpperCase())
 
   def setIn(in: InputStream): Unit =
@@ -86,21 +87,205 @@ object System {
     this.err = err
 
   def gc(): Unit = Proxy.GC_collect()
+
+  // Logger interface
+  def getLogger(name: String): Logger = {
+    ju.Objects.requireNonNull(name)
+    LoggerFinder
+      .getLoggerFinder()
+      .getLogger(
+        name,
+        ClassLoader.getSystemClassLoader().getUnnamedModule()
+      )
+  }
+  def getLogger(name: String, bundle: java.util.ResourceBundle): Logger = {
+    ju.Objects.requireNonNull(name)
+    ju.Objects.requireNonNull(bundle)
+    LoggerFinder
+      .getLoggerFinder()
+      .getLocalizedLogger(
+        name,
+        bundle,
+        ClassLoader.getSystemClassLoader().getUnnamedModule()
+      )
+  }
+  trait Logger {
+    def getName(): String
+    def isLoggable(level: Logger.Level): scala.Boolean
+
+    def log(
+        level: Logger.Level,
+        bundle: java.util.ResourceBundle,
+        format: String,
+        params: scala.Array[Object]
+    ): Unit
+    def log(
+        level: Logger.Level,
+        bundle: java.util.ResourceBundle,
+        msg: String,
+        thrown: Throwable
+    ): Unit
+
+    def log(level: Logger.Level, obj: Object): Unit = if (isLoggable(level)) {
+      log(level, if (obj == null) "null" else obj.toString())
+    }
+
+    def log(level: Logger.Level, msg: String): Unit = if (isLoggable(level)) {
+      log(level, null: java.util.ResourceBundle, msg, null: Throwable)
+    }
+
+    def log(
+        level: Logger.Level,
+        format: String,
+        params: scala.Array[Object]
+    ): Unit =
+      if (isLoggable(level)) {
+        log(level, null: java.util.ResourceBundle, format, params)
+      }
+
+    def log(level: Logger.Level, msg: String, thrown: Throwable): Unit =
+      if (isLoggable(level)) {
+        log(level, null: java.util.ResourceBundle, msg, thrown)
+      }
+
+    def log(
+        level: Logger.Level,
+        msgSupplier: java.util.function.Supplier[String]
+    ): Unit = if (isLoggable(level)) {
+      log(
+        level,
+        null: java.util.ResourceBundle,
+        msgSupplier.get(),
+        null: Throwable
+      )
+    }
+
+    def log(
+        level: Logger.Level,
+        msgSupplier: java.util.function.Supplier[String],
+        thrown: Throwable
+    ): Unit = if (isLoggable(level)) {
+      log(level, null: java.util.ResourceBundle, msgSupplier.get(), thrown)
+    }
+  }
+
+  object Logger {
+    final class Level private (name: String, ordinal: Int, severity: Int)
+        extends java.lang._Enum[Level](name, ordinal) {
+      def getName(): String = name
+      def getSeverity(): Int = severity
+    }
+
+    object Level {
+      val ALL: Level = new Level("ALL", 0, Int.MinValue)
+      val TRACE: Level = new Level("TRACE", 1, 400)
+      val DEBUG: Level = new Level("DEBUG", 2, 500)
+      val INFO: Level = new Level("INFO", 3, 800)
+      val WARNING: Level = new Level("WARNING", 4, 900)
+      val ERROR: Level = new Level("ERROR", 5, 1000)
+      val OFF: Level = new Level("OFF", 6, Int.MaxValue)
+
+      private val values_ = Array(ALL, TRACE, DEBUG, INFO, WARNING, ERROR, OFF)
+      def values(): Array[Level] = values_.clone()
+      def valueOf(name: String): Level = {
+        values_
+          .find(_.name() == name)
+          .getOrElse(
+            throw new IllegalArgumentException(
+              s"No enum constant java.lang.System.Logger.Level.$name"
+            )
+          )
+      }
+    }
+  }
+
+  abstract class LoggerFinder {
+    def getLogger(name: String, module: Module): Logger
+
+    def getLocalizedLogger(
+        name: String,
+        bundle: ju.ResourceBundle,
+        module: Module
+    ): Logger = {
+      ju.Objects.requireNonNull(name)
+      ju.Objects.requireNonNull(module)
+
+      val logger = getLogger(name, module)
+      // Return a wrapper logger that handles localization
+      new Logger {
+        def getName(): String = logger.getName()
+
+        def isLoggable(level: Logger.Level): scala.Boolean =
+          logger.isLoggable(level)
+
+        override def log(level: Logger.Level, msg: String): Unit =
+          logger.log(level, bundle, msg, null: Array[Object])
+
+        override def log(
+            level: Logger.Level,
+            msg: String,
+            thrown: Throwable
+        ): Unit =
+          logger.log(level, bundle, msg, thrown)
+
+        override def log(
+            level: Logger.Level,
+            format: String,
+            params: Array[Object]
+        ): Unit =
+          logger.log(level, bundle, format, params)
+
+        override def log(
+            level: Logger.Level,
+            bundle: ju.ResourceBundle,
+            format: String,
+            params: Array[Object]
+        ): Unit =
+          logger.log(level, bundle, format, params)
+
+        override def log(
+            level: Logger.Level,
+            bundle: ju.ResourceBundle,
+            msg: String,
+            thrown: Throwable
+        ): Unit =
+          logger.log(level, bundle, msg, thrown)
+      }
+    }
+  }
+
+  object LoggerFinder {
+    // Default LoggerFinder implementation
+    private class DefaultLoggerFinder extends LoggerFinder {
+      override def getLogger(name: String, module: Module): Logger = {
+        ju.Objects.requireNonNull(name)
+        ju.Objects.requireNonNull(module)
+        new impl.SimpleLogger(name)
+      }
+    }
+
+    private lazy val loggerFinder = ju.ServiceLoader
+      .load(classOf[LoggerFinder])
+      .findFirst()
+      .orElse(new DefaultLoggerFinder())
+
+    def getLoggerFinder(): LoggerFinder = loggerFinder
+  }
 }
 
 // Extract mutable fields to custom object allowing to skip allocations of unused features
 private object Streams {
-  import FileDescriptor.{in => stdin, out => stdout, err => stderr}
+  import FileDescriptor.{err => stderr, in => stdin, out => stdout}
   var in: InputStream = new FileInputStream(stdin)
   var out: PrintStream = new PrintStream(new FileOutputStream(stdout))
   var err: PrintStream = new PrintStream(new FileOutputStream(stderr))
 }
 
-private object SystemProperties {
-  import System.{lineSeparator, getenv}
+private[java] object SystemProperties {
+  import System.{getenv, lineSeparator}
 
   private val systemProperties0 = loadProperties()
-  val systemProperties = {
+  private val systemProperties = {
     Platform.setOSProps { (key: CString, value: CString) =>
       systemProperties0.setProperty(fromCString(key), fromCString(value))
       ()
@@ -108,8 +293,73 @@ private object SystemProperties {
     systemProperties0
   }
 
+  final val CurrentDirectoryKey = "user.dir"
+  private lazy val initializeCurrentDirectory =
+    getCurrentDirectory().foreach(
+      systemProperties.setProperty(CurrentDirectoryKey, _)
+    )
+
+  private final val UserHomeDirectoryKey = "user.home"
+  private lazy val initializeUserHomeDirectory =
+    getUserHomeDirectory().foreach(
+      systemProperties.setProperty(UserHomeDirectoryKey, _)
+    )
+
+  private final val UserCountryKey = "user.country"
+  private lazy val initializeUserCountry =
+    getUserCountry().foreach(systemProperties.setProperty(UserCountryKey, _))
+
+  private final val UserLanguageKey = "user.language"
+  private lazy val initializeUserLanguage =
+    getUserLanguage().foreach(systemProperties.setProperty(UserLanguageKey, _))
+
+  private final val UserNameKey = "user.name"
+  private lazy val initializeUserName =
+    getUserName().foreach(systemProperties.setProperty(UserNameKey, _))
+
+  def getProperties(): ju.Properties = {
+    // initialize all properties
+    initializeCurrentDirectory
+    initializeUserHomeDirectory
+    initializeUserCountry
+    initializeUserLanguage
+    initializeUserName
+
+    systemProperties
+  }
+
+  @inline private def maybeInititializeProperty(name: String) =
+    name match {
+      case `CurrentDirectoryKey`  => initializeCurrentDirectory
+      case `UserHomeDirectoryKey` => initializeUserHomeDirectory
+      case `UserCountryKey`       => initializeUserCountry
+      case `UserLanguageKey`      => initializeUserLanguage
+      case `UserNameKey`          => initializeUserName
+      case _                      =>
+    }
+
+  def getProperty(name: String) = {
+    maybeInititializeProperty(name)
+    systemProperties.getProperty(name)
+  }
+
+  def getProperty(name: String, default: String) = {
+    maybeInititializeProperty(name)
+    systemProperties.getProperty(name, default)
+  }
+
+  def setProperty(name: String, value: String) = {
+    maybeInititializeProperty(name)
+    systemProperties.setProperty(name, value)
+  }
+
+  def remove(name: String) = {
+    maybeInititializeProperty(name)
+    systemProperties.remove(name)
+  }
+
   private def loadProperties() = {
-    val sysProps = new Properties()
+    val sysProps = new ju.Properties()
     sysProps.setProperty("java.version", "1.8")
     sysProps.setProperty("java.vm.specification.version", "1.8")
     sysProps.setProperty("java.vm.specification.vendor", "Oracle Corporation")
@@ -125,10 +375,6 @@ private object SystemProperties {
       "Java Platform API Specification"
     )
     sysProps.setProperty("line.separator", System.lineSeparator())
-    getCurrentDirectory().foreach(sysProps.setProperty("user.dir", _))
-    getUserHomeDirectory().foreach(sysProps.setProperty("user.home", _))
-    getUserCountry().foreach(sysProps.setProperty("user.country", _))
-    getUserLanguage().foreach(sysProps.setProperty("user.language", _))
 
     if (isWindows) {
       sysProps.setProperty("file.separator", "\\")
@@ -228,12 +474,28 @@ private object SystemProperties {
       )
     }
   }
+
+  private def getUserName(): Option[String] = {
+    def nonEmptyEnv(env: String) =
+      Option(getenv(env)).map(_.trim()).filterNot(_.isEmpty())
+    nonEmptyEnv("USER")
+      .orElse(nonEmptyEnv("LOGNAME"))
+      .orElse {
+        if (isWindows) None
+        else {
+          // val passwd = stackalloc[pwd.passwd]()
+          // if (pwd.getpwuid(unistd.geteuid(), passwd) != 0) None
+          // else Option(passwd.pw_name).map(fromCString(_))
+          None
+        }
+      }
+  }
 }
 
 private object EnvVars {
-  val envVars: Map[String, String] = {
+  val envVars: ju.Map[String, String] = {
     def getEnvsUnix() = {
-      val map = new HashMap[String, String]()
+      val map = new ju.HashMap[String, String]()
       val ptr: Ptr[CString] = unistd.environ
       var i = 0
       while (ptr(i) != null) {
@@ -250,8 +512,8 @@ private object EnvVars {
       map
     }
 
-    def getEnvsWindows(): Map[String, String] = {
-      val envsMap = new HashMap[String, String]()
+    def getEnvsWindows(): ju.Map[String, String] = {
+      val envsMap = new ju.HashMap[String, String]()
       val envBlockHead = GetEnvironmentStringsW()
 
       var blockPtr = envBlockHead
@@ -273,7 +535,7 @@ private object EnvVars {
       envsMap
     }
 
-    Collections.unmodifiableMap {
+    ju.Collections.unmodifiableMap {
       if (isWindows) getEnvsWindows()
       else getEnvsUnix()
     }

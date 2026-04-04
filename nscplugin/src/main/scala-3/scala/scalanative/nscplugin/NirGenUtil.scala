@@ -2,16 +2,17 @@ package scala.scalanative
 package nscplugin
 
 import dotty.tools.dotc.ast.tpd
-import tpd._
-import dotty.tools.dotc.core
-import core.Contexts._
-import core.Types._
-import scala.scalanative.util.ScopedVar
+import dotty.tools.dotc.ast.tpd._
+import dotty.tools.dotc.{core, report}
 import scala.collection.mutable
-import dotty.tools.dotc.core.Names.Name
-import dotty.tools.dotc.report
-import scala.scalanative.nir
 import scala.compiletime.uninitialized
+
+import scala.scalanative.nir
+import scala.scalanative.util.ScopedVar
+
+import core.Contexts._
+import core.Names.Name
+import core.Types._
 
 trait NirGenUtil(using Context) { self: NirCodeGen =>
 
@@ -103,7 +104,7 @@ trait NirGenUtil(using Context) { self: NirCodeGen =>
     override def unapply(s: tpd.Tree): this.type = {
       s match {
         case t: tpd.Select => desugared = t
-        case t: Ident =>
+        case t: Ident      =>
           cachedDesugarIdent(t) match {
             case Some(t) => desugared = t
             case None    => desugared = null

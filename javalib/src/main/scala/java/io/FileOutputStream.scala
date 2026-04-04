@@ -1,4 +1,7 @@
 package java.io
+
+import java.nio.channels.{FileChannel, FileChannelImpl}
+
 import scala.scalanative.libc._
 import scala.scalanative.meta.LinktimeInfo.isWindows
 import scala.scalanative.unsafe._
@@ -7,7 +10,6 @@ import scala.scalanative.windows.FileApi._
 import scala.scalanative.windows.FileApiExt._
 import scala.scalanative.windows.HandleApiExt._
 import scala.scalanative.windows.winnt.AccessRights._
-import java.nio.channels.{FileChannelImpl, FileChannel}
 
 class FileOutputStream(fd: FileDescriptor, file: Option[File])
     extends OutputStream {
@@ -70,7 +72,7 @@ object FileOutputStream {
         if (handle == INVALID_HANDLE_VALUE) {
           throw new FileNotFoundException(file.toString())
         }
-        new FileDescriptor(FileDescriptor.FileHandle(handle), readOnly = false)
+        new FileDescriptor(handle, readOnly = false)
       } else {
         import scala.scalanative.posix.sys.stat._
         import scala.scalanative.posix.fcntl._
@@ -78,11 +80,8 @@ object FileOutputStream {
         val mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH
         val fd = open(toCString(file.getPath()), flags, mode)
         if (fd == -1)
-          throw new FileNotFoundException(
-            s"$file (${fromCString(string.strerror(errno.errno))})"
-          )
-        else
-          new FileDescriptor(fd, readOnly = false)
+          throw new FileNotFoundException(s"$file (${LibcExt.strError()})")
+        new FileDescriptor(fd, readOnly = false)
       }
     }
 }

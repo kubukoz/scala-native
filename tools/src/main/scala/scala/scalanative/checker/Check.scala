@@ -2,9 +2,10 @@ package scala.scalanative
 package checker
 
 import scala.collection.mutable
+import scala.concurrent._
+
 import scalanative.linker._
 import scalanative.util.partitionBy
-import scala.concurrent._
 
 private[scalanative] sealed abstract class NIRCheck(implicit
     analysis: ReachabilityAnalysis.Result
@@ -20,6 +21,14 @@ private[scalanative] sealed abstract class NIRCheck(implicit
 
   def expect(expected: nir.Type, got: nir.Val): Unit =
     expect(expected, got.ty)
+
+  def expectOneOf(got: nir.Type)(candidates: nir.Type*): Unit = {
+    if (candidates.exists(ty => Sub.is(got, ty))) () // ok
+    else
+      error(
+        s"expected one of [${candidates.map(_.show).mkString(",")}], but got ${got.show}"
+      )
+  }
 
   def expect(expected: nir.Type, got: nir.Type): Unit =
     if (!Sub.is(got, expected)) {
@@ -43,7 +52,7 @@ private[scalanative] sealed abstract class NIRCheck(implicit
 
   def checkMethod(meth: Method): Unit
 
-  final protected def checkFieldOp(op: nir.Op.Field): Unit = {
+  protected final def checkFieldOp(op: nir.Op.Field): Unit = {
     val nir.Op.Field(obj, name) = op
     obj.ty match {
       case ScopeRef(scope) =>
@@ -55,7 +64,7 @@ private[scalanative] sealed abstract class NIRCheck(implicit
     }
   }
 
-  final protected def checkMethodOp(op: nir.Op.Method): Unit = {
+  protected final def checkMethodOp(op: nir.Op.Method): Unit = {
     val nir.Op.Method(obj, sig) = op
     expect(nir.Rt.Object, obj)
     sig match {
@@ -69,7 +78,7 @@ private[scalanative] sealed abstract class NIRCheck(implicit
       }
 
     obj.ty match {
-      case nir.Type.Null => ok
+      case nir.Type.Null                   => ok
       case ScopeRef(info) if sig.isVirtual =>
         info.implementors.foreach(checkCallable)
       case ClassRef(info) =>
@@ -212,7 +221,7 @@ private[scalanative] final class Check(implicit
       checkCompOp(comp, ty, l, r)
     case nir.Op.Conv(conv, ty, value) =>
       checkConvOp(conv, ty, value)
-    case nir.Op.Fence(_) => ok
+    case nir.Op.Fence(_)               => ok
     case nir.Op.Classalloc(name, zone) =>
       analysis.infos
         .get(name)
@@ -238,8 +247,8 @@ private[scalanative] final class Check(implicit
       checkFieldOp(ty, obj, name, None)
     case nir.Op.Fieldstore(ty, obj, name, value) =>
       checkFieldOp(ty, obj, name, Some(value))
-    case op: nir.Op.Field  => checkFieldOp(op)
-    case op: nir.Op.Method => checkMethodOp(op)
+    case op: nir.Op.Field           => checkFieldOp(op)
+    case op: nir.Op.Method          => checkMethodOp(op)
     case nir.Op.Dynmethod(obj, sig) =>
       expect(nir.Rt.Object, obj)
       sig match {
@@ -349,11 +358,17 @@ private[scalanative] final class Check(implicit
       zone.foreach(checkZone)
     case nir.Op.Arrayload(ty, arr, idx) =>
       val arrty = nir.Type.Ref(nir.Type.toArrayClass(ty))
-      expect(arrty, arr)
+      if (ty == nir.Type.Byte)
+        expectOneOf(arr.ty)(arrty, nir.Rt.BlobArray)
+      else
+        expect(arrty, arr)
       expect(nir.Type.Int, idx)
     case nir.Op.Arraystore(ty, arr, idx, value) =>
       val arrty = nir.Type.Ref(nir.Type.toArrayClass(ty))
-      expect(arrty, arr)
+      if (ty == nir.Type.Byte)
+        expectOneOf(arr.ty)(arrty, nir.Rt.BlobArray)
+      else
+        expect(arrty, arr)
       expect(nir.Type.Int, idx)
       expect(ty, value)
     case nir.Op.Arraylength(arr) =>
@@ -465,6 +480,7 @@ private[scalanative] final class Check(implicit
   ): Unit = {
 
     obj.ty match {
+      case nir.Type.Null   => ok
       case ScopeRef(scope) =>
         scope.implementors.foreach { cls =>
           val field = cls.fields.collectFirst {
@@ -538,7 +554,7 @@ private[scalanative] final class Check(implicit
         (value.ty, ty) match {
           case (lty: nir.Type.FixedSizeI, nir.Type.Size) => ok
           case (nir.Type.Size, rty: nir.Type.FixedSizeI) => ok
-          case _ =>
+          case _                                         =>
             error(
               s"can't cast size from ${value.ty.show} to ${ty.show}"
             )

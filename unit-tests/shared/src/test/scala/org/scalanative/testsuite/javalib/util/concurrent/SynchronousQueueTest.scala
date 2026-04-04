@@ -7,20 +7,23 @@
  */
 package org.scalanative.testsuite.javalib.util.concurrent
 
-import org.junit.Assert._
-import org.junit.{Test, Ignore}
-import JSR166Test._
-
-import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util
 import java.util._
+import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent._
 
+import org.junit.Assert._
+import org.junit.{Ignore, Test}
+
+import JSR166Test._
+
 class SynchronousQueueFairTest extends BlockingQueueTest {
-  override protected def emptyCollection() = new SynchronousQueue[Any](true)
+  override protected def emptyCollection(): SynchronousQueue[Any] =
+    new SynchronousQueue[Any](true)
 }
 class SynchronousQueueNonFairTest extends BlockingQueueTest {
-  override protected def emptyCollection() = new SynchronousQueue[Any](false)
+  override protected def emptyCollection(): SynchronousQueue[Any] =
+    new SynchronousQueue[Any](false)
 }
 
 class SynchronousQueueTest extends JSR166Test {

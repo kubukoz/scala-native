@@ -1,9 +1,10 @@
 package scala.scalanative
 package interflow
 
-import scalanative.linker._
-import scala.concurrent._
 import scala.annotation.tailrec
+import scala.concurrent._
+
+import scalanative.linker._
 
 private[interflow] trait Visit { self: Interflow =>
 
@@ -141,7 +142,7 @@ private[interflow] trait Visit { self: Interflow =>
           log(s"failed to expand ${name.show}: $msg")
           val baildefn =
             origdefn.copy(attrs =
-              origdefn.attrs.copy(opt = nir.Attr.BailOpt(msg))
+              origdefn.attrs.withOpt(nir.Attr.BailOpt(msg))
             )(
               origdefn.pos
             )

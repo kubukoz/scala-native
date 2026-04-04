@@ -1,4 +1,5 @@
 import java.io.File
+
 import Utils._
 
 object Files {
@@ -61,7 +62,7 @@ object Files {
       windows: (String, String)
   ): (File, String) = {
     val (path, expected) =
-      if (Platform.isWindows) windows
+      if (PlatformInfo.isWindows) windows
       else unix
     new File(path) -> expected
   }

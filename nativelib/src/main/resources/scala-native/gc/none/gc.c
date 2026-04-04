@@ -14,15 +14,11 @@
 #include "shared/Parsing.h"
 #include "shared/ThreadUtil.h"
 #include "shared/ScalaNativeGC.h"
+#include "shared/Log.h"
+#include <assert.h>
 
 // Dummy GC that maps chunks of memory and allocates but never frees.
-#ifdef _WIN32
-// On Windows we need to commit memory in relatively small chunks - this way
-// process would not use too much resources.
 #define DEFAULT_CHUNK_SIZE "64M"
-#else
-#define DEFAULT_CHUNK_SIZE "4G"
-#endif
 
 #if defined(__has_feature)
 #if __has_feature(address_sanitizer)
@@ -37,11 +33,12 @@ static size_t DEFAULT_CHUNK;
 static size_t PREALLOC_CHUNK;
 static size_t CHUNK;
 static size_t TO_NORMAL_MMAP = 1L;
-static size_t DO_PREALLOC = 0L; // No Preallocation.
+static size_t DO_PREALLOC = 0L;     // No Preallocation.
+static size_t TOTAL_ALLOCATED = 0L; // Track total allocated memory
 
 static void exitWithOutOfMemory() {
-    fprintf(stderr, "Out of heap space\n");
-    exit(1);
+    GC_LOG_ERROR("Out of heap space");
+    exit(124);
 }
 
 size_t scalanative_GC_get_init_heapsize() {
@@ -52,20 +49,35 @@ size_t scalanative_GC_get_max_heapsize() {
     return Parse_Env_Or_Default("GC_MAXIMUM_HEAP_SIZE", getMemorySize());
 }
 
+size_t scalanative_GC_get_used_heapsize() { return TOTAL_ALLOCATED; }
+
+size_t scalanative_GC_stats_collection_total() { return -1L; }
+
+size_t scalanative_GC_stats_collection_duration_total() { return -1L; }
+
 void Prealloc_Or_Default() {
 
     if (TO_NORMAL_MMAP == 1L) { // Check if we have prealloc env varible
                                 // or execute default mmap settings
         size_t memorySize = getMemorySize();
 
-        DEFAULT_CHUNK = // Default Maximum allocation Map 4GB
+#if defined(SCALANATIVE_MULTITHREADING_ENABLED)
+        // Every starting thread would want to allocate chunk of memory.
+        // We want to limit their size to prevent OOM errors.
+        DEFAULT_CHUNK =
+            Choose_IF(Parse_Env_Or_Default_String("GC_THREAD_HEAP_BLOCK_SIZE",
+                                                  DEFAULT_CHUNK_SIZE),
+                      Less_OR_Equal, memorySize);
+        // Preallocation not support in multithreading mode
+#else
+        DEFAULT_CHUNK =
             Choose_IF(Parse_Env_Or_Default_String("GC_MAXIMUM_HEAP_SIZE",
                                                   DEFAULT_CHUNK_SIZE),
                       Less_OR_Equal, memorySize);
-
         PREALLOC_CHUNK = // Preallocation
             Choose_IF(Parse_Env_Or_Default("GC_INITIAL_HEAP_SIZE", 0L),
                       Less_OR_Equal, DEFAULT_CHUNK);
+#endif
 
         if (PREALLOC_CHUNK == 0L) { // no prealloc settings.
             CHUNK = DEFAULT_CHUNK;
@@ -86,11 +98,20 @@ void Prealloc_Or_Default() {
 }
 
 void scalanative_GC_init() {
+    GC_Log_Init();
 #ifndef GC_ASAN
     Prealloc_Or_Default();
     current = memoryMapPrealloc(CHUNK, DO_PREALLOC);
     if (current == NULL) {
-        exitWithOutOfMemory();
+        const float bytesToMB = 1024.0 * 1024.0;
+        GC_LOG_ERROR(
+            "Failed to allocate or grow heap space, "
+            "requested size=%.2fMB, available memory=%.2fMB, already "
+            "allocated=%.2fMB, should preallocate=%s. Consider setting "
+            "GC_MAXIMUM_HEAP_SIZE env variable to limit maximal heap size",
+            CHUNK / bytesToMB, getFreeMemorySize() / bytesToMB,
+            TOTAL_ALLOCATED / bytesToMB, DO_PREALLOC == 0 ? "false" : "true");
+        exit(125);
     }
     end = current + CHUNK;
 #ifdef _WIN32
@@ -108,6 +129,7 @@ void *scalanative_GC_alloc(Rtti *info, size_t size) {
         Object *alloc = (Object *)current;
         alloc->rtti = info;
         current += size;
+        TOTAL_ALLOCATED += size;
         return alloc;
     } else {
         scalanative_GC_init();
@@ -116,6 +138,7 @@ void *scalanative_GC_alloc(Rtti *info, size_t size) {
 #else
     Object *alloc = (Object *)calloc(size, 1);
     alloc->rtti = info;
+    TOTAL_ALLOCATED += size;
     return alloc;
 #endif
 }
@@ -158,8 +181,8 @@ int scalanative_GC_pthread_create(pthread_t *thread, pthread_attr_t *attr,
 #endif
 
 // ScalaNativeGC interface stubs. None GC does not need STW
-void scalanative_GC_set_mutator_thread_state(GC_MutatorThreadState unused){};
-void scalanative_GC_yield(){};
+void scalanative_GC_set_mutator_thread_state(GC_MutatorThreadState unused) {}
+void scalanative_GC_yield() {}
 void scalanative_GC_add_roots(void *addr_low, void *addr_high) {}
 void scalanative_GC_remove_roots(void *addr_low, void *addr_high) {}
 #endif

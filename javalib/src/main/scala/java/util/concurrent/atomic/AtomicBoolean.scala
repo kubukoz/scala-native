@@ -7,11 +7,12 @@
 package java.util.concurrent.atomic
 
 import scala.language.implicitConversions
+
 import scala.scalanative.annotation.alwaysinline
-import scala.scalanative.unsafe._
-import scala.scalanative.libc.stdatomic.memory_order._
 import scala.scalanative.libc.stdatomic.AtomicByte
-import scala.scalanative.runtime.{fromRawPtr, Intrinsics}
+import scala.scalanative.libc.stdatomic.memory_order._
+import scala.scalanative.runtime.{Intrinsics, fromRawPtr}
+import scala.scalanative.unsafe._
 
 @SerialVersionUID(4654671469794556979L)
 class AtomicBoolean private (private var value: Byte) extends Serializable {
@@ -38,7 +39,7 @@ class AtomicBoolean private (private var value: Byte) extends Serializable {
    *  @return
    *    the current value
    */
-  final def get(): Boolean = value
+  final def get(): Boolean = valueRef.load()
 
   /** Atomically sets the value to {@code newValue} if the current value {@code
    *  \== expectedValue}, with memory effects as specified by
@@ -99,10 +100,7 @@ class AtomicBoolean private (private var value: Byte) extends Serializable {
       expectedValue: Boolean,
       newValue: Boolean
   ): Boolean = {
-    if (byteToBoolean(value) == expectedValue) {
-      value = newValue
-      true
-    } else false
+    valueRef.compareExchangeWeak(expectedValue, newValue, memory_order_relaxed)
   }
 
   /** Sets the value to {@code newValue}, with memory effects as specified by

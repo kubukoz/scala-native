@@ -1,27 +1,21 @@
 package org.scalanative.testsuite.javalib.nio.channels
 
-import org.junit.Test
+import java.io.{File, FileInputStream, FileOutputStream, RandomAccessFile}
+import java.nio.ByteBuffer
+import java.nio.channels._
+import java.nio.file.{
+  AccessDeniedException, Files, Path, Paths, StandardOpenOption
+}
+import java.{lang => jl}
+
 import org.junit.Assert._
 import org.junit.Assume._
-import org.junit.BeforeClass
-import org.junit.Ignore
+import org.junit.{BeforeClass, Ignore, Test}
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
 import org.scalanative.testsuite.utils.Platform
 
-import java.{lang => jl}
-
-import java.io.File
-import java.io.{FileInputStream, FileOutputStream}
-import java.io.RandomAccessFile
-
-import java.nio.ByteBuffer
-
-import java.nio.channels._
-
-import java.nio.file.AccessDeniedException
-import java.nio.file.{Files, StandardOpenOption}
-import java.nio.file.{Path, Paths}
+import scala.scalanative.junit.utils.AssumesHelper._
 
 object FileChannelTest {
 
@@ -145,28 +139,63 @@ class FileChannelTest {
       assertTrue(Files.getAttribute(f, "size") == 5)
 
       val channel = FileChannel.open(f)
-      val bufferA = ByteBuffer.allocate(2)
-      val bufferB = ByteBuffer.allocate(3)
-      val buffers = Array[ByteBuffer](bufferA, bufferB)
 
-      val bread = channel.read(buffers)
-      bufferA.flip()
-      bufferB.flip()
+      val offset = 1
+      val limit = 2
+      val dsts = Array[ByteBuffer](
+        ByteBuffer.allocate(1),
+        ByteBuffer.allocate(2),
+        ByteBuffer.allocate(3),
+        ByteBuffer.allocate(4)
+      )
 
-      assertTrue(bufferA.limit() == 2)
-      assertTrue(bufferB.limit() == 3)
-      assertTrue(bufferA.position() == 0)
-      assertTrue(bufferB.position() == 0)
+      val bread = channel.read(dsts, offset, limit)
+      dsts.foreach(_.flip())
 
       assertTrue(bread == 5L)
-      assertTrue(bufferA.array() sameElements Array[Byte](1, 2))
-      assertTrue(bufferB.array() sameElements Array[Byte](3, 4, 5))
+
+      assertTrue(dsts(0).remaining() == 0)
+      assertTrue(dsts(1).remaining() == 2)
+      assertTrue(dsts(2).remaining() == 3)
+      assertTrue(dsts(3).remaining() == 0)
+
+      assertTrue(dsts(1).array() sameElements Array[Byte](1, 2))
+      assertTrue(dsts(2).array() sameElements Array[Byte](3, 4, 5))
 
       channel.close()
     }
   }
 
   @Test def fileChannelCanWriteToFile(): Unit = {
+    withTemporaryDirectory { dir =>
+      val f = dir.resolve("f")
+      val offset = 1
+      val limit = 3
+      val srcs = Array[ByteBuffer](
+        ByteBuffer.wrap(Array[Byte](1)),
+        ByteBuffer.wrap(Array[Byte](2, 3)),
+        ByteBuffer.wrap(Array[Byte](4, 5, 6)),
+        ByteBuffer.wrap(Array[Byte](7, 8, 9, 10))
+      )
+      val channel =
+        FileChannel.open(f, StandardOpenOption.WRITE, StandardOpenOption.CREATE)
+
+      val expected = Array[Byte](2, 3, 4, 5, 6)
+      var written = 0
+      while (written < expected.length) {
+        written += channel.write(srcs, offset, limit).toInt
+      }
+
+      val in = Files.newInputStream(f)
+      var i = 0
+      while (i < expected.length) {
+        assertTrue(in.read() == expected(i))
+        i += 1
+      }
+    }
+  }
+
+  @Test def fileChannelCanWriteBuffersToFile(): Unit = {
     withTemporaryDirectory { dir =>
       val f = dir.resolve("f")
       val bytes = Array.apply[Byte](1, 2, 3, 4, 5)
@@ -441,6 +470,79 @@ class FileChannelTest {
     }
   }
 
+  // Issue #4385
+  @Test def absoluteReadShouldNotChangeChannelPosition(): Unit = {
+    withTemporaryDirectory { dir =>
+      val f = dir.resolve("f")
+      Files.write(f, "hello, world!".getBytes("UTF-8"))
+
+      val channel = FileChannel.open(f, StandardOpenOption.READ)
+      try {
+        // Set position to 2
+        channel.position(2)
+        val preReadPos = channel.position()
+        assertEquals("pre-read position", 2, preReadPos)
+
+        // Absolute read at position 7 — should NOT change channel position
+        val dst = ByteBuffer.allocate(5)
+        val bytesRead = channel.read(dst, 7)
+        assertEquals("bytes read", 5, bytesRead)
+        assertEquals("read content", "world", new String(dst.array(), 0, 5))
+
+        // Channel position must be unchanged after absolute read
+        assertEquals(
+          "position after absolute read",
+          preReadPos,
+          channel.position()
+        )
+
+        // A subsequent relative read should read from the original position
+        val dst2 = ByteBuffer.allocate(3)
+        channel.read(dst2)
+        assertEquals(
+          "relative read content",
+          "llo",
+          new String(dst2.array(), 0, 3)
+        )
+      } finally channel.close()
+    }
+  }
+
+  // Ensure relative read still advances position after untangling from absolute read
+  @Test def relativeReadShouldAdvanceChannelPosition(): Unit = {
+    withTemporaryDirectory { dir =>
+      val f = dir.resolve("f")
+      Files.write(f, "abcdefghij".getBytes("UTF-8"))
+
+      val channel = FileChannel.open(f, StandardOpenOption.READ)
+      try {
+        assertEquals("initial position", 0, channel.position())
+
+        // First relative read: should advance position by 3
+        val dst1 = ByteBuffer.allocate(3)
+        val n1 = channel.read(dst1)
+        assertEquals("first read bytes", 3, n1)
+        assertEquals(
+          "first read content",
+          "abc",
+          new String(dst1.array(), 0, 3)
+        )
+        assertEquals("position after first read", 3, channel.position())
+
+        // Second relative read: should continue from position 3
+        val dst2 = ByteBuffer.allocate(4)
+        val n2 = channel.read(dst2)
+        assertEquals("second read bytes", 4, n2)
+        assertEquals(
+          "second read content",
+          "defg",
+          new String(dst2.array(), 0, 4)
+        )
+        assertEquals("position after second read", 7, channel.position())
+      } finally channel.close()
+    }
+  }
+
   @Test def writeOfMultipleBuffersReturnsTotalBytesWritten(): Unit = {
     withTemporaryDirectory { dir =>
       val f = dir.resolve("f")
@@ -537,6 +639,7 @@ class FileChannelTest {
       val sroStatus = f.toFile().setReadOnly()
       assertTrue("setReadOnly failed", sroStatus)
 
+      assumeNotRoot()
       assertThrows(
         f.toString(),
         classOf[AccessDeniedException],

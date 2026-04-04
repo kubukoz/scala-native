@@ -1,18 +1,17 @@
 package org.scalanative.testsuite.javalib.util
 
-import java.util._
-
-// Ported from Harmony, modified to test without locale.
-
 import java.io._
+import java.lang.StringBuilder
 import java.math.{BigDecimal, BigInteger, MathContext}
 import java.nio.charset.Charset
-import java.lang.StringBuilder
 import java.util.Formatter.BigDecimalLayoutForm
+import java.util._
+
 import org.junit.Assert._
 import org.junit.{After, Before, Ignore, Test}
-import org.scalanative.testsuite.utils.Platform.executingInJVM
+
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
+import org.scalanative.testsuite.utils.Platform.executingInJVM
 
 class DefaultFormatterTest {
   private var root: Boolean = false
@@ -24,7 +23,7 @@ class DefaultFormatterTest {
   @Before
   def setUp(): Unit = {
     // disabled, doesn't work on Scala Native right now
-    // root = System.getProperty("user.name").equalsIgnoreCase("root")
+    root = System.getProperty("user.name").equalsIgnoreCase("root")
     notExist = File.createTempFile("notexist", null)
     notExist.delete()
 

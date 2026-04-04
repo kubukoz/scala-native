@@ -2,7 +2,8 @@ package scala.scalanative
 package codegen
 
 import scala.collection.mutable
-import scalanative.linker.{Trait, Class, ReachabilityAnalysis}
+
+import scalanative.linker.{Class, ReachabilityAnalysis, Trait}
 
 private[scalanative] class Metadata(
     val analysis: ReachabilityAnalysis.Result,
@@ -10,7 +11,7 @@ private[scalanative] class Metadata(
     proxies: Seq[nir.Defn]
 )(implicit val platform: PlatformInfo) {
   def config: build.NativeConfig = buildConfig.compilerConfig
-  implicit private def self: Metadata = this
+  private implicit def self: Metadata = this
 
   final val usesLockWords = platform.isMultithreadingEnabled
   val lockWordType = if (usesLockWords) Some(nir.Type.Ptr) else None
@@ -19,31 +20,28 @@ private[scalanative] class Metadata(
   val layouts = new CommonMemoryLayouts()
   val rtti = mutable.Map.empty[linker.Info, RuntimeTypeInformation]
   val vtable = mutable.Map.empty[linker.Class, VirtualTable]
+  val itable = mutable.Map.empty[linker.Class, ITable]
   val layout = mutable.Map.empty[linker.Class, FieldLayout]
   val dynmap = mutable.Map.empty[linker.Class, DynamicHashMap]
   val ids = mutable.Map.empty[linker.ScopeInfo, Int]
   val ranges = mutable.Map.empty[linker.Class, Range]
 
   val classes = initClassIdsAndRanges()
-  val traits = initTraitIds()
+  val (traits, traitIdsContext) = initTraitIds()
   val moduleArray = new ModuleArray(this)
-  val dispatchTable = new TraitDispatchTable(this)
-  val hasTraitTables = new HasTraitTables(this)
 
-  initClassMetadata()
   initTraitMetadata()
+  initClassMetadata()
 
-  def initTraitIds(): Seq[Trait] = {
-    val traits =
-      analysis.infos.valuesIterator
-        .collect { case info: Trait => info }
-        .toIndexedSeq
-        .sortBy(_.name.show)
-    traits.zipWithIndex.foreach {
-      case (node, id) =>
-        ids(node) = id
-    }
-    traits
+  val canAlwaysUseFastITables = rtti.valuesIterator.forall(_.canUseFastITables)
+
+  def initTraitIds(): (Seq[Trait], TraitsUniverse.TraitId.Context) = {
+    val traits = analysis.infos.valuesIterator.collect {
+      case info: Trait => info
+    }.toIndexedSeq
+    val universe = new TraitsUniverse(traits)
+    val ctx = universe.assignIds(ids)
+    (traits, ctx)
   }
 
   def initClassIdsAndRanges(): Seq[Class] = {
@@ -96,6 +94,7 @@ private[scalanative] class Metadata(
       if (layouts.ClassRtti.usesDynMap) {
         dynmap(node) = new DynamicHashMap(node, proxies)
       }
+      itable(node) = ITable.build(node)
       rtti(node) = new RuntimeTypeInformation(node)
     }
   }

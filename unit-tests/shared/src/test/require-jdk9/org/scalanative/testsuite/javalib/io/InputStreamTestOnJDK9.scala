@@ -2,8 +2,8 @@ package org.scalanative.testsuite.javalib.io
 
 import java.io._
 
-import org.junit.Test
 import org.junit.Assert._
+import org.junit.Test
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
 
@@ -28,7 +28,8 @@ class InputStreamTestOnJDK9 {
 
     val streamIn = new ByteArrayInputStream(inputBytes)
     val receiver = new Array[Byte](10)
-    val nRead = streamIn.readNBytes(receiver, 0, receiver.length)
+    // no exception
+    streamIn.readNBytes(receiver, 0, receiver.length)
 
     assertThrows(
       classOf[NullPointerException],
@@ -52,6 +53,8 @@ class InputStreamTestOnJDK9 {
   }
 
   @Test def readNBytesBufferOffLen(): Unit = {
+    // Read all bytes in InputStream: exactly sized receiver.
+
     val inputBytes =
       List(0, 1, 2, 3, 4, 5, 6, 7, 8, 9).map(_.toByte).toArray[Byte]
 
@@ -65,7 +68,27 @@ class InputStreamTestOnJDK9 {
     assertEquals("expected content", expected, receiver(expected))
   }
 
-  @Test def transferToNullOutStream(): Unit = {
+  @Test def readNBytesBufferOffNotAllInput(): Unit = {
+    // Read fewer bytes than are available in InputStream: short receiver.
+
+    val inputBytes = (0 until 12).map(_.toByte).toArray[Byte]
+
+    val streamIn = new ByteArrayInputStream(inputBytes)
+
+    val receiverLength = inputBytes.length - 2
+    val receiver = new Array[Byte](receiverLength)
+
+    val nRead = streamIn.readNBytes(receiver, 0, receiverLength)
+
+    assertEquals("nRead", receiverLength, nRead)
+
+    val expected = 9
+    assertEquals("expected content", expected, receiver(expected))
+  }
+
+  @Test def transferToNullArg(): Unit = {
+    // Distinguish from test of Java 11 static method nullOutputStream().
+
     val inputBytes =
       List(255, 254, 253, 252, 251, 128, 127, 2, 1, 0)
         .map(_.toByte)

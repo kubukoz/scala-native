@@ -2,8 +2,9 @@ package scala.scalanative
 package interflow
 
 import scala.collection.mutable
-import scalanative.util.unreachable
+
 import scalanative.linker._
+import scalanative.util.unreachable
 
 private[interflow] object MergePostProcessor {
   def postProcess(blocks: Seq[MergeBlock]): Seq[MergeBlock] = {
@@ -193,8 +194,8 @@ private[interflow] object MergePostProcessor {
         val visited = mutable.Set.empty[MergeBlock]
         def loop(queue: List[(MergeBlock, BlocksCycle)]): Option[BlocksCycle] =
           queue match {
-            case Nil               => None
-            case (`to`, path) :: _ => Some(path)
+            case Nil                     => None
+            case (`to`, path) :: _       => Some(path)
             case (current, path) :: tail =>
               if (visited.contains(current)) loop(tail)
               else {

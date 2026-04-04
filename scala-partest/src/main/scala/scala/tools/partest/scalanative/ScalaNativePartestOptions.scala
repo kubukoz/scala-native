@@ -1,11 +1,12 @@
 // Ported from Scala.js commit: 060c3397 dated: 2021-02-09
 
 package scala.tools.partest.scalanative
-import java.nio.file.{Path, Paths}
 import java.io.File.pathSeparator
+import java.nio.file.{Path, Paths}
+
 import scalanative.build
 
-case class ScalaNativePartestOptions private (
+case class ScalaNativePartestOptions(
     testFilter: ScalaNativePartestOptions.TestFilter,
     nativeClasspath: Seq[Path],
     precompiledLibrariesPaths: Seq[Path],
@@ -26,16 +27,16 @@ case class ScalaNativePartestOptions private (
   )
 
   def show: String =
-    s"""Scala Native options are:
-       |- optimized:       $optimize
-       |- mode:            $buildMode
-       |- gc:              $gc
-       |- lto:             $lto
-       |- showDiff:        $showDiff
-       |- testFilter:      ${testFilter.descr}
-       |- precompile libs: $shouldPrecompileLibraries
-       |- parallel tests:  ${parallelism.getOrElse("default")}
-       |""".stripMargin
+    s"""|Scala Native options are:
+        |- optimized:       $optimize
+        |- mode:            $buildMode
+        |- gc:              $gc
+        |- lto:             $lto
+        |- showDiff:        $showDiff
+        |- testFilter:      ${testFilter.descr}
+        |- precompile libs: $shouldPrecompileLibraries
+        |- parallel tests:  ${parallelism.getOrElse("default")}
+        |""".stripMargin
 }
 
 object ScalaNativePartestOptions {
@@ -111,16 +112,16 @@ object ScalaNativePartestOptions {
     }
 
     for (arg <- args) arg match {
-      case Switch("denylisted")       => setFilter(DenylistedTests)
-      case Switch("allowlisted")      => setFilter(AllowlistedTests)
-      case Switch("showDiff")         => showDiff = true
-      case Switch("noOptimize")       => optimize = false
-      case Switch("noPrecompileLibs") => precompileLibs = false
+      case Switch("denylisted")           => setFilter(DenylistedTests)
+      case Switch("allowlisted")          => setFilter(AllowlistedTests)
+      case Switch("showDiff")             => showDiff = true
+      case Switch("noOptimize")           => optimize = false
+      case Switch("noPrecompileLibs")     => precompileLibs = false
       case Argument("parallelism", value) =>
         parallelism = util.Try(Integer.parseInt(value)).filter(_ > 0).toOption
-      case Argument("mode", value) => mode = build.Mode(value)
-      case Argument("gc", value)   => gc = build.GC(value)
-      case Argument("lto", value)  => lto = build.LTO(value)
+      case Argument("mode", value)                => mode = build.Mode(value)
+      case Argument("gc", value)                  => gc = build.GC(value)
+      case Argument("lto", value)                 => lto = build.LTO(value)
       case Argument("nativeClasspath", classpath) =>
         classpath
           .split(java.io.File.pathSeparatorChar)

@@ -9,6 +9,10 @@
 #include <stdio.h>
 #include <inttypes.h>
 
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
+
 void Stats_writeToFile(Stats *stats);
 
 void Stats_Init(Stats *stats, const char *statsFile) {

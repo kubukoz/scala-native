@@ -1,25 +1,33 @@
 package java.lang.impl
 
+import scala.annotation.{switch, tailrec}
+
 import scala.scalanative.annotation._
+import scala.scalanative.meta.LinktimeInfo.isMultithreadingEnabled
+import scala.scalanative.runtime._
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
-
-import scala.scalanative.runtime._
-import scala.scalanative.meta.LinktimeInfo.isMultithreadingEnabled
-
 import scala.scalanative.windows.HandleApi._
 import scala.scalanative.windows.ProcessThreadsApi._
 import scala.scalanative.windows.ProcessThreadsApiExt._
 import scala.scalanative.windows.SynchApi._
 import scala.scalanative.windows.SynchApiExt._
+import scala.scalanative.windows.SysInfoApi._
 import scala.scalanative.windows.WinBaseApi._
-import scala.annotation.tailrec
-import scala.annotation.switch
 
-private[java] class WindowsThread(val thread: Thread, stackSize: Long)
-    extends NativeThread {
-  import WindowsThread._
+private[java] class WindowsThread(
+    val thread: Thread,
+    val userDefinedStackSize: scala.Long
+) extends NativeThread {
   import NativeThread._
+  import WindowsThread._
+
+  override def companion: NativeThread.Companion = WindowsThread
+  override val stackSize: Int =
+    NativeThread.calculateStackSize(
+      userDefinedStackSize = userDefinedStackSize,
+      WindowsThread.defaultOSStackSize
+    )
 
   private val parkEvent: Handle = checkedHandle("create park event") {
     CreateEventW(
@@ -48,13 +56,9 @@ private[java] class WindowsThread(val thread: Thread, stackSize: Long)
       )
     } else
       checkedHandle("create thread") {
-        val effectiveStackSize =
-          if (stackSize > 0) stackSize
-          else 0 // System default (1MB)
-
         GC.CreateThread(
           threadAttributes = null,
-          stackSize = effectiveStackSize.toUSize,
+          stackSize = stackSize.toUSize,
           startRoutine = NativeThread.threadRoutine,
           routineArg = NativeThread.threadRoutineArgs(this),
           creationFlags = STACK_SIZE_PARAM_IS_A_RESERVATION, // Run immediately,
@@ -88,7 +92,7 @@ private[java] class WindowsThread(val thread: Thread, stackSize: Long)
       case 6 | 7 => THREAD_PRIORITY_ABOVE_NORMAL
       case 8 | 9 => THREAD_PRIORITY_HIGHEST
       case 10    => THREAD_PRIORITY_TIME_CRITICAL
-      case _ =>
+      case _     =>
         throw new IllegalArgumentException("Not a valid java thread priority")
     }
 
@@ -169,6 +173,16 @@ object WindowsThread extends NativeThread.Companion {
 
   @alwaysinline
   override def yieldThread(): Unit = SwitchToThread()
+
+  override lazy val defaultOSStackSize: Long = {
+    if (!isMultithreadingEnabled) 0L
+    else {
+      import scala.scalanative.windows.SysInfoApiOps.SystemInfoOps
+      val sysInfo = stackalloc[SystemInfo]()
+      GetSystemInfo(sysInfo)
+      sysInfo.allocationGranularity.toLong
+    }
+  }
 
   @alwaysinline private def NanosInMillisecond = 1000000
 

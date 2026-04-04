@@ -1,9 +1,7 @@
 package scala.scalanative
 package runtime
 
-import scala.scalanative.unsafe.{CString, CFuncPtr2, extern, name}
-import scala.scalanative.unsafe.CInt
-import scala.scalanative.unsafe.CSize
+import scala.scalanative.unsafe.{CFuncPtr2, CInt, CSize, CString, extern, name}
 
 @extern
 object Platform {
@@ -40,4 +38,7 @@ object Platform {
 
   @name("scalanative_platform_is_msys")
   def isMsys(): Boolean = extern
+
+  @name("scalanative_page_size")
+  def pageSize: Int = extern
 }

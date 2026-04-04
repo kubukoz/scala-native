@@ -1,9 +1,9 @@
 package scala.scalanative.runtime
 
 import scala.scalanative.meta.LinktimeInfo.{isWindows, sourceLevelDebuging}
-import scalanative.unsigned._
-import scala.scalanative.unsafe._
 import scala.scalanative.runtime.ffi._
+import scala.scalanative.unsafe._
+import scalanative.unsigned._
 
 object SymbolFormatter {
 
@@ -24,20 +24,20 @@ object SymbolFormatter {
     methodNameOut(0) = 0.toByte
 
     def readSymbol(): Boolean = {
-      // On Windows symbol names are different then on Unix platforms.
-      // Due to differences in implementation between WinDbg and libUnwind used
-      // on each platform, symbols on Windows do not contain '_' prefix.
-      // When debug metadata is generated and there is no symbols (LTO) then
-      // returned sybmols have form `fqcn.methodName:(file:line)` (linkage name from MetadataCodeGen)
+      // Scala Native mangled symbols have format: _SM<len>className... (Unix/POSIX)
+      // or SM<len>className... (legacy Windows with decorated names).
+      // After disabling SYMOPT_UNDNAME on Windows, symbols now use _SM... format too.
+      // When debug metadata is generated (LTO) symbols may have linkage format:
+      // fqcn.methodName:(file:line) (from MetadataCodeGen)
       def mayHaveLinkageSymbol =
         isWindows && sourceLevelDebuging.generateFunctionSourcePositions
-      // If symbol is not linkage symbol when it would skip Windows specific prefix allowing to continue unix-like reading
       val head = read()
-      // unlikekly that package name would start with upper case 'S'
-      if (mayHaveLinkageSymbol && head != 'S')
-        readLinkageSymbol()
-      else if (head == 'S') readGlobal() // Windows
-      else if (head == '_' && read() == 'S') readGlobal() // Unix
+      // Check for Scala Native mangled format first (prioritize _S check)
+      if (head == '_' && read() == 'S')
+        readGlobal() // Unix or Windows with raw names
+      else if (head == 'S') readGlobal() // Legacy Windows with decorated names
+      // Windows linkage symbol format as fallback (unlikely to start with uppercase 'S')
+      else if (mayHaveLinkageSymbol) readLinkageSymbol()
       else false
     }
 
@@ -115,27 +115,27 @@ object SymbolFormatter {
           true
         } else false
       } else {
-        val lineSeperator = strrchr(location, ':')
+        val lineSeparator = strrchr(location, ':')
         val fileName = strrchr(location, '\\')
         val fileOffset = 2 // ':('
-        if (lineSeperator != null) {
+        if (lineSeparator != null) {
           // skip ':(', take until line number ':num)'
           if (fileName != null) {
             strncpy(
               fileNameOut,
               fileName + 1,
-              toRawSize(strlen(fileName) - strlen(lineSeperator) - 1.toUSize)
+              toRawSize(strlen(fileName) - strlen(lineSeparator) - 1.toUSize)
             )
           } else {
             strncpy(
               fileNameOut,
               location + fileOffset,
               toRawSize(
-                strlen(location) - strlen(lineSeperator) - fileOffset.toUSize
+                strlen(location) - strlen(lineSeparator) - fileOffset.toUSize
               )
             )
           }
-          pos = (lineSeperator - sym).toInt + 1
+          pos = (lineSeparator - sym).toInt + 1
           !lineOut = readNumber()
         } else if (fileName != null) strcpy(fileNameOut, fileName + 1)
         else strcpy(fileNameOut, location + fileOffset)

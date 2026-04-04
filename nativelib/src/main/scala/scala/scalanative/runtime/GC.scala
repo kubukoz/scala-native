@@ -1,8 +1,8 @@
 package scala.scalanative
 package runtime
 
-import scalanative.unsafe._
 import scala.scalanative.annotation.alwaysinline
+import scalanative.unsafe._
 
 /** The Boehm GC conservative garbage collector
  *
@@ -40,11 +40,20 @@ object GC {
   def getInitHeapSize(): CSize = extern
   @name("scalanative_GC_get_max_heapsize")
   def getMaxHeapSize(): CSize = extern
+  @name("scalanative_GC_get_used_heapsize")
+  def getUsedHeapSize(): CSize = extern
+
+  // The total (cumulative) number of GC runs
+  @name("scalanative_GC_stats_collection_total")
+  def getStatsCollectionTotal(): CSize = extern
+  // The total (cumulative) time in nanos spent on GC runs
+  @name("scalanative_GC_stats_collection_duration_total")
+  def getStatsCollectionDurationTotal(): CSize = extern
 
   /*  Multithreading awareness for GC Every implementation of GC supported in
    *  ScalaNative needs to register a given thread The main thread is
    *  automatically registered. Every additional thread needs to explicitly
-   *  notify GC about it's creation and termination. For that purpose we follow
+   *  notify GC about its creation and termination. For that purpose we follow
    *  the Boehm GC convention for overloading the pthread_create/CreateThread
    *  functions respectively for POSIX and Windows.
    */
@@ -123,7 +132,7 @@ object GC {
 
   /** Notify the Garbage Collector about the range of memory which should be
    *  scanned when marking the objects. The range should contain only memory NOT
-   *  allocated using the GC, eg. using malloc. Otherwise it might lead to the
+   *  allocated using the GC, e.g. using malloc. Otherwise it might lead to the
    *  undefined behaviour at runtime.
    *
    *  @param addressLow
@@ -141,7 +150,7 @@ object GC {
    *  registered range of addressed using [[addRoots]] which is fully contained
    *  withen the range of addressLow and addressHigh would be exluded from the
    *  subsequent scanning during the GC. It is safe to pass a range of addressed
-   *  which doen't match any of the previously registered memory regions.
+   *  which doesn't match any of the previously registered memory regions.
    *
    *  @param addressLow
    *    Start of the range including the first address that should be scanned
@@ -152,4 +161,15 @@ object GC {
    */
   @name("scalanative_GC_remove_roots")
   def removeRoots(addressLow: CVoidPtr, addressHigh: CVoidPtr): Unit = extern
+
+  @extern object Boehm {
+    @name("scalanative_GC_weak_ref_slot_create")
+    private[runtime] def weakRefSlotCreate(referent: RawPtr): RawPtr = extern
+
+    @name("scalanative_GC_weak_ref_slot_get")
+    private[runtime] def weakRefSlotGet(slot: RawPtr): RawPtr = extern
+
+    @name("scalanative_GC_weak_ref_slot_clear")
+    private[runtime] def weakRefSlotClear(slot: RawPtr): Unit = extern
+  }
 }

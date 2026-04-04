@@ -1,16 +1,15 @@
 package java.lang
 
 import java.io.File
-import java.util.{Set => juSet}
-import java.util.Comparator
-import scala.scalanative.libc.signal
-import scala.scalanative.libc.stdlib
+import java.util.{Comparator, Set => juSet}
+
+import scala.scalanative.libc.{signal, stdlib}
+import scala.scalanative.meta.LinktimeInfo
 import scala.scalanative.posix.unistd._
+import scala.scalanative.runtime.javalib.Proxy
+import scala.scalanative.unsafe._
 import scala.scalanative.windows.SysInfoApi._
 import scala.scalanative.windows.SysInfoApiOps._
-import scala.scalanative.unsafe._
-import scala.scalanative.meta.LinktimeInfo._
-import scala.scalanative.runtime.javalib.Proxy
 
 class Runtime private () {
   import Runtime._
@@ -31,12 +30,6 @@ class Runtime private () {
     signal.signal(signal.SIGTERM, handleSignal(_))
   }
 
-  private def handleSignal(sig: CInt): Unit = {
-    Proxy.disableGracefullShutdown()
-    Runtime.getRuntime().runHooks()
-    exit(128 + sig)
-  }
-
   private def ensureCanModify(hook: Thread): Unit = if (shutdownStarted) {
     throw new IllegalStateException(
       s"Shutdown sequence started, cannot add/remove hook $hook"
@@ -50,7 +43,7 @@ class Runtime private () {
     setupSignalHandler
   }
 
-  def removeShutdownHook(thread: Thread): Boolean = hooks.synchronized {
+  def removeShutdownHook(thread: Thread): scala.Boolean = hooks.synchronized {
     ensureCanModify(thread)
     hooks.remove(thread)
   }
@@ -66,14 +59,14 @@ class Runtime private () {
     // JDK specifies that hooks might run in any order.
     // However, for Scala Native it might be beneficial to support partial ordering
     // E.g. Zone/MemoryPool shutdownHook cleaning pools should be run after DeleteOnExit using `toCString`
-    // Group the hooks by priority starting with the ones with highest priority
+    // Group the hooks by priority starting with the ones with the highest priority
     val limit = hooks.size
     var idx = 0
     while (idx < limit) {
       val groupStart = idx
       val groupPriority = hooks(groupStart).getPriority()
       while (idx < limit && hooks(idx).getPriority() == groupPriority) {
-        hooks(idx).start()
+        hooks(idx).startInternal()
         idx += 1
       }
       for (i <- groupStart until limit) {
@@ -105,16 +98,47 @@ class Runtime private () {
     }
   }
 
+  /** Return the positive number of logical processors on which the process may
+   *  run. At least 1 is returned.
+   *
+   *  On Linux, there are a number of ways (taskset, cpuset, etc.) to set the
+   *  number less than sysconf(_SC_NPROCESSORS_ONLN). The underlying C code
+   *  currently (2024) will return -1, if there are more than 1024 logical
+   *  processors in the cpuset.
+   *
+   *  Windows also documents some conditions which may lower the number of
+   *  available processors.
+   *
+   *  macOS is culturally adverse to an application lowering the number of
+   *  processors below sysctl "hw.logicalcpu". There appear to be ways to
+   *  accomplish such a reduction, but they are not programmatic.
+   *
+   *  FreeBSD and NetBSD use the _SC_NPROCESSORS_ONLN path in this code. Someday
+   *  they could use os specific code to get finer granularity. FreeBSD has
+   *  "cpuset_getaffinity". NetBSD has sched_getaffinity_np. Implementations for
+   *  these operating systems are left as an exercise for the reader.
+   */
+
   import Runtime.ProcessBuilderOps
   def availableProcessors(): Int = {
-    val available = if (isWindows) {
+    val available = if (LinktimeInfo.isWindows) {
       val sysInfo = stackalloc[SystemInfo]()
       GetSystemInfo(sysInfo)
       sysInfo.numberOfProcessors.toInt
-    } else sysconf(_SC_NPROCESSORS_ONLN).toInt
+    } else {
+      val nLogicalCPUs =
+        if (LinktimeInfo.isLinux)
+          RuntimeLinuxOsSpecific.sched_cpuset_cardinality()
+        else -1
+
+      if (nLogicalCPUs > 0) nLogicalCPUs
+      else sysconf(_SC_NPROCESSORS_ONLN).toInt
+    }
+
     // By contract returned value cannot be lower then 1
     available max 1
   }
+
   def exit(status: Int): Unit = stdlib.exit(status)
   def gc(): Unit = System.gc()
 
@@ -141,6 +165,12 @@ private object ShutdownHookUncaughtExceptionHandler
 object Runtime extends Runtime() {
   def getRuntime(): Runtime = this
 
+  private def handleSignal(sig: CInt): Unit = {
+    Proxy.disableGracefullShutdown()
+    Runtime.getRuntime().runHooks()
+    exit(128 + sig)
+  }
+
   private implicit class ProcessBuilderOps(val pb: ProcessBuilder)
       extends AnyVal {
     def setEnv(envp: Array[String]): ProcessBuilder = {
@@ -152,7 +182,7 @@ object Runtime extends Runtime() {
         case a =>
           envp.foreach {
             case null =>
-            case a =>
+            case a    =>
               a.split("=") match {
                 case Array(k, v) => env.put(k, v)
                 case _           =>

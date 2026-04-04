@@ -19,6 +19,16 @@ sealed trait NativeConfig {
   /** The compilation options passed to LLVM. */
   def compileOptions: Seq[String]
 
+  /** The compilation options used when compiling .c files combined with
+   *  'compileOptions' used on all sources.
+   */
+  def cOptions: Seq[String]
+
+  /** The compilation options used when compiling .cpp files combined with
+   *  'compileOptions' used on all sources.
+   */
+  def cppOptions: Seq[String]
+
   /** Optional target triple that defines current OS, ABI and CPU architecture.
    */
   def targetTriple: Option[String]
@@ -61,13 +71,42 @@ sealed trait NativeConfig {
   /** Shall we use the incremental compilation? */
   def useIncrementalCompilation: Boolean
 
-  /** Shall be compiled with multithreading support. If equal to `None` the
-   *  toolchain would detect if program uses system threads - when not thrads
-   *  are not used, the program would be linked without multihreading support.
+   // format: off
+  /** Shall be compiled with multithreading support.
+   *
+   *  'show ThisBuild/nativeConfig' will display one of three values.
+   *  The default 'detect' setting is appropriate for almost all cases.
+   *
+   *  * 'detect' - The toolchain will start linking using 'true'.
+   *               If by the end no use of system threads is found, the
+   *               toolchain will re-link using 'false' to reduce
+   *               synchronization overhead.
+   *
+   *               `nativeConfig` is initialized to this value and
+   *               there is no easy way to set it once changed.
+   *
+   *  * 'false'  - Never link with multithreading enabled.
+   *
+   *              Note Well:
+   *
+   *                + This setting is not tested in Scala Native Continuous
+   *                  integration.
+   *
+   *                + Some Scala Native library classes may require
+   *                  multithreading and fail to link with this setting.
+   *
+   *                + Code using `Future`s may link but encounter runtime
+   *                  problems.
+   *
+   *  * 'true'   - Always link with multithreading enabled.
+   * 
    */
+  // format: on
   def multithreading: Option[Boolean]
 
-  /*  Was multhithreadinng explicitly select, if not default to true */
+  /*  Was multithreading explicitly selected? If not default to 'true' and
+   *  rely upon toolchain to detect and reset if system threads are not used.
+   */
   private[scalanative] def multithreadingSupport: Boolean =
     multithreading.getOrElse(true)
 
@@ -159,6 +198,20 @@ sealed trait NativeConfig {
   /** Create a new config with updated compilation options. */
   def withCompileOptions(update: Mapping[Seq[String]]): NativeConfig
 
+  /** Create a new config with given C only options */
+  final def withCOptions(value: Seq[String]): NativeConfig =
+    withCOptions(_ => value)
+
+  /** Create a new config with updated C only options */
+  def withCOptions(update: Mapping[Seq[String]]): NativeConfig
+
+  /** Create a new config with given C++ only options */
+  final def withCppOptions(value: Seq[String]): NativeConfig =
+    withCppOptions(_ => value)
+
+  /** Create a new config with updated C++ only options */
+  def withCppOptions(update: Mapping[Seq[String]]): NativeConfig
+
   /** Create a new config given a target triple. */
   def withTargetTriple(value: Option[String]): NativeConfig
 
@@ -238,7 +291,7 @@ sealed trait NativeConfig {
   /** Create a new [[NativeConfig]] with updated resource exclude patterns. */
   def withResourceExcludePatterns(value: Seq[String]): NativeConfig
 
-  /** Create a new [[NativeConfig]] with a updated list of service providers
+  /** Create a new [[NativeConfig]] with an updated list of service providers
    *  allowed in the final binary
    */
   def withServiceProviders(
@@ -251,7 +304,7 @@ sealed trait NativeConfig {
    */
   def withBaseName(value: String): NativeConfig
 
-  /** Create a optimization configuration */
+  /** Create an optimization configuration */
   final def withOptimizerConfig(value: OptimizerConfig): NativeConfig =
     withOptimizerConfig(_ => value)
 
@@ -279,6 +332,8 @@ object NativeConfig {
       clangPP = Paths.get(""),
       linkingOptions = Seq.empty,
       compileOptions = Seq.empty,
+      cOptions = Seq.empty,
+      cppOptions = Seq.empty,
       targetTriple = None,
       gc = GC.default,
       lto = LTO.default,
@@ -309,6 +364,8 @@ object NativeConfig {
       clangPP: Path,
       linkingOptions: Seq[String],
       compileOptions: Seq[String],
+      cOptions: Seq[String],
+      cppOptions: Seq[String],
       targetTriple: Option[String],
       gc: GC,
       lto: LTO,
@@ -341,10 +398,16 @@ object NativeConfig {
       copy(clangPP = value)
 
     def withLinkingOptions(update: Mapping[Seq[String]]): NativeConfig =
-      copy(linkingOptions = update(linkingOptions))
+      copy(linkingOptions = update(linkingOptions).map(_.trim()))
 
     def withCompileOptions(update: Mapping[Seq[String]]): NativeConfig =
-      copy(compileOptions = update(compileOptions))
+      copy(compileOptions = update(compileOptions).map(_.trim()))
+
+    def withCOptions(update: Mapping[Seq[String]]): NativeConfig =
+      copy(cOptions = update(cOptions).map(_.trim()))
+
+    def withCppOptions(update: Mapping[Seq[String]]): NativeConfig =
+      copy(cppOptions = update(cppOptions).map(_.trim()))
 
     def withTargetTriple(value: Option[String]): NativeConfig = {
       val propertyName = "target.triple"
@@ -467,37 +530,39 @@ object NativeConfig {
             .mkString("\n")
         }
 
-      s"""NativeConfig(
-        | - baseName:                $baseName
-        | - clang:                   $clang
-        | - clangPP:                 $clangPP
-        | - linkingOptions:          ${showSeq(linkingOptions)}
-        | - compileOptions:          ${showSeq(compileOptions)}
-        | - targetTriple:            $targetTriple
-        | - GC:                      $gc
-        | - LTO:                     $lto
-        | - mode:                    $mode
-        | - buildTarget              $buildTarget
-        | - check:                   $check
-        | - checkFatalWarnings:      $checkFatalWarnings
-        | - checkFeatures            $checkFeatures
-        | - dump:                    $dump
-        | - sanitizer:               ${sanitizer.map(_.name).getOrElse("none")}
-        | - linkStubs:               $linkStubs
-        | - optimize                 $optimize
-        | - incrementalCompilation:  $useIncrementalCompilation
-        | - multithreading           $multithreading
-        | - linktimeProperties:      ${showMap(linktimeProperties)}
-        | - embedResources:          $embedResources
-        | - resourceIncludePatterns: ${showSeq(resourceIncludePatterns)}
-        | - resourceExcludePatterns: ${showSeq(resourceExcludePatterns)}
-        | - serviceProviders:        ${showMap(serviceProviders)}
-        | - optimizerConfig:         ${optimizerConfig.show(" " * 4)}
-        | - semanticsConfig:         ${semanticsConfig.show(" " * 4)}
-        | - sourceLevelDebuggingConfig: ${sourceLevelDebuggingConfig.show(
-          " " * 4
-        )}
-        |)""".stripMargin
+      s"""|NativeConfig(
+          | - baseName:                $baseName
+          | - clang:                   $clang
+          | - clangPP:                 $clangPP
+          | - linkingOptions:          ${showSeq(linkingOptions)}
+          | - compileOptions:          ${showSeq(compileOptions)}
+          | - cOptions:                ${showSeq(cOptions)}
+          | - cppOptions:              ${showSeq(cppOptions)}
+          | - targetTriple:            $targetTriple
+          | - GC:                      $gc
+          | - LTO:                     $lto
+          | - mode:                    $mode
+          | - buildTarget              $buildTarget
+          | - check:                   $check
+          | - checkFatalWarnings:      $checkFatalWarnings
+          | - checkFeatures            $checkFeatures
+          | - dump:                    $dump
+          | - sanitizer:               ${sanitizer.map(_.name).getOrElse("none")}
+          | - linkStubs:               $linkStubs
+          | - optimize                 $optimize
+          | - incrementalCompilation:  $useIncrementalCompilation
+          | - multithreading           ${multithreading.getOrElse("detect")}
+          | - linktimeProperties:      ${showMap(linktimeProperties)}
+          | - embedResources:          $embedResources
+          | - resourceIncludePatterns: ${showSeq(resourceIncludePatterns)}
+          | - resourceExcludePatterns: ${showSeq(resourceExcludePatterns)}
+          | - serviceProviders:        ${showMap(serviceProviders)}
+          | - optimizerConfig:         ${optimizerConfig.show(" " * 4)}
+          | - semanticsConfig:         ${semanticsConfig.show(" " * 4)}
+          | - sourceLevelDebuggingConfig: ${sourceLevelDebuggingConfig.show(
+           " " * 4
+         )}
+          |)""".stripMargin
     }
   }
 
@@ -518,10 +583,10 @@ object NativeConfig {
     }
     if (invalid.nonEmpty) {
       throw new BuildException(
-        s"""Link-time properties needs to be non-null primitives or non-empty string
-           |Invalid link-time properties:
-           |${invalid.mkString(" - ", "\n", "")}
-        """.stripMargin
+        s"""|Link-time properties needs to be non-null primitives or non-empty string
+            |Invalid link-time properties:
+            |${invalid.mkString(" - ", "\n", "")}
+            |""".stripMargin
       )
     }
   }

@@ -1,25 +1,24 @@
-// Ported from Scala.js commit: ba618ed dated: 2020-10-05
-
-/*
- Arrays.spliterator() methods added for Scala Native.
- Arrays.stream() methods added for Scala Native.
- Arrays.setAll*() methods added for Scala Native.
- Arrays.parallel*() methods added for Scala Native.
+/* Ported from Scala.js commit: ba618ed dated: 2020-10-05
+ *
+ *  Contains Scala Native specific updates subsequent to original port.
+ *  See Scala Native git repository history.
  */
 
 package java.util
 
-import scala.annotation.tailrec
+import java.util.function._
+import java.util.stream.StreamSupport
+import java.{util => ju}
 
+import scala.annotation.tailrec
 import scala.reflect.ClassTag
 
-import java.util.function._
-import java.{util => ju}
-import java.util.stream.StreamSupport
+import scala.scalanative.unsafe._
+import scala.scalanative.unsigned._
 
-object Arrays {
+object Arrays extends ArraysJDK9Methods {
   @inline
-  private final implicit def naturalOrdering[T <: AnyRef]: Ordering[T] = {
+  private implicit final def naturalOrdering[T <: AnyRef]: Ordering[T] = {
     new Ordering[T] {
       def compare(x: T, y: T): Int = x.asInstanceOf[_Comparable[T]].compareTo(y)
     }
@@ -535,11 +534,25 @@ object Arrays {
   @noinline def equals(a: Array[Boolean], b: Array[Boolean]): Boolean =
     equalsImpl(a, b)
 
-  @noinline def equals(a: Array[Double], b: Array[Double]): Boolean =
-    equalsImpl(a, b)
+  @noinline def equals(
+      a: Array[scala.Double],
+      b: Array[scala.Double]
+  ): Boolean = {
+    if (a eq b) true
+    else if (a == null || b == null) false
+    else
+      equals(a, 0, a.length, b, 0, b.length)
+  }
 
-  @noinline def equals(a: Array[Float], b: Array[Float]): Boolean =
-    equalsImpl(a, b)
+  @noinline def equals(
+      a: Array[scala.Float],
+      b: Array[scala.Float]
+  ): Boolean = {
+    if (a eq b) true
+    else if (a == null || b == null) false
+    else
+      equals(a, 0, a.length, b, 0, b.length)
+  }
 
   @noinline def equals(a: Array[AnyRef], b: Array[AnyRef]): Boolean =
     equalsImpl(a, b)
@@ -1122,11 +1135,9 @@ object Arrays {
     setAll(array, generator)
   }
 
-// parallelSort(byte[])
   def parallelSort(a: Array[Byte]): Unit =
     sort(a)
 
-// parallelSort(byte[] a, int fromIndex, int toIndex)
   def parallelSort(
       a: Array[Byte],
       fromIndex: Int,
@@ -1134,11 +1145,9 @@ object Arrays {
   ): Unit =
     sort(a, fromIndex, toIndex)
 
-// parallelSort(char[])
   def parallelSort(a: Array[Char]): Unit =
     sort(a)
 
-// parallelSort(char[] a, int fromIndex, int toIndex)
   def parallelSort(
       a: Array[Char],
       fromIndex: Int,
@@ -1146,11 +1155,9 @@ object Arrays {
   ): Unit =
     sort(a, fromIndex, toIndex)
 
-// parallelSort(double[])
   def parallelSort(array: Array[Double]): Unit =
     sort(array)
 
-// parallelSort(double[] a, int fromIndex, int toIndex)
   def parallelSort(
       array: Array[Double],
       fromIndex: Int,
@@ -1158,11 +1165,9 @@ object Arrays {
   ): Unit =
     sort(array, fromIndex, toIndex)
 
-// parallelSort(float[])
   def parallelSort(a: Array[Float]): Unit =
     sort(a)
 
-// parallelSort(float[] a, int fromIndex, int toIndex)
   def parallelSort(
       a: Array[Float],
       fromIndex: Int,
@@ -1170,18 +1175,15 @@ object Arrays {
   ): Unit =
     sort(a, fromIndex, toIndex)
 
-// parallelSort(int[])
   def parallelSort(a: Array[Int]): Unit =
     sort(a)
 
-// parallelSort(int[] a, int fromIndex, int toIndex)
   def parallelSort(a: Array[Int], fromIndex: Int, toIndex: Int): Unit =
     sort(a, fromIndex, toIndex)
 
-// parallelSort(long[])
   def parallelSort(a: Array[Long]): Unit =
     sort(a)
-// parallelSort(long[] a, int fromIndex, int toIndex)
+
   def parallelSort(
       a: Array[Long],
       fromIndex: Int,
@@ -1189,11 +1191,9 @@ object Arrays {
   ): Unit =
     sort(a, fromIndex, toIndex)
 
-// parallelSort(short[])
   def parallelSort(a: Array[Short]): Unit =
     sort(a)
 
-// parallelSort(short[] a, int fromIndex, int toIndex)
   def parallelSort(
       a: Array[Short],
       fromIndex: Int,
@@ -1201,17 +1201,14 @@ object Arrays {
   ): Unit =
     sort(a, fromIndex, toIndex)
 
-// parallelSort(T[])
   def parallelSort(a: Array[AnyRef]): Unit = sort(a)
 
-//  def parallelSort[T <: Comparable[AnyRef]](
   def parallelSort[T <: _Comparable[_ <: AnyRef]](
       array: Array[T]
   ): Unit = {
     sort(array.asInstanceOf[Array[AnyRef]])
   }
 
-// parallelSort(T[] a, Comparator<? super T> cmp)
   def parallelSort[T <: AnyRef](
       array: Array[T],
       comparator: Comparator[_ >: T]
@@ -1219,15 +1216,12 @@ object Arrays {
     sort[T](array, comparator)
   }
 
-// parallelSort(T[] a, int fromIndex, int toIndex)
   def parallelSort[T <: _Comparable[_ <: AnyRef]](
       array: Array[T],
       fromIndex: Int,
       toIndex: Int
   ): Unit =
     sort(array.asInstanceOf[Array[AnyRef]], fromIndex, toIndex)
-
-// parallelSort(T[] a, int fromIndex, int toIndex, Comparator<? super T> cmp)
 
   def parallelSort[T <: AnyRef](
       array: Array[T],
@@ -1439,5 +1433,4 @@ object Arrays {
 
     StreamSupport.stream(spliter, parallel = false)
   }
-
 }

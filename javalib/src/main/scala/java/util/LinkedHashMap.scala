@@ -1,9 +1,13 @@
-// Ported from Scala.js commit: a6c1451 dated: 2021-10-16
+// Ported from Scala.js commit: f7be410 dated: 2020-10-12
+
+/*
+ *  Static method newLinkedHashMap added for Scala Native.
+ */
 
 package java.util
 
-import java.{util => ju}
 import java.util.function.BiConsumer
+import java.{util => ju}
 
 class LinkedHashMap[K, V](
     initialCapacity: Int,
@@ -38,7 +42,7 @@ class LinkedHashMap[K, V](
   private def asMyNode(node: HashMap.Node[K, V]): Node[K, V] =
     node.asInstanceOf[Node[K, V]]
 
-  private[util] override def newNode(
+  override private[util] def newNode(
       key: K,
       hash: Int,
       value: V,
@@ -48,7 +52,7 @@ class LinkedHashMap[K, V](
     new Node(key, hash, value, previous, next, null, null)
   }
 
-  private[util] override def nodeWasAccessed(node: HashMap.Node[K, V]): Unit = {
+  override private[util] def nodeWasAccessed(node: HashMap.Node[K, V]): Unit = {
     if (accessOrder) {
       val myNode = asMyNode(node)
       if (myNode.younger ne null) {
@@ -58,13 +62,13 @@ class LinkedHashMap[K, V](
     }
   }
 
-  private[util] override def nodeWasAdded(node: HashMap.Node[K, V]): Unit = {
+  override private[util] def nodeWasAdded(node: HashMap.Node[K, V]): Unit = {
     appendToOrderedList(asMyNode(node))
     if (removeEldestEntry(eldest))
       removeNode(eldest)
   }
 
-  private[util] override def nodeWasRemoved(node: HashMap.Node[K, V]): Unit =
+  override private[util] def nodeWasRemoved(node: HashMap.Node[K, V]): Unit =
     removeFromOrderedList(asMyNode(node))
 
   private def appendToOrderedList(node: Node[K, V]): Unit = {
@@ -112,13 +116,13 @@ class LinkedHashMap[K, V](
     }
   }
 
-  private[util] override def nodeIterator(): ju.Iterator[HashMap.Node[K, V]] =
+  override private[util] def nodeIterator(): ju.Iterator[HashMap.Node[K, V]] =
     new NodeIterator
 
-  private[util] override def keyIterator(): ju.Iterator[K] =
+  override private[util] def keyIterator(): ju.Iterator[K] =
     new KeyIterator
 
-  private[util] override def valueIterator(): ju.Iterator[V] =
+  override private[util] def valueIterator(): ju.Iterator[V] =
     new ValueIterator
 
   private final class NodeIterator
@@ -183,4 +187,20 @@ object LinkedHashMap {
       var younger: Node[K, V]
   ) extends HashMap.Node[K, V](key, hash, value, previous, next)
 
+  // Since: Java 19
+  def newLinkedHashMap[K, V](numElements: Int): LinkedHashMap[K, V] = {
+    if (numElements < 0) {
+      throw new IllegalArgumentException(
+        s"Negative number of elements: ${numElements}"
+      )
+    }
+
+    val loadFactor = 0.75f // as defined in JVM method description.
+
+    val desiredCapacity = Math.ceil(numElements * (1.0f / loadFactor)).toInt
+
+    val clampedCapacity = Math.clamp(desiredCapacity, 0, Integer.MAX_VALUE)
+
+    new LinkedHashMap[K, V](clampedCapacity.toInt, loadFactor)
+  }
 }

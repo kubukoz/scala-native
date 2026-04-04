@@ -1,6 +1,7 @@
 package scala.scalanative.junit.utils
 
 import org.junit.Assume
+
 import org.scalanative.testsuite.utils.Platform
 
 object AssumesHelper {
@@ -49,6 +50,22 @@ object AssumesHelper {
     Assume.assumeFalse(
       "SN executes all tests using ForkJoinPool based executor in multithreading mode",
       Platform.executingInScalaNative && Platform.isMultithreadingEnabled
+    )
+  }
+
+  def assumeNotCrossCompiling() = {
+    Assume.assumeFalse(
+      "Ignore when running in emulated mode",
+      Seq("CROSSCOMPILING_EMULATOR", "CROSS_ROOT", "CROSS_TRIPLE").exists(
+        sys.env.get(_).isDefined
+      )
+    )
+  }
+
+  def assumeNotRoot() = {
+    Assume.assumeFalse(
+      "Ignore when running as root user",
+      sys.props.get("user.name").forall(_.equalsIgnoreCase("root"))
     )
   }
 }

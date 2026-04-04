@@ -1,13 +1,13 @@
 package scala.scalanative.runtime
 
 import scala.scalanative.annotation.alwaysinline
-import scala.scalanative.runtime.Intrinsics.{castRawSizeToInt, sizeOf}
 import scala.scalanative.meta.LinktimeInfo.isMultithreadingEnabled
+import scala.scalanative.runtime.Intrinsics.{castRawSizeToInt, sizeOf}
 
 private[runtime] object MemoryLayout {
 
   /*  Even though it might seem non-idiomatic to use `def` instead of `final val`
-   *  for the constants it actual can be faster at runtime. Vals would require
+   *  for the constants it actually can be faster at runtime. Vals would require
    *  a fieldload operation and loading the module instance. Def would be
    *  evaluated and inlined in the optimizer - it would result with replacing
    *  method call with a constant value.
@@ -27,11 +27,19 @@ private[runtime] object MemoryLayout {
     @alwaysinline def IdOffset =
       if (isMultithreadingEnabled) LockWordOffset + PtrSize
       else PtrSize
-    @alwaysinline def TraitIdOffset = IdOffset + IntSize
-    @alwaysinline def NameOffset = TraitIdOffset + IntSize
-    @alwaysinline def SizeOffset = NameOffset + PtrSize
-    @alwaysinline def IdRangeEndOffset = SizeOffset + IntSize
-    @alwaysinline def ReferenceMapOffset = IdRangeEndOffset + IntSize
+
+    @deprecated("No longer used", since = "0.5.6") @alwaysinline
+    def TraitIdOffset = -1
+    @alwaysinline def InterfacesCountOffset = IdOffset + IntSize
+    @alwaysinline def InterfacesOffset = InterfacesCountOffset + IntSize
+    @alwaysinline def NameOffset = InterfacesOffset + PtrSize
+
+    @deprecated("Not a part of Rtti layout", since = "0.5.6") @alwaysinline
+    def SizeOffset = NameOffset + PtrSize
+    @deprecated("Not a part of Rtti layout", since = "0.5.6") @alwaysinline
+    def IdRangeEndOffset = SizeOffset + IntSize
+    @deprecated("Not a part of Rtti layout", since = "0.5.6") @alwaysinline
+    def ReferenceMapOffset = IdRangeEndOffset + IntSize
 
     @alwaysinline def size = NameOffset + PtrSize
   }

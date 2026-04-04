@@ -3,23 +3,20 @@ package codegen
 package llvm
 
 import java.io.File
-import java.nio.file.{Path, Paths, Files}
-import scala.collection.mutable
-import scala.scalanative.build.Config
-import scala.scalanative.build.ScalaNative.{dumpDefns, encodedMainClass}
-import scala.scalanative.build.Build
-import scala.scalanative.io.VirtualDirectory
-import scala.scalanative.build
-import scala.scalanative.build.IO
-import scala.scalanative.linker.ReachabilityAnalysis
-import scala.scalanative.util.{Scope, partitionBy, procs}
-import java.nio.file.StandardCopyOption
+import java.nio.file.{Files, Path, Paths, StandardCopyOption}
 
-import scala.scalanative.codegen.{Metadata => CodeGenMetadata}
+import scala.collection.mutable
 import scala.concurrent._
 import scala.util.Success
+
+import scala.scalanative.build
+import scala.scalanative.build.ScalaNative.{dumpDefns, encodedMainClass}
+import scala.scalanative.build.{Build, Config, IO}
 import scala.scalanative.codegen.llvm.compat.os.OsCompat
-import scala.scalanative.util.ShowBuilder
+import scala.scalanative.codegen.{Metadata => CodeGenMetadata}
+import scala.scalanative.io.VirtualDirectory
+import scala.scalanative.linker.ReachabilityAnalysis
+import scala.scalanative.util.{Scope, ShowBuilder, partitionBy, procs}
 
 object CodeGen {
   type IRGenerator = Future[Path]
@@ -85,7 +82,7 @@ object CodeGen {
           .getOrElse(EmptyPath)
 
       // Partition into multiple LLVM IR files proportional to number
-      // of available processesors. This prevents LLVM from optimizing
+      // of available processors. This prevents LLVM from optimizing
       // across IR module boundary unless LTO is turned on.
       def separate(): IRGenerators =
         partitionBy(assembly, procs)(outputFileId).toSeq.map {
@@ -97,7 +94,7 @@ object CodeGen {
         }
 
       // Incremental compilation code generation
-      def seperateIncrementally(): IRGenerators = {
+      def separateIncrementally(): IRGenerators = {
         val ctx = new IncrementalCodeGenContext(config)
         ctx.collectFromPreviousState()
 
@@ -154,7 +151,7 @@ object CodeGen {
 
       val llvmIRGenerators =
         if (config.compilerConfig.useIncrementalCompilation)
-          seperateIncrementally()
+          separateIncrementally()
         else separate()
       llvmIRGenerators ++ maybeBuildInfoGenerator
     }

@@ -2,33 +2,25 @@ package scala.scalanative
 package codegen
 package llvm
 
-import scala.scalanative.nir.Defn.Define.DebugInfo
-import scala.scalanative.util.ShowBuilder
 import scala.collection.mutable
-import scala.scalanative.util.unsupported
-
 import scala.language.implicitConversions
-import scala.scalanative.codegen.llvm.MetadataCodeGen.Writer.Specialized
-import scala.scalanative.util.unreachable
-import scala.scalanative.linker.{
-  ClassRef,
-  ArrayRef,
-  FieldRef,
-  ScopeRef,
-  TraitRef,
-  Method
-}
-import scala.scalanative.linker.ReachabilityAnalysis
-import scala.scalanative.util.ScopedVar
+
 import scala.scalanative.codegen.llvm.Metadata.conversions.optionWrapper
+import scala.scalanative.codegen.llvm.MetadataCodeGen.Writer.Specialized
+import scala.scalanative.linker.{
+  ArrayRef, ClassRef, FieldRef, Method, ReachabilityAnalysis, ScopeRef, TraitRef
+}
+import scala.scalanative.nir.Defn.Define.DebugInfo
 import scala.scalanative.nir.SourceFile.Relative
+import scala.scalanative.util.{ScopedVar, ShowBuilder, unreachable, unsupported}
 
 // scalafmt: { maxColumn = 100}
 private[codegen] trait MetadataCodeGen { self: AbstractCodeGen =>
-  import MetadataCodeGen._
-  import Metadata._
-  import Writer._
   import self.meta.platform
+
+  import Metadata._
+  import MetadataCodeGen._
+  import Writer._
 
   final val generateDebugMetadata = self.meta.config.sourceLevelDebuggingConfig.enabled
   final val generateLocalVariables =
@@ -231,79 +223,6 @@ private[codegen] trait MetadataCodeGen { self: AbstractCodeGen =>
     scope = defnScopes.toDIScope(scopeId)
   )
 
-  class DefnScopes(val defn: nir.Defn.Define)(implicit
-      metadataCtx: MetadataCodeGen.Context
-  ) {
-    private val scopes = mutable.Map.empty[nir.ScopeId, Metadata.Scope]
-
-    lazy val getDISubprogramScope = {
-      val pos = defn.pos
-      val file = toDIFile(pos)
-      val unit = DICompileUnit(
-        file = file,
-        producer = Constants.PRODUCER,
-        isOptimized = defn.attrs.opt == nir.Attr.DidOpt
-      )
-      val linkageName = mangled(defn.name)
-      val ownerName = defn.name.owner.id
-
-      // On Windows if there are no method symbols (LTO enabled) stack traces might return linkage names from found debug symbols
-      // Use it to implement stacktraces
-      val useFQCName =
-        meta.buildConfig.targetsWindows &&
-          meta.config.lto != scalanative.build.LTO.None
-      def fqcn(methodName: String) = s"$ownerName.$methodName"
-      def maybeFQCName(methodName: String) = if (useFQCName) fqcn(methodName) else methodName
-      def methodNameInfo(sig: nir.Sig.Unmangled): (String, DIFlags) = sig match {
-        case nir.Sig.Extern(id) => id -> DIFlags()
-        case nir.Sig.Method(id, _, scope) =>
-          maybeFQCName(id) -> DIFlags(sigAccessibilityFlags(scope): _*)
-        case nir.Sig.Duplicate(of, _) => methodNameInfo(of.unmangled)
-        case nir.Sig.Clinit           => "<clinit>" -> DIFlags(DIFlag.DIFlagPrivate)
-        case nir.Sig.Generated(id)    => maybeFQCName(id) -> DIFlags(DIFlag.DIFlagArtificial)
-        case nir.Sig.Ctor(_)          => maybeFQCName("<init>") -> DIFlags()
-        case nir.Sig.Proxy(id, _)     => maybeFQCName(id) -> DIFlags()
-        case _: nir.Sig.Field         => util.unreachable
-      }
-      val nir.Type.Function(argtys, retty) = defn.ty: @unchecked
-      val (name, flags) = methodNameInfo(defn.name.sig.unmangled)
-      DISubprogram(
-        name = name,
-        linkageName = defn.name.mangle,
-        scope = unit,
-        file = file,
-        unit = unit,
-        line = pos.line.toDILine,
-        flags = flags,
-        tpe = DISubroutineType(
-          DITypes(
-            toFunctionMetadataType(retty),
-            argtys.map(toMetadataType(_))
-          )
-        )
-      )
-    }
-
-    def toDIScope(scopeId: nir.ScopeId): Scope =
-      scopes.getOrElseUpdate(
-        scopeId,
-        if (scopeId.isTopLevel) getDISubprogramScope
-        else toDILexicalBlock(scopeId)
-      )
-
-    def toDILexicalBlock(scopeId: nir.ScopeId): Metadata.DILexicalBlock = {
-      val scope = defn.debugInfo.lexicalScopeOf(scopeId)
-      val srcPosition = scope.srcPosition
-
-      Metadata.DILexicalBlock(
-        file = toDIFile(srcPosition),
-        scope = toDIScope(scope.parent),
-        line = srcPosition.line.toDILine,
-        column = srcPosition.column.toDIColumn
-      )
-    }
-  }
-
   private val DIBasicTypes: Map[nir.Type, Metadata.Type] = {
     import nir.Type._
     Seq(Byte, Char, Short, Int, Long, Size, Float, Double, Bool, Ptr).map { tpe =>
@@ -363,12 +282,18 @@ private[codegen] trait MetadataCodeGen { self: AbstractCodeGen =>
       size = platform.sizeOfPtr.toDISize
     )
 
+  private lazy val BasicMonitorObjectType =
+    nir.Global.Top("scala.scalanative.runtime.monitor.BasicMonitor$")
+
   private def ObjectMonitorUnionType(implicit metaCtx: MetadataCodeGen.Context) =
     metaCtx.cachedByName[DICompositeType]("scala.scalanative.runtime.ObjectMonitorUnion") { name =>
+      implicit def analysis: ReachabilityAnalysis.Result = meta.analysis
+      val ClassRef(basicMonitorClass) = BasicMonitorObjectType: @unchecked
       DICompositeType(
         DWTag.Union,
         name = name,
         size = platform.sizeOfPtr.toDISize,
+        file = toDIFile(basicMonitorClass.position),
         flags = DIFlags(DIFlag.DIFlagArtificial)
       ).withDependentElements { headerRef =>
         Seq(
@@ -471,11 +396,12 @@ private[codegen] trait MetadataCodeGen { self: AbstractCodeGen =>
         MemoryLayout(layout.tys).tys.zipWithIndex.map {
           case (MemoryLayout.PositionedType(ty, offset), idx) =>
             val name = idx match {
-              case RttiIdx      => "rtti"
-              case LockWordIdx  => "lock"
-              case ClassIdIdx   => "classId"
-              case TraitIdIdx   => "traitId"
-              case ClassNameIdx => "className"
+              case RttiIdx            => "rtti"
+              case LockWordIdx        => "lock"
+              case ClassIdIdx         => "classId"
+              case InterfacesCountIdx => "interfacesCount"
+              case InterfacesIdx      => "interfaces"
+              case ClassNameIdx       => "className"
             }
             val baseType = idx match {
               case ClassNameIdx => toMetadataType(nir.Rt.String)
@@ -498,7 +424,7 @@ private[codegen] trait MetadataCodeGen { self: AbstractCodeGen =>
     import nir.Type._
     implicit def analysis: ReachabilityAnalysis.Result = metaCtx.codeGen.meta.analysis
     ty match {
-      case nir.Type.Unit => toMetadataType(nir.Rt.BoxedUnit)
+      case nir.Type.Unit    => toMetadataType(nir.Rt.BoxedUnit)
       case StructValue(tys) =>
         new DICompositeType(
           tag = DWTag.Structure,
@@ -527,6 +453,7 @@ private[codegen] trait MetadataCodeGen { self: AbstractCodeGen =>
       case ty: nir.Type.ValueKind => DIBasicTypes(ty)
 
       case ArrayRef(componentCls, _) =>
+        val ClassRef(arrayClass) = nir.Rt.GenericArray: @unchecked
         val componentName = componentCls match {
           case ref: nir.Type.RefKind => ref.className.id
           case ty                    => ty.show
@@ -535,6 +462,7 @@ private[codegen] trait MetadataCodeGen { self: AbstractCodeGen =>
         DICompositeType(
           DWTag.Class,
           name = s"scala.Array[$componentName]",
+          file = toDIFile(arrayClass.position),
           identifier = ty.mangle,
           size = ArrayHeaderType.size,
           flags = DIFlags(
@@ -642,7 +570,7 @@ private[codegen] trait MetadataCodeGen { self: AbstractCodeGen =>
     }
   }
 
-  private def sigAccessibilityFlags(scope: nir.Sig.Scope): List[DIFlag] = scope match {
+  private[llvm] def sigAccessibilityFlags(scope: nir.Sig.Scope): List[DIFlag] = scope match {
     case nir.Sig.Scope.Public           => DIFlag.DIFlagPublic :: Nil
     case nir.Sig.Scope.PublicStatic     => DIFlag.DIFlagPublic :: DIFlag.DIFlagStaticMember :: Nil
     case _: nir.Sig.Scope.Private       => DIFlag.DIFlagPrivate :: Nil
@@ -670,6 +598,93 @@ private[codegen] object MetadataCodeGen {
     val currentSubprogram = new ScopedVar[Metadata.DISubprogram]()
   }
 
+  class DefnScopes(val defn: nir.Defn.Define, codeGen: AbstractCodeGen)(implicit
+      metadataCtx: MetadataCodeGen.Context
+  ) {
+    import Metadata._
+    import codeGen._
+
+    private val scopes = mutable.Map.empty[nir.ScopeId, Metadata.Scope]
+
+    lazy val getDISubprogramScope = {
+      val pos = defn.pos
+      val file = toDIFile(pos)
+      val unit = DICompileUnit(
+        file = file,
+        producer = Constants.PRODUCER,
+        isOptimized = defn.attrs.opt == nir.Attr.DidOpt
+      )
+      val linkageName = (defn.name: nir.Global) match {
+        case nir.Global.None =>
+          unsupported(defn.name)
+        case nir.Global.Member(_, sig) if sig.isExtern =>
+          val nir.Sig.Extern(id) = sig.unmangled: @unchecked
+          id
+        case _ =>
+          // We add an extra `_` to match the procedure names
+          // generated without debug information.
+          // This makes demangling work regardless of the debug setting
+          "__S" + defn.name.mangle
+      }
+      val ownerName = defn.name.owner.id
+
+      // On Windows if there are no method symbols (LTO enabled) stack traces might return linkage names from found debug symbols
+      // Use it to implement stacktraces
+      val useFQCName =
+        meta.buildConfig.targetsWindows &&
+          meta.config.lto != scalanative.build.LTO.None
+      def fqcn(methodName: String) = s"$ownerName.$methodName"
+      def maybeFQCName(methodName: String) = if (useFQCName) fqcn(methodName) else methodName
+      def methodNameInfo(sig: nir.Sig.Unmangled): (String, DIFlags) = sig match {
+        case nir.Sig.Extern(id)           => id -> DIFlags()
+        case nir.Sig.Method(id, _, scope) =>
+          maybeFQCName(id) -> DIFlags(sigAccessibilityFlags(scope): _*)
+        case nir.Sig.Duplicate(of, _) => methodNameInfo(of.unmangled)
+        case nir.Sig.Clinit           => "<clinit>" -> DIFlags(DIFlag.DIFlagPrivate)
+        case nir.Sig.Generated(id)    => maybeFQCName(id) -> DIFlags(DIFlag.DIFlagArtificial)
+        case nir.Sig.Ctor(_)          => maybeFQCName("<init>") -> DIFlags()
+        case nir.Sig.Proxy(id, _)     => maybeFQCName(id) -> DIFlags()
+        case _: nir.Sig.Field         => util.unreachable
+      }
+      val nir.Type.Function(argtys, retty) = defn.ty: @unchecked
+      val (name, flags) = methodNameInfo(defn.name.sig.unmangled)
+      DISubprogram(
+        name = name,
+        linkageName = linkageName,
+        scope = unit,
+        file = file,
+        unit = unit,
+        line = pos.line.toDILine,
+        flags = flags,
+        tpe = DISubroutineType(
+          DITypes(
+            toFunctionMetadataType(retty),
+            argtys.map(toMetadataType(_))
+          )
+        )
+      )
+    }
+
+    def toDIScope(scopeId: nir.ScopeId): Scope =
+      scopes.getOrElseUpdate(
+        scopeId,
+        if (scopeId.isTopLevel) getDISubprogramScope
+        else toDILexicalBlock(scopeId)
+      )
+
+    def toDILexicalBlock(scopeId: nir.ScopeId): Metadata.DILexicalBlock = {
+      val scope = defn.debugInfo.lexicalScopeOf(scopeId)
+      val srcPosition = scope.srcPosition
+
+      Metadata.DILexicalBlock(
+        file = toDIFile(srcPosition),
+        scope = toDIScope(scope.parent),
+        line = srcPosition.line.toDILine,
+        column = srcPosition.column.toDIColumn
+      )
+    }
+  }
+
   implicit class MetadataIdWriter(val id: Metadata.Id) {
     def write(sb: ShowBuilder): Unit = {
       sb.str('!')
@@ -677,13 +692,13 @@ private[codegen] object MetadataCodeGen {
     }
   }
 
-  trait Writer[T <: Metadata] {
+  abstract class Writer[T <: Metadata] {
     final def sb(implicit ctx: Context): ShowBuilder = ctx.sb
     final def write(v: T)(implicit ctx: Context): Unit = writeMetadata(v, ctx)
     def writeMetadata(v: T, ctx: Context): Unit
   }
 
-  trait InternedWriter[T <: Metadata.Node] extends Writer[T] {
+  abstract class InternedWriter[T <: Metadata.Node] extends Writer[T] {
     import Writer._
     private def asssignedId(v: T)(implicit ctx: Context): Option[Metadata.Id] =
       v.assignedId.orElse(cache(v).get(v))
@@ -699,7 +714,7 @@ private[codegen] object MetadataCodeGen {
     def getOrAssignId(v: T)(implicit ctx: Context): Metadata.Id =
       asssignedId(v).getOrElse(assignId(v))
 
-    final private[MetadataCodeGen] def cache(v: T)(implicit ctx: Context): ctx.WriterCache[T] =
+    private[MetadataCodeGen] final def cache(v: T)(implicit ctx: Context): ctx.WriterCache[T] =
       ctx.writersCache
         .getOrElseUpdate(v.getClass(), mutable.Map.empty)
         .asInstanceOf[ctx.WriterCache[T]]
@@ -711,7 +726,7 @@ private[codegen] object MetadataCodeGen {
         case _                      => ()
       }
       v match {
-        case v: Metadata.Tuple => v.values.foreach(tryIntern)
+        case v: Metadata.Tuple           => v.values.foreach(tryIntern)
         case v: Metadata.SpecializedNode =>
           v.productIterator.foreach(tryIntern)
         case _: Metadata.DIExpressions => ()
@@ -741,9 +756,9 @@ private[codegen] object MetadataCodeGen {
     }
   }
 
-  trait Dispatch[T <: Metadata.Node] extends InternedWriter[T] {
+  abstract class Dispatch[T <: Metadata.Node] extends InternedWriter[T] {
     import Writer.MetadataInternedWriterOps
-    final override def writeMetadata(v: T, ctx: Context): Unit = delegate(v).writeMetadata(v, ctx)
+    override final def writeMetadata(v: T, ctx: Context): Unit = delegate(v).writeMetadata(v, ctx)
 
     private def delegate(v: T): InternedWriter[T] = dispatch(v).asInstanceOf[InternedWriter[T]]
 
@@ -903,7 +918,7 @@ private[codegen] object MetadataCodeGen {
         }
       }
     }
-    trait Specialized[T <: Metadata.SpecializedNode] extends InternedWriter[T] {
+    abstract class Specialized[T <: Metadata.SpecializedNode] extends InternedWriter[T] {
       def writeFields(v: T): Specialized.Builder[T] => Unit
       override def writeMetadata(v: T, ctx: Context): Unit = {
         implicit def _ctx: Context = ctx

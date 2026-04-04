@@ -1,10 +1,11 @@
 package scala.scalanative.linker
 
 import scala.collection.mutable
+
+import scala.scalanative.build.Logger
+import scala.scalanative.build.NativeConfig.{ServiceName, ServiceProviderName}
 import scala.scalanative.nir._
 import scala.scalanative.util.unsupported
-import scala.scalanative.build.NativeConfig.{ServiceName, ServiceProviderName}
-import scala.scalanative.build.Logger
 
 private[scala] object LinktimeIntrinsicCallsResolver {
   // scalafmt: { maxColumn = 120}
@@ -65,7 +66,7 @@ private[scala] object LinktimeIntrinsicCallsResolver {
           case (cls: Val.ClassOf) :: _ => Some(cls)
           // Special case for usage within javalib
           case _ :: (cls: Val.ClassOf) :: _ => Some(cls)
-          case _ =>
+          case _                            =>
             logger.error(s"Found unsupported variant of ${name.show} function, arguments: ${args.map(_.show)}")
             None
         }
@@ -173,6 +174,7 @@ private[scala] object LinktimeIntrinsicCallsResolver {
 
 private[linker] trait LinktimeIntrinsicCallsResolver { self: Reach =>
   import self._
+
   import LinktimeIntrinsicCallsResolver._
 
   private val foundServices = mutable.Map.empty[ServiceName, mutable.Map[ServiceProviderName, FoundServiceProvider]]
@@ -295,7 +297,7 @@ private[linker] trait LinktimeIntrinsicCallsResolver { self: Reach =>
       unwind = let.unwind
     )
 
-    // Create instance of ServiceLoader and call it's constructor
+    // Create instance of ServiceLoader and call its constructor
     val alloc = let.copy(op = Op.Classalloc(ServiceLoader, None))
     buf += alloc
     buf.call(

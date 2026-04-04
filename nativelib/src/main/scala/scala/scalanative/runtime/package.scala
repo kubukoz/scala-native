@@ -1,19 +1,23 @@
 package scala.scalanative
 
+import java.util.concurrent.locks.LockSupport
+import java.{lang => jl}
+
+import scala.scalanative.meta.LinktimeInfo.isMultithreadingEnabled
 import scalanative.annotation.alwaysinline
+import scalanative.runtime.Intrinsics._
+import scalanative.runtime.ffi.stdatomic.{atomic_thread_fence, memory_order}
+import scalanative.runtime.monitor._
 import scalanative.unsafe._
 import scalanative.unsigned.USize
-import scalanative.runtime.Intrinsics._
-import scalanative.runtime.monitor._
-import scalanative.runtime.ffi.stdatomic.{atomic_thread_fence, memory_order}
-import scala.scalanative.meta.LinktimeInfo.isMultithreadingEnabled
-import java.util.concurrent.locks.LockSupport
 
 package object runtime {
   def filename = ExecInfo.filename
+  def startTime: Long = ExecInfo.startTime
+  def uptime: Long = System.currentTimeMillis() - startTime
 
   /** Used as a stub right hand of intrinsified methods. */
-  private[scalanative] def intrinsic: Nothing = throwUndefined()
+  @noinline private[scalanative] def intrinsic: Nothing = throwUndefined()
 
   // Called statically by the compiler, do not modify!
   /** Enter monitor of given object. */
@@ -54,25 +58,33 @@ package object runtime {
       argc: Int,
       rawargv: RawPtr
   ): scala.Array[String] = {
-    if (isMultithreadingEnabled) {
-      assert(
-        Thread.currentThread() != null,
-        "failed to initialize main thread"
+    NativeThread.TLS.setupCurrentThreadInfo(
+      stackBottom = Intrinsics.stackalloc[Byte](),
+      isMainThread = true,
+      stackSize = 0 /* detect */
+    )
+    StackOverflowGuards.setup(isMainThread = true)
+
+    val mainThread = Thread.currentThread()
+    if (mainThread == null) {
+      ffi.printf(
+        c"%s failed to initialize main java.lang.Thread\n",
+        StringConstants.snFatalErrorPrefix
       )
+      System.exit(140)
     }
 
     val argv = fromRawPtr[CString](rawargv)
     val args = new scala.Array[String](argc - 1)
 
-    // skip the executable name in argv(0)
+    ExecInfo.filename = fromCString(argv(0))
     var c = 0
     while (c < argc - 1) {
       // use the default Charset (UTF_8 atm)
       args(c) = fromCString(argv(c + 1))
       c += 1
     }
-
-    ExecInfo.filename = fromCString(argv(0))
+    ExecInfo.startTime = System.currentTimeMillis()
     args
   }
 
@@ -85,16 +97,21 @@ package object runtime {
       shutdownThread = Thread.currentThread()
       atomic_thread_fence(memory_order.memory_order_seq_cst)
     }
-    def pollNonDaemonThreads = NativeThread.Registry.aliveThreads.iterator
-      .map(_.thread)
-      .filter { thread =>
-        (thread ne shutdownThread) && !thread.isDaemon() &&
-        thread.isAlive()
+    def pollNonDaemonThreads = {
+      val it = NativeThread.Registry.aliveThreadsIterator
+      var exists = false
+      while (!exists && it.hasNext()) {
+        val thread = it.next().thread
+        exists = (thread ne shutdownThread) &&
+          !thread.isDaemon() &&
+          thread.isAlive()
       }
+      exists
+    }
 
     def queue = concurrent.NativeExecutionContext.queueInternal
     def shouldWaitForThreads =
-      if (isMultithreadingEnabled) gracefully && pollNonDaemonThreads.hasNext
+      if (isMultithreadingEnabled) gracefully && pollNonDaemonThreads
       else false
     def shouldRunQueuedTasks = gracefully && queue.nonEmpty
 
@@ -109,12 +126,13 @@ package object runtime {
       }
       shouldWaitForThreads || shouldRunQueuedTasks
     }) ()
+    StackOverflowGuards.close()
   }
 
   private[scalanative] final def executeUncaughtExceptionHandler(
       handler: Thread.UncaughtExceptionHandler,
       thread: Thread,
-      throwable: Throwable
+      throwable: jl.Throwable
   ): Unit = {
     // pd_log_error(c"Uncaught exception!")
     System.exit(998)
@@ -122,7 +140,7 @@ package object runtime {
     // handler.uncaughtException(thread, throwable)
     ()
     // catch {
-    //   case ex: Throwable =>
+    //   case ex: jl.Throwable =>
     //     val threadName = "\"" + thread.getName() + "\""
     //     System.err.println(
     //       s"\nException: ${ex.getClass().getName()} thrown from the UncaughtExceptionHandler in thread ${threadName}"
@@ -205,4 +223,95 @@ package object runtime {
   @noinline
   private[scalanative] def throwNoSuchMethod(sig: String): Nothing =
     throw new NoSuchMethodException(sig)
+
+  @noinline
+  @exported("scalanative_throwStackOverflowError")
+  private[runtime] def throwPendingStackOverflowError(): Unit = {
+    val exception = new StackOverflowError()
+    exception.asInstanceOf[runtime.Throwable].onCatchHandler = (_: Throwable) =>
+      try StackOverflowGuards.reset()
+      catch { case ex: StackOverflowError => () }
+    throw exception
+  }
+
+  @noinline
+  @exported("scalanative_initializeModule")
+  private[runtime] def initializeModule(
+      ctor: unsafe.CFuncPtr1[AnyRef, Unit],
+      moduleInstance: AnyRef,
+      moduleSlot: unsafe.Ptr[AnyRef],
+      cls: Class[_]
+  ): AnyRef = cls.synchronized {
+    @alwaysinline def saveResult(instanceOrError: AnyRef): Unit =
+      ffi.stdatomic.atomic_store_intptr(
+        moduleSlot.rawptr,
+        Intrinsics.castObjectToRawPtr(instanceOrError),
+        ffi.stdatomic.memory_order.memory_order_release
+      )
+    try {
+      ctor(moduleInstance)
+      saveResult(moduleInstance)
+      moduleInstance
+    } catch {
+      case error: jl.Throwable =>
+        val threadName = Thread.currentThread().getName()
+        val ex = new ExceptionInInitializerError(
+          s"""Exception ${error} [in thread "$threadName"]"""
+        )
+        ex.setStackTrace(error.getStackTrace())
+        saveResult(ex)
+        throw error
+    } finally {
+      cls.notifyAll()
+    }
+  }
+
+  @noinline
+  @exported("scalanative_awaitForInitialization")
+  private[runtime] def waitForModuleInitialization(
+      moduleSlot: unsafe.Ptr[AnyRef],
+      cls: Class[_]
+  ): AnyRef = cls.synchronized {
+    while (true) {
+      // The slot can contain one of the 3 values:
+      // - Fully initialized object of type `cls`
+      // - ExceptionInInitializerError object set by exception cought when executing constructor
+      // - Stackallocated initialization context created by the owner thread during initialization
+      val moduleRef = ffi.stdatomic.atomic_load_intptr(
+        moduleSlot.rawptr,
+        ffi.stdatomic.memory_order.memory_order_acquire
+      )
+      // Assumes Class[?] is always 1st filed in the object header
+      val rtti = Intrinsics.loadObject(moduleRef)
+      if (rtti eq cls)
+        return Intrinsics.castRawPtrToObject(moduleRef) // happy-path
+
+      if (rtti eq classOf[ExceptionInInitializerError]) {
+        val ex: ExceptionInInitializerError = Intrinsics
+          .castRawPtrToObject(moduleRef)
+          .asInstanceOf[ExceptionInInitializerError]
+        throw new NoClassDefFoundError(
+          s"Could not initialize class ${cls.getName()}"
+        ).initCause(ex)
+      }
+
+      cls.wait()
+    }
+    ??? // Unreachable
+  }
+
+  @extern private[runtime] object StackOverflowGuards {
+    @name("scalanative_StackOverflowGuards_size")
+    def size: Int = extern
+
+    @name("scalanative_StackOverflowGuards_setup")
+    def setup(isMainThread: Boolean): Unit = extern
+
+    @name("scalanative_StackOverflowGuards_reset")
+    def reset(): Unit = extern
+
+    @name("scalanative_StackOverflowGuards_close")
+    def close(): Unit = extern
+  }
+
 }

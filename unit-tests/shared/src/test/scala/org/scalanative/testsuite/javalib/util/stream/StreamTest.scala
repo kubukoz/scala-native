@@ -1,20 +1,15 @@
 package org.scalanative.testsuite.javalib.util.stream
 
-import java.{lang => jl}
-import java.{util => ju}
 import java.util._
-
-import java.util.concurrent.{CountDownLatch, TimeUnit}
 import java.util.concurrent.CountDownLatch._
-
+import java.util.concurrent.{CountDownLatch, TimeUnit}
 import java.util.function._
-
-import java.util.{stream => jus}
 import java.util.stream._
+import java.util.{stream => jus}
+import java.{lang => jl, util => ju}
 
-import org.junit.Test
 import org.junit.Assert._
-import org.junit.Ignore
+import org.junit.{Ignore, Test}
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
 
@@ -717,6 +712,20 @@ class StreamTest {
     assertTrue("expectedSet has remaining elements", expectedSet.isEmpty())
   }
 
+  // Issue #4743
+  @Test def streamDistinct_Characteristics(): Unit = {
+
+    val s0 = jus.Stream.of[String]("AA", "B", "AA", "CC", "D", "EE", "F", "G")
+
+    val spliter = s0.distinct().spliterator()
+
+    StreamTestHelpers.verifyCharacteristics(
+      spliter,
+      Seq(Spliterator.DISTINCT, Spliterator.ORDERED), // must be present
+      Seq(Spliterator.SIZED, Spliterator.SUBSIZED) // must be absent
+    )
+  }
+
   @Test def streamFindAny_Null(): Unit = {
     val s = Stream.of(null.asInstanceOf[String], "NULL")
     assertThrows(classOf[NullPointerException], s.findAny())
@@ -775,6 +784,20 @@ class StreamTest {
 
     val s1 = s0.filter((e) => e.length() == 1)
     assertEquals(s"unexpected element count", expectedCount, s1.count())
+  }
+
+  // Issue #4742 - see also primary reproduction Test in StreamTestOnJDK16
+  @Test def streamFilter_Characteristics(): Unit = {
+
+    val s0 = jus.Stream.of[String]("AA", "B", "CC", "D", "EE", "F", "G")
+
+    val spliter = s0.filter((e) => e.length() == 1).spliterator()
+
+    StreamTestHelpers.verifyCharacteristics(
+      spliter,
+      Seq(Spliterator.ORDERED), // must be present
+      Seq(Spliterator.SIZED, Spliterator.SUBSIZED) // must be absent
+    )
   }
 
   @Test def streamFlatMapToDouble(): Unit = {
@@ -929,8 +952,8 @@ class StreamTest {
     // JVM 8 expects 0x11 (decimal 17), JVM >= 17 expects 0x4051 (Dec 16465)
     val expectedSAllLimitedCharacteristics =
       Spliterator.ORDERED | Spliterator.DISTINCT // 0x11
-      // Drop SIZED, SUBSIZED, CONCURRENT, IMMUTABLE, & NONNULL.
-      // SORTED was not there to drop.
+    // Drop SIZED, SUBSIZED, CONCURRENT, IMMUTABLE, & NONNULL.
+    // SORTED was not there to drop.
 
     assertEquals(
       "Unexpected characteristics for all characteristics stream",

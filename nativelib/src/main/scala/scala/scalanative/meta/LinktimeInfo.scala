@@ -20,7 +20,9 @@ object LinktimeInfo {
   def isLinux: Boolean = target.os == "linux"
 
   @resolvedAtLinktime
-  def isMac: Boolean = target.vendor == "apple" && target.os == "darwin"
+  def isMac: Boolean =
+    target.vendor == "apple" &&
+      (target.os == "darwin" || target.os == "macosx")
 
   @resolvedAtLinktime
   def isFreeBSD: Boolean = target.os == "freebsd"
@@ -45,6 +47,11 @@ object LinktimeInfo {
   )
   def isWeakReferenceSupported: Boolean = resolved
 
+  @resolvedAtLinktime()
+  def isContinuationsSupported: Boolean =
+    (isLinux || isMac || isFreeBSD || isOpenBSD || isNetBSD) &&
+      (target.arch != "arm" && !is32BitPlatform)
+
   @resolvedAtLinktime(
     "scala.scalanative.meta.linktimeinfo.isMultithreadingEnabled"
   )
@@ -55,6 +62,22 @@ object LinktimeInfo {
     "scala.scalanative.meta.linktimeinfo.contendedPaddingWidth"
   )
   def contendedPaddingWidth: Int = resolved
+
+  @resolvedAtLinktime(
+    "scala.scalanative.meta.linktimeinfo.runtimeVersion"
+  )
+  def runtimeVersion: String = resolved
+
+  @resolvedAtLinktime(
+    "scala.scalanative.meta.linktimeinfo.garbageCollector"
+  )
+  def garbageCollector: String = resolved
+  object gc {
+    @resolvedAtLinktime def isBoehm: Boolean = garbageCollector == "boehm"
+    @resolvedAtLinktime def isImmix: Boolean = garbageCollector == "immix"
+    @resolvedAtLinktime def isCommix: Boolean = garbageCollector == "commix"
+    @resolvedAtLinktime def isNone: Boolean = garbageCollector == "none"
+  }
 
   object target {
     @resolvedAtLinktime("scala.scalanative.meta.linktimeinfo.target.arch")

@@ -3,10 +3,12 @@ package scala.scalanative.testinterface.common
 // Ported from Scala.js
 
 import scala.concurrent.ExecutionContext.Implicits.global
-import org.junit.Test
-import org.junit.Assert._
-import scala.scalanative.junit.async._
 import scala.concurrent._
+
+import org.junit.Assert._
+import org.junit.Test
+
+import scala.scalanative.junit.async._
 
 class RunMuxRPCTest {
   import RPCCoreTest._
@@ -36,8 +38,8 @@ class RunMuxRPCTest {
         _ <- y.call(eps.call, i)(())
       } yield {
         val (needTrue, needFalse) = called.splitAt(i + 1)
-        needTrue.foreach(assertTrue _)
-        needFalse.foreach(assertFalse _)
+        needTrue.foreach(assertTrue)
+        needFalse.foreach(assertFalse)
       }
     }
   }
@@ -52,8 +54,8 @@ class RunMuxRPCTest {
     for (i <- got.indices) {
       y.send(eps.msg, i)(())
       val (needTrue, needFalse) = got.splitAt(i + 1)
-      needTrue.foreach(assertTrue _)
-      needFalse.foreach(assertFalse _)
+      needTrue.foreach(assertTrue)
+      needFalse.foreach(assertFalse)
     }
   }
 

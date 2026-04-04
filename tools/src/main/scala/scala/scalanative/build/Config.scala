@@ -196,6 +196,15 @@ sealed trait Config {
           .getOrElse(compilerConfig.mode.isInstanceOf[Mode.Release])
       case _ => false
     }
+
+  private[scalanative] lazy val usingCppExceptions: Boolean =
+    targetsWindows || {
+      val disabled = compilerConfig.cppOptions.contains("-fno-cxx-exceptions")
+      val enabled = compilerConfig.cppOptions.contains("-fcxx-exceptions")
+      // New EH does not work good with LTO https://github.com/scala-native/scala-native/issues/4190
+      val enabledLTO = compilerConfig.lto != build.LTO.none
+      !disabled && (enabled || enabledLTO)
+    }
 }
 
 /** Factory to create [[#empty]] [[Config]] objects */
@@ -300,20 +309,20 @@ object Config {
       def formatClassPath(cp: Seq[Path]) =
         cp.mkString("List(", "\n".padTo(22, ' '), ")")
 
-      s"""Config(
-        | - baseDir:          $baseDir
-        | - testConfig:       $testConfig
-        | - workDir:          $workDir
-        | - moduleName:       $moduleName
-        | - baseName:         $baseName
-        | - artifactName:     $artifactName
-        | - artifactPath:     $artifactPath
-        | - buildPath:        $buildPath
-        | - mainClass:        $mainClass
-        | - classPath:        ${formatClassPath(classPath)}
-        | - sourcesClasspath: ${formatClassPath(sourcesClassPath)}
-        | - compilerConfig:   $compilerConfig
-        |)""".stripMargin
+      s"""|Config(
+          | - baseDir:          $baseDir
+          | - testConfig:       $testConfig
+          | - workDir:          $workDir
+          | - moduleName:       $moduleName
+          | - baseName:         $baseName
+          | - artifactName:     $artifactName
+          | - artifactPath:     $artifactPath
+          | - buildPath:        $buildPath
+          | - mainClass:        $mainClass
+          | - classPath:        ${formatClassPath(classPath)}
+          | - sourcesClasspath: ${formatClassPath(sourcesClassPath)}
+          | - compilerConfig:   $compilerConfig
+          |)""".stripMargin
     }
 
   }

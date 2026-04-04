@@ -13,7 +13,7 @@ private[build] object Validator {
    *    potentially a modified [[Config]] that is valid
    */
   def validate(config: Config): Config =
-    (validateMainClass _)
+    (validateMainClass(_))
       .andThen(validateClasspath)
       .andThen(validateCompileConfig)
       .apply(config)
@@ -58,7 +58,7 @@ private[build] object Validator {
       )
 
     issues.result() match {
-      case Nil => config
+      case Nil    => config
       case issues =>
         throw new BuildException(
           (s"Found ${issues.size} issue within provided confguration: " :: issues)

@@ -7,7 +7,7 @@
 #include "Allocator.h"
 #include "LargeAllocator.h"
 #include "Marker.h"
-#include "immix_commix/Log.h"
+#include "shared/Log.h"
 #include "Object.h"
 #include "State.h"
 #include "immix_commix/utils/MathUtils.h"
@@ -17,6 +17,7 @@
 #include "WeakReferences.h"
 #include "Sweeper.h"
 #include "immix_commix/Synchronizer.h"
+#include "shared/jmx.h"
 
 #include "shared/Parsing.h"
 
@@ -38,6 +39,8 @@ void scalanative_afterexit() {
 NOINLINE void scalanative_GC_init() {
     volatile word_t dummy = 0;
     dummy = (word_t)&dummy;
+    GC_Log_Init();
+    Settings_Init();
     Heap_Init(&heap, Settings_MinHeapSize(), Settings_MaxHeapSize());
 #ifdef SCALANATIVE_MULTITHREADING_ENABLED
     Synchronizer_init();
@@ -110,6 +113,16 @@ size_t scalanative_GC_get_init_heapsize() { return Settings_MinHeapSize(); }
 /* Otherwise, the total size of the physical memory (guarded) will be returned*/
 size_t scalanative_GC_get_max_heapsize() {
     return Parse_Env_Or_Default("GC_MAXIMUM_HEAP_SIZE", Heap_getMemoryLimit());
+}
+
+size_t scalanative_GC_get_used_heapsize() { return Heap_getMemoryUsed(&heap); }
+
+size_t scalanative_GC_stats_collection_total() {
+    return jmx_stats_get_collection_total();
+}
+
+size_t scalanative_GC_stats_collection_duration_total() {
+    return jmx_stats_get_collection_duration_total();
 }
 
 void scalanative_GC_add_roots(void *addr_low, void *addr_high) {

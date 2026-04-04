@@ -7,6 +7,7 @@
 package java.util.concurrent
 
 import java.util.concurrent.locks.ReentrantLock
+
 import scala.scalanative.annotation.safePublish
 
 object CyclicBarrier {
@@ -30,10 +31,10 @@ class CyclicBarrier(
   if (count <= 0) throw new IllegalArgumentException
 
   /* The lock for guarding barrier entry */
-  final private val lock = new ReentrantLock
+  private final val lock = new ReentrantLock
 
   /* Condition to wait on until tripped */
-  final private val trip = lock.newCondition()
+  private final val trip = lock.newCondition()
 
   /* The current generation */
   private var generation = new CyclicBarrier.Generation

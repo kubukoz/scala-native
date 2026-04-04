@@ -20,6 +20,7 @@ object ffi {
   def wcslen(str: CWideString): CSize = extern
   def strncpy(dest: CString, src: CString, count: RawSize): CString = extern
   def strcpy(dest: CString, src: CString): CString = extern
+  def strncmp(lhs: CString, rhs: CString, count: RawSize): CInt = extern
   def strcat(dest: CString, src: CString): CString = extern
   def memcpy(dst: CVoidPtr, src: CVoidPtr, count: CSize): RawPtr = extern
   def memcpy(dst: RawPtr, src: RawPtr, count: RawSize): RawPtr = extern
@@ -29,6 +30,7 @@ object ffi {
   def memmove(dest: RawPtr, src: RawPtr, count: RawSize): RawPtr = extern
   def remove(fname: CString): CInt = extern
   def atexit(func: CFuncPtr0[Unit]): CInt = extern
+  @blocking def printf(format: CString, vargs: Any*): CInt = extern
 
   // Glue layer defined in libc
   @extern

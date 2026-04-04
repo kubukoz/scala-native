@@ -1,5 +1,12 @@
 # Environment setup
 
+Following documentation uses [sbt](https://www.scala-sbt.org/) build tool.
+Other build tools that support Scala Native are:
+- [scala-cli](https://scala-cli.virtuslab.org/install/#scala-native)
+- [Mill](https://mill-build.org/mill/scalalib/native-examples.html)
+- [Gradle](https://gradle.org) with [Scala Native / Scala.js plugin](https://github.com/dubinsky/scalajs-gradle)
+
+
 Scala Native has the following build dependencies:
 
 -   Java 8 or newer
@@ -24,19 +31,19 @@ instructions for your operating system.
 **FreeBSD**
 
 ``` shell
-$ pkg install sbt
+pkg install sbt
 ```
 
 **OpenBSD**
 
 ``` shell
-$ pkg_add sbt
+pkg_add sbt
 ```
 
 **NetBSD**
 
 ``` shell
-$ pkg_add scala-sbt
+pkg_add scala-sbt
 ```
 
 ## Installing clang and runtime dependencies
@@ -66,8 +73,8 @@ Native has been used with:
 **macOS**
 
 ``` shell
-$ brew install llvm
-$ brew install bdw-gc # optional
+brew install llvm
+brew install bdw-gc # optional
 ```
 
 *Note 1:* Xcode should work as an alternative if preferred:
@@ -79,15 +86,15 @@ installation of macOS.
 **Ubuntu**
 
 ``` shell
-$ sudo apt install clang libstdc++-12-dev
-$ sudo apt install libgc-dev # optional
+sudo apt install clang libstdc++-12-dev
+sudo apt install libgc-dev # optional
 ```
 
 **Arch Linux**
 
 ``` shell
-$ sudo pacman -S llvm clang
-$ sudo pacman -S gc # optional
+sudo pacman -S llvm clang
+sudo pacman -S gc # optional
 ```
 
 *Note:* A version of zlib that is sufficiently recent comes with the
@@ -96,9 +103,9 @@ installation of Arch Linux.
 **Fedora 33**
 
 ``` shell
-$ sudo dnf install llvm clang
-$ sudo dnf groupinstall "Development Tools"
-$ sudo dnf install gc-devel zlib-devel # both optional
+sudo dnf install llvm clang
+sudo dnf groupinstall "Development Tools"
+sudo dnf install gc-devel zlib-devel # both optional
 ```
 
 **FreeBSD 12.4 and later**
@@ -109,10 +116,10 @@ $ sudo dnf install gc-devel zlib-devel # both optional
 installation of FreeBSD.
 
 ``` shell
-$ pkg install boehm-gc # optional
+pkg install boehm-gc # optional
 ```
 
-*Note 3:* Using the boehm GC with multi-threaded binaries doesn\'t work
+*Note 3:* Using the boehm GC with multi-threaded binaries doesn't work
 out-of-the-box yet.
 
 **OpenBSD 7.5 and later**
@@ -121,7 +128,7 @@ out-of-the-box yet.
 architecture.
 
 ``` shell
-$ pkg_add boehm-gc # optional
+pkg_add boehm-gc # optional
 ```
 
 **NetBSD 9.3 and later**
@@ -130,21 +137,21 @@ $ pkg_add boehm-gc # optional
 architecture.
 
 ``` shell
-$ pkg_add clang
-$ pkg_add boehm-gc # optional
+pkg_add clang
+pkg_add boehm-gc # optional
 ```
 
 **Nix/NixOS**
 
 ``` shell
-$ wget https://raw.githubusercontent.com/scala-native/scala-native/main/scripts/scala-native.nix
-$ nix-shell scala-native.nix -A clangEnv
+wget https://raw.githubusercontent.com/scala-native/scala-native/main/scripts/scala-native.nix
+nix-shell scala-native.nix -A clangEnv
 ```
 
 **Windows**
 
 Corporate environments and Windows policies can affect the method used
-to setup your environment. The following procedure involves downloading
+to set up your environment. The following procedure involves downloading
 installers and running the installers using Powershell (Administrative)
 to avoid some of these issues. If you have full access to your machine
 then you can install using your favorite method.
@@ -158,7 +165,7 @@ installing [sbt](./sbt.md) documentation.
 
 You may install it via the command line if needed.
 
-``` shell
+``` powershell
 > .\vs_community__<version>.exe
 ```
 
@@ -166,10 +173,11 @@ Select the *Workloads* tab and then *Desktop development with C++*
 checkbox. The defaults are fine. The *C++ Clang tools for Windows* does
 not work so use the next step for details on installing LLVM.
 
-<figure>
-<img src="vs-install.png" alt="vs-install.png" />
-<figcaption>Visual Studio install dialog showing options.</figcaption>
-</figure>
+```{figure} vs-install.png
+:alt: visual studio install
+
+Visual Studio install dialog showing options.
+```
 
 2.  Download and install LLVM
 
@@ -179,10 +187,10 @@ Select *LLVM-12.0.1-win64.exe* or newer. Digital signatures are
 provided.
 
 You may also install LLVM via the command line, and if needed, install
-it into your *C:\\Users\\\<login\>\\AppData\\Local* directory. The
+it into your `C:\Users\<login>\AppData\Local` directory. The
 installer will add *LLVM* and the associated directories and files.
 
-``` shell
+``` powershell
 > .\LLVM-12.0.1-win64.exe
 ```
 
@@ -190,7 +198,7 @@ installer will add *LLVM* and the associated directories and files.
 
 Using the install path above, you would add the following:
 
-``` shell
+``` powershell
 C:\Users\<login>\AppData\Local\LLVM\bin
 ```
 

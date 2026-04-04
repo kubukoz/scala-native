@@ -1,6 +1,7 @@
 package scala.scalanative
 
 import org.junit.Assert._
+
 import scala.scalanative.linker.ReachabilityAnalysis
 
 package object optimizer {
@@ -47,7 +48,7 @@ package object optimizer {
         )
 
       def unapply(name: nir.Global): Boolean = name match {
-        case CompanionMain => true
+        case CompanionMain                      => true
         case nir.Global.Member(TestModule, sig) =>
           sig.unmangled match {
             case nir.Sig.Duplicate(of, _) =>

@@ -15,8 +15,9 @@
 
 package java.util
 
-import scala.annotation.tailrec
 import java.{lang => jl}
+
+import scala.annotation.tailrec
 
 import ScalaOps._
 
@@ -115,7 +116,7 @@ abstract class AbstractMap[K, V] protected () extends java.util.Map[K, V] {
 
   def get(key: Any): V = {
     entrySet().scalaOps.findFold(entry => Objects.equals(key, entry.getKey())) {
-      null.asInstanceOf[V]
+      () => null.asInstanceOf[V]
     } { entry =>
       entry.getValue()
     }

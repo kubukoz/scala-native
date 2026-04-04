@@ -1,13 +1,15 @@
 package scala.scalanative
 package interflow
 
-import scala.collection.mutable
-import scala.scalanative.codegen.PlatformInfo
-import scala.scalanative.nir.Defn.Define.DebugInfo
-import scala.scalanative.linker._
-import scala.scalanative.util.ScopedVar
 import java.util.function.Supplier
+
+import scala.collection.mutable
 import scala.concurrent._
+
+import scala.scalanative.codegen.PlatformInfo
+import scala.scalanative.linker._
+import scala.scalanative.nir.Defn.Define.DebugInfo
+import scala.scalanative.util.ScopedVar
 
 private[scalanative] class Interflow(val config: build.Config)(implicit
     val analysis: ReachabilityAnalysis.Result
@@ -44,7 +46,7 @@ private[scalanative] class Interflow(val config: build.Config)(implicit
     new ScopedVar[mutable.UnrolledBuffer[DebugInfo.LexicalScope]]
   )
 
-  // Not thread-safe, each thread shall contain it's own stack
+  // Not thread-safe, each thread shall contain its own stack
   protected class SymbolsStack {
     private var state: List[nir.Global.Member] = Nil
     private var cachedSize = 0
@@ -201,7 +203,7 @@ object Interflow {
   }
 
   private[scalanative] object LLVMIntrinsics {
-    private val externAttrs = nir.Attrs(isExtern = true)
+    private val externAttrs = nir.Attrs.None.withIsExtern(true)
     private val LLVMI =
       nir.Global.Top("scala.scalanative.runtime.LLVMIntrinsics$")
     private def llvmIntrinsic(id: String) =

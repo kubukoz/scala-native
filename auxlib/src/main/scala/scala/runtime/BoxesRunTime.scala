@@ -1,11 +1,11 @@
 package scala.runtime
 
-import scala.math.ScalaNumber
 import scala.annotation.{nowarn, switch}
+import scala.math.ScalaNumber
 
 import scala.scalanative.meta.LinktimeInfo
-import scala.scalanative.unsigned._
 import scala.scalanative.unsafe.Size
+import scala.scalanative.unsigned._
 
 class BoxesRunTime
 
@@ -112,7 +112,7 @@ object BoxesRunTime {
   @inline def unboxToDouble(o: java.lang.Object): scala.Double =
     if (o == null) 0 else o.asInstanceOf[java.lang.Double].doubleValue
 
-  // Comparsion
+  // Comparison
   @inline def equals(x: java.lang.Object, y: java.lang.Object): Boolean = {
     if (x eq y) true
     else equals2(x, y)

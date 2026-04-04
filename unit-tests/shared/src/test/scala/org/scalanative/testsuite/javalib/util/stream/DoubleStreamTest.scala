@@ -9,26 +9,20 @@ package org.scalanative.testsuite.javalib.util.stream
  * Use ju.ArrayList surgically at the points of use.
  */
 
-import java.{lang => jl}
-
-import java.{util => ju}
-import java.util.{Arrays, ArrayList}
-import java.util.{OptionalDouble, DoubleSummaryStatistics}
-import java.util.Spliterator
-import java.util.Spliterators
-
-import java.util.concurrent.{CountDownLatch, TimeUnit}
 import java.util.concurrent.CountDownLatch._
-
-import java.util.function.{DoubleConsumer, DoubleFunction, DoubleSupplier}
-import java.util.function.Supplier
-
+import java.util.concurrent.{CountDownLatch, TimeUnit}
+import java.util.function.{
+  DoubleConsumer, DoubleFunction, DoubleSupplier, Supplier
+}
 import java.util.stream._
+import java.util.{
+  ArrayList, Arrays, DoubleSummaryStatistics, OptionalDouble, Spliterator,
+  Spliterators
+}
+import java.{lang => jl, util => ju}
 
-import org.junit.Test
 import org.junit.Assert._
-import org.junit.BeforeClass
-import org.junit.Ignore
+import org.junit.{BeforeClass, Ignore, Test}
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
 
@@ -775,6 +769,23 @@ class DoubleStreamTest {
     assertTrue("expectedSet has remaining elements", expectedSet.isEmpty())
   }
 
+  // Issue #4743
+  @Test def doubleStreamDistinct_Characteristics(): Unit = {
+
+    val ds = DoubleStream.of(
+      5.5, 0.0, 4.4, -1.1, -1.1, 4.4, -2.2, -2.2, 3.3, 4.4
+    )
+
+    val spliter = ds.distinct().spliterator()
+
+    // No DISTINCT, inconsistent with Stream#distinct
+    StreamTestHelpers.verifyCharacteristics(
+      spliter,
+      Seq(Spliterator.ORDERED), // must be present
+      Seq(Spliterator.SIZED, Spliterator.SUBSIZED) // must be absent
+    )
+  }
+
   @Test def doubleStreamFindAny_Null(): Unit = {
     val s = DoubleStream.of(null.asInstanceOf[Double])
     // Double nulls get seen as 0.0
@@ -838,6 +849,23 @@ class DoubleStreamTest {
 
     val s1 = s0.filter(e => e < 100.0)
     assertEquals(s"unexpected element count", expectedCount, s1.count())
+  }
+
+  // Issue #4742 - see also primary reproduction in DoubleStreamTestOnJDK16
+  @Test def doubleStreamFilter_Characteristics(): Unit = {
+    val expectedCount = 2
+
+    val ds = DoubleStream.of(
+      5.5, 4.4, -1.1, 0.0, -2.2, 3.3
+    )
+
+    val spliter = ds.filter((d: scala.Double) => d < 0.0).spliterator()
+
+    StreamTestHelpers.verifyCharacteristics(
+      spliter,
+      Seq(Spliterator.ORDERED), // must be present
+      Seq(Spliterator.SIZED, Spliterator.SUBSIZED) // must be absent
+    )
   }
 
   @Test def doubleStreamForeachOrdered(): Unit = {
@@ -942,8 +970,8 @@ class DoubleStreamTest {
     // JVM 8 expects 0x11 (decimal 17), JVM >= 17 expects 0x4051 (Dec 16465)
     val expectedSAllLimitedCharacteristics =
       Spliterator.ORDERED | Spliterator.DISTINCT // 0x11
-      // Drop SIZED, SUBSIZED, CONCURRENT, IMMUTABLE, & NONNULL.
-      // SORTED was not there to drop.
+    // Drop SIZED, SUBSIZED, CONCURRENT, IMMUTABLE, & NONNULL.
+    // SORTED was not there to drop.
 
     assertEquals(
       "Unexpected characteristics for all characteristics stream",

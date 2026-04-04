@@ -1,17 +1,14 @@
 package scala.scalanative
 package interflow
 
-import scala.scalanative.nir.Defn.Define.DebugInfo
 import scala.scalanative.linker._
+import scala.scalanative.nir.Defn.Define.DebugInfo
 import scala.scalanative.util.unreachable
 
 private[interflow] trait Inline { self: Interflow =>
   val optimizerConfig = config.compilerConfig.optimizerConfig
   import optimizerConfig.{
-    smallFunctionSize,
-    maxCallerSize,
-    maxCalleeSize,
-    maxInlineDepth
+    maxCalleeSize, maxCallerSize, maxInlineDepth, smallFunctionSize
   }
 
   def shallInline(name: nir.Global.Member, args: Seq[nir.Val])(implicit
@@ -27,7 +24,7 @@ private[interflow] trait Inline { self: Interflow =>
       .fold[Boolean] {
         false
       } { defn =>
-        def isCtor = name.sig.isCtor
+        def isCtor = name.sig.isCtor || name.sig.isTraitInit
         def isSmall = defn.insts.size <= smallFunctionSize
         def isExtern = defn.attrs.isExtern
         def hasVirtualArgs = args.exists(_.isInstanceOf[nir.Val.Virtual])
@@ -52,17 +49,33 @@ private[interflow] trait Inline { self: Interflow =>
           case build.Mode.ReleaseFull =>
             alwaysInline || hintInline || isSmall || isCtor || hasVirtualArgs
         }
-        lazy val shallNot =
-          noOpt || noInline || isRecursive || isDenylisted || calleeTooBig || callerTooBig || isExtern || hasUnwind || inlineDepthLimitExceeded
+        lazy val shallNot = {
+          def hardLimits =
+            isRecursive || isDenylisted || noInline || isExtern
+          def softLimits =
+            calleeTooBig || callerTooBig || hasUnwind || inlineDepthLimitExceeded
+
+          if (alwaysInline) hardLimits
+          else hardLimits || softLimits
+        }
         withLogger { logger =>
           if (shall) {
             if (shallNot) {
               logger(s"not inlining ${name.show}, because:")
+              if (noOpt) logger("* has noopt attr")
               if (noInline) logger("* has noinline attr")
               if (isRecursive) logger("* is recursive")
               if (isDenylisted) logger("* is denylisted")
-              if (callerTooBig) logger("* caller is too big")
-              if (calleeTooBig) logger("* callee is too big")
+              if (calleeTooBig)
+                logger(
+                  s"* callee is too big (${defn.insts.size} > $maxCalleeSize)"
+                )
+              if (callerTooBig)
+                logger(
+                  s"* caller is too big (${mergeProcessor.currentSize()} > $maxCallerSize)"
+                )
+              if (isExtern) logger("* is an extern method")
+              if (hasUnwind) logger("* has unwind")
               if (inlineDepthLimitExceeded)
                 logger("* inline depth limit exceeded")
             }

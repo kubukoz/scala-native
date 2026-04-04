@@ -1,21 +1,20 @@
 package scala.scalanative
 package nscplugin
 
+import java.nio.channels.Channels
+
+import dotty.tools.dotc.ast.Trees._
+import dotty.tools.dotc.ast.tpd
+import dotty.tools.dotc.{CompilationUnit, core, report}
+import scala.collection.mutable
+import scala.language.implicitConversions
+
 import scala.scalanative.util
 import scalanative.nir.Defn.Define.DebugInfo
 import scalanative.nir.serialization.serializeBinary
 
-import dotty.tools.dotc.{CompilationUnit, report}
-import dotty.tools.dotc.ast.tpd
-import dotty.tools.dotc.ast.Trees._
-import dotty.tools.dotc.core
 import core.Contexts._
 import core.Symbols._
-
-import java.nio.channels.Channels
-
-import scala.collection.mutable
-import scala.language.implicitConversions
 
 class NirCodeGen(val settings: GenNIR.Settings)(using ctx: Context)
     extends NirGenStat
@@ -33,7 +32,7 @@ class NirCodeGen(val settings: GenNIR.Settings)(using ctx: Context)
     settings.positionRelativizationPaths
   )
   protected val cachedMethodSig =
-    collection.mutable.Map.empty[(Symbol, Boolean), nir.Type.Function]
+    collection.mutable.Map.empty[(Symbol, Boolean, Boolean), nir.Type.Function]
 
   protected val curClassSym = new util.ScopedVar[ClassSymbol]
   protected val curClassFresh = new util.ScopedVar[nir.Fresh]
@@ -53,7 +52,7 @@ class NirCodeGen(val settings: GenNIR.Settings)(using ctx: Context)
     new util.ScopedVar[mutable.Set[DebugInfo.LexicalScope]]
   protected val curFreshScope = new util.ScopedVar[nir.Fresh]
   protected val curScopeId = new util.ScopedVar[nir.ScopeId]
-  implicit protected def getScopeId: nir.ScopeId = {
+  protected implicit def getScopeId: nir.ScopeId = {
     val res = curScopeId.get
     assert(res.id >= nir.ScopeId.TopLevel.id)
     res
@@ -71,7 +70,7 @@ class NirCodeGen(val settings: GenNIR.Settings)(using ctx: Context)
   protected def unwind(implicit fresh: nir.Fresh): nir.Next =
     curUnwindHandler.get
       .fold[nir.Next](nir.Next.None) { handler =>
-        val exc = nir.Val.Local(fresh(), nir.Rt.Object)
+        val exc = nir.Val.Local(fresh(), nir.Rt.Throwable)
         nir.Next.Unwind(exc, nir.Next.Label(handler, Seq(exc)))
       }
 
@@ -111,11 +110,11 @@ class NirCodeGen(val settings: GenNIR.Settings)(using ctx: Context)
     if (generatedMirrorClasses.nonEmpty) {
       // Ported from Scala.js
       /* #4148 Add generated static forwarder classes, except those that
-       * would collide with regular classes on case insensitive file systems.
+       * would collide with regular classes on case-insensitive file systems.
        */
 
       /* I could not find any reference anywhere about what locale is used
-       * by case insensitive file systems to compare case-insensitively.
+       * by case-insensitive file systems to compare case-insensitively.
        * In doubt, force the English locale, which is probably going to do
        * the right thing in virtually all cases (especially if users stick
        * to ASCII class names), and it has the merit of being deterministic,

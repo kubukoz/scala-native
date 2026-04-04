@@ -1,20 +1,20 @@
 package scala.scalanative
 
-import org.junit.Test
+import java.util.concurrent.{Executors, ThreadFactory, TimeUnit}
+
+import scala.annotation.nowarn
+import scala.language.higherKinds
+
 import org.junit.Assert._
 import org.junit.Assume._
+import org.junit.Test
+
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
 
-import scalanative.unsigned._
-import scalanative.unsafe._
-import scala.annotation.nowarn
 import scala.scalanative.annotation.alwaysinline
-
-import scala.language.higherKinds
 import scala.scalanative.meta.LinktimeInfo.isMultithreadingEnabled
-import java.util.concurrent.ThreadFactory
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
+import scalanative.unsafe._
+import scalanative.unsigned._
 
 class IssuesTest {
 
@@ -670,6 +670,27 @@ class IssuesTest {
     }
   }
 
+  @Test def issue4087(): Unit = {
+    import java.util.ServiceLoader
+    class SomeClass
+    object SomeClass {
+      def get =
+        try ServiceLoader.load(classOf[SomeClass])
+        catch { case ex: Throwable => throw ex }
+        finally { () }
+    }
+    assertTrue(SomeClass.get.isInstanceOf[ServiceLoader[_]])
+  }
+
+  @Test def issue4087_original(): Unit = {
+    import java.util.ServiceLoader
+    class SomeClass
+    object SomeClass {
+      lazy val get = ServiceLoader.load(classOf[SomeClass])
+    }
+    assertTrue(SomeClass.get.isInstanceOf[ServiceLoader[_]])
+  }
+
   @Test def dottyIssue15402(): Unit = {
     trait Named {
       def name: String
@@ -692,6 +713,129 @@ class IssuesTest {
     // Test
     val names = Names.single[Foo](x => x)
     assertEquals("foo", names.mkString)
+  }
+
+  @Test def issue3987(): Unit = {
+    // ensure does not hang
+    def is211 = false
+    val result = "scala-2.10" match {
+      case "scala-2.10" if is211 => "a"
+      case _                     => "b"
+    }
+    assertEquals(result, "b")
+  }
+
+  @Test def issue4194(): Unit = {
+    var tryCounter = 0
+    var finallyCounter = 0
+    var caught = false
+    try {
+      tryCounter += 1
+      try {
+        tryCounter += 1
+        try {
+          tryCounter += 1
+          try throw new RuntimeException()
+          catch {
+            case ex: java.io.IOException => // exception unrelated to throw one
+              fail("Should not be caught")
+          } finally {
+            finallyCounter += 1
+          }
+        } finally {
+          finallyCounter += 1
+        }
+      } catch { case ex: java.lang.Throwable => caught = true }
+    } finally {
+      finallyCounter += 1
+    }
+    assertEquals("some finally block was skipped", 3, finallyCounter)
+    assertEquals(tryCounter, finallyCounter)
+    assertTrue("exception not caught", caught)
+  }
+
+  @Test def issue4308(): Unit = {
+    val a = 3
+    val b = 3
+    val c = 3
+    val d = 3
+    // Init
+    val data = Array.ofDim[String](a, b, c, d)
+    for {
+      i <- 0 until a
+      a = data(i)
+      j <- 0 until b
+      b = a(j)
+      k <- 0 until c
+      c = b(k)
+      l <- 0 until d
+    } {
+      c(l) = s"$i | $j | $k | $l"
+    }
+
+    // Check
+    for {
+      i <- 0 until a
+      a = data(i)
+      j <- 0 until b
+      b = a(j)
+      k <- 0 until c
+      c = b(k)
+      l <- 0 until d
+    } {
+      assertEquals(s"$i | $j | $k | $l", c(l))
+    }
+  }
+
+  // Based on Scala 2.13.16 fix in delambdafy https://github.com/scala/scala/pull/10831
+  @Test def partest_t13022(): Unit = {
+    import t13022.StringValue
+    trait Foo[A] {
+      def singleMethod(arg: A): StringValue
+    }
+
+    class R {
+      val foo1: Foo[Int] = new Foo[Int] {
+        override def singleMethod(arg: Int): StringValue = new StringValue(
+          arg.toString
+        )
+      }
+      val foo2: Foo[Int] = (arg: Int) => new StringValue(arg.toString)
+      val foo3 = (arg: Int) => new StringValue(arg.toString)
+
+      def run(): Unit = {
+        assertEquals("StringValue(1)", foo1.singleMethod(1).toString)
+        assertEquals("StringValue(1)", foo2.singleMethod(1).toString)
+        assertEquals("StringValue(1)", foo3(1).toString)
+      }
+    }
+    new R().run()
+  }
+
+  @Test def issue4387(): Unit = {
+    class XString {
+      private var count: Int = 0
+      def startsWith(prefix: XString, start: Int): scala.Boolean =
+        regionMatches(start, prefix, 0, prefix.count)
+
+      def startsWith(prefix: XString): scala.Boolean =
+        startsWith(prefix, 0)
+
+      @noinline def regionMatches(
+          start: Int,
+          prefix: XString,
+          offset: Int,
+          count: Int
+      ) = {
+        assert(count > 0) // ensure prefix.count would not be removed
+        prefix == null
+      }
+    }
+    // Ensure links in release mode
+    assertThrows(
+      classOf[NullPointerException],
+      new XString().startsWith(null)
+    )
   }
 }
 
@@ -794,4 +938,8 @@ package object issue2552 {
 
 package object issue2712 {
   final class Refined[A](val value: A) extends AnyVal
+}
+
+object t13022 {
+  case class StringValue(value: String) extends AnyVal
 }

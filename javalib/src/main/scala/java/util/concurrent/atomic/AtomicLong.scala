@@ -7,13 +7,15 @@
 package java.util.concurrent.atomic
 
 import java.io.Serializable
+import java.util.function.{LongBinaryOperator, LongUnaryOperator}
+
 import scala.annotation.tailrec
+
 import scala.scalanative.annotation.alwaysinline
-import scala.scalanative.unsafe._
 import scala.scalanative.libc.stdatomic.AtomicLongLong
 import scala.scalanative.libc.stdatomic.memory_order._
-import scala.scalanative.runtime.{fromRawPtr, Intrinsics}
-import java.util.function.{LongBinaryOperator, LongUnaryOperator}
+import scala.scalanative.runtime.{Intrinsics, fromRawPtr}
+import scala.scalanative.unsafe._
 
 @SerialVersionUID(1927816293512124184L)
 class AtomicLong(private var value: Long) extends Number with Serializable {
@@ -123,10 +125,7 @@ class AtomicLong(private var value: Long) extends Number with Serializable {
       expectedValue: Long,
       newValue: Long
   ): Boolean = {
-    if (value == expectedValue) {
-      value = newValue
-      true
-    } else false
+    valueRef.compareExchangeWeak(expectedValue, newValue, memory_order_relaxed)
   }
 
   /** Atomically increments the current value, with memory effects as specified

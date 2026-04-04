@@ -2,8 +2,8 @@ package scala.scalanative
 package codegen
 package llvm
 
-import scala.language.implicitConversions
 import scala.collection.mutable
+import scala.language.implicitConversions
 private[codegen] sealed trait Metadata
 private[codegen] object Metadata {
   case class Id(value: Int) extends AnyVal {
@@ -277,10 +277,13 @@ private[codegen] object Metadata {
     def const: Const = Const(v.toString())
   }
   implicit class IntDIOps(v: Int) {
+    private final val PositionLimit = 65535
     def toDISize: DISize = new DISize(v)
-    def toDILine: DILine = new DILine(v + Constants.SourceToDILineOffset)
+    def toDILine: DILine = new DILine(
+      PositionLimit.min(v + Constants.SourceToDILineOffset)
+    )
     def toDIColumn: DIColumn = new DIColumn(
-      v + Constants.SourceToDIColumnOffset
+      PositionLimit.min(v + Constants.SourceToDIColumnOffset)
     )
     def const: Const = Const(v.toString())
 

@@ -1,14 +1,15 @@
 package scala.scalanative
 package unsafe
 
-import org.junit.Test
-import org.junit.Assert._
-
 import java.nio.charset.Charset
+
+import org.junit.Assert._
+import org.junit.Test
+
 import scalanative.libc.string._
-import scalanative.unsigned._
 // Scala 2.13.7 needs explicit import for implicit conversions
 import scalanative.unsafe.Ptr.ptrToCArray
+import scalanative.unsigned._
 
 class CStringTest {
 
@@ -58,10 +59,12 @@ class CStringTest {
     {
       "greeting": "Hello world!"
     }""",
-      fromCString(c"""
+      fromCString(
+        c"""
     {
       "greeting": "Hello world!"
-    }""")
+    }"""
+      )
     )
 
     assertEquals("\u0020\\X20\u006a\u006b", fromCString(c"\x20\X20\x6a\x6B"))
@@ -85,8 +88,30 @@ class CStringTest {
     assertTrue(szTo.charAt(3) == '4')
   }
 
+  @Test def fromCStringSliceNullReturnsNull(): Unit = {
+    assertNull(fromCStringSlice(null, 0.toUSize))
+  }
+
+  @Test def testFromCStringSlice(): Unit = {
+    val cstrFrom = c"1234"
+    val sameSize = fromCStringSlice(cstrFrom, 4.toUSize)
+
+    assertTrue(sameSize.size == 4)
+    assertTrue(sameSize.charAt(0) == '1')
+    assertTrue(sameSize.charAt(1) == '2')
+    assertTrue(sameSize.charAt(2) == '3')
+    assertTrue(sameSize.charAt(3) == '4')
+
+    val smaller = fromCStringSlice(cstrFrom, 3.toUSize)
+
+    assertTrue(smaller.size == 3)
+    assertTrue(smaller.charAt(0) == '1')
+    assertTrue(smaller.charAt(1) == '2')
+    assertTrue(smaller.charAt(2) == '3')
+  }
+
   @Test def toCStringNullReturnsNullIssue1796(): Unit = {
-    Zone.acquire { implicit z => assertNull(toCString(null)) }
+    Zone.acquire { implicit z => assertNull(toCString(null: String)) }
   }
 
   @Test def testToCString(): Unit = {
@@ -135,5 +160,14 @@ class CStringTest {
       assertEquals(!(cstr1 + 4), 'd')
       assertEquals(!(cstr1 + 5), 0)
     }
+  }
+
+  @Test def cStringNonASCII(): Unit = {
+    // note: `fromCString` is needed to trigger compilation errors against malformed literals
+    fromCString(c"日本語")
+    fromCString(c"język polski")
+    fromCString(c"한국어")
+
+    fromCString(c"🚂🚀🚁🍔")
   }
 }

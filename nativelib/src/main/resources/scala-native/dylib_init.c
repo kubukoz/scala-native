@@ -37,7 +37,7 @@ static void __attribute__((constructor)) __scala_native_init(void) {
     if (!getenv(NO_DYLIB_CTOR_ENV)) {
         if (0 != ScalaNativeInit()) {
             printf("Failed to initialize Scala Native");
-            exit(1);
+            exit(135);
         }
     }
 }

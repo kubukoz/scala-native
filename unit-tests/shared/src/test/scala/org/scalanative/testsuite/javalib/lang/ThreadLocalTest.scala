@@ -7,10 +7,12 @@
  */
 package org.scalanative.testsuite.javalib.lang
 
-import org.junit.{Test, Ignore, BeforeClass}
 import org.junit.Assert._
-import scala.scalanative.junit.utils.AssumesHelper
+import org.junit.{BeforeClass, Ignore, Test}
+
 import org.scalanative.testsuite.javalib.util.concurrent.JSR166Test
+
+import scala.scalanative.junit.utils.AssumesHelper
 
 import JSR166Test._
 
@@ -76,5 +78,15 @@ class ThreadLocalTest extends JSR166Test {
     progenitor.start()
     progenitor.join()
     for (i <- 0 until threadCount) { assertEquals(i, x(i)) }
+  }
+
+  @Test def issue3956(): Unit = {
+    // Ensure ThreadLocal values table can grow over the initial size of 16 entries
+    0.until(1024).foreach { _ =>
+      val tl = new ThreadLocal[String]() {
+        override def initialValue: String = "foo"
+      }
+      assertSame(tl.get(), "foo")
+    }
   }
 }

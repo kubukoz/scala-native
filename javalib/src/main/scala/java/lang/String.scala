@@ -1,19 +1,23 @@
 package java.lang
 
-import scalanative.unsafe._
-import scalanative.unsigned._
-import scalanative.libc.string.memcmp
 import java.io.Serializable
-import java.util._
-import java.util.regex._
+import java.lang.constant.{Constable, ConstantDesc}
 import java.nio._
 import java.nio.charset._
-import java.util.Objects
 import java.util.ScalaOps._
-import java.lang.constant.{Constable, ConstantDesc}
+import java.util._
+import java.util.function.Consumer
+import java.util.regex._
+import java.util.{stream => jus}
 import java.{lang => jl}
+
 import scala.annotation.{switch, tailrec}
-import _String.{string2_string, _string2string}
+
+import scalanative.libc.string.memcmp
+import scalanative.unsafe._
+import scalanative.unsigned._
+
+import _String.{_string2string, string2_string}
 
 final class _String()
     extends Serializable
@@ -168,16 +172,24 @@ final class _String()
     sb.getChars(0, count, value, 0)
   }
 
+  // Extended API
+  def this(data: ByteBuffer, encoding: Charset) = {
+    this()
+    offset = 0
+    val charBuffer = encoding.decode(data)
+    value = charBuffer.array()
+    count = charBuffer.length()
+  }
+
   def charAt(index: Int): Char = {
     if (0 <= index && index < count) {
       value(offset + index)
     } else {
-      throw new StringIndexOutOfBoundsException()
+      throw new StringIndexOutOfBoundsException(
+        s"String index out of range: $index"
+      )
     }
   }
-
-  private def compareValue(ch: Char): Char =
-    Character.toLowerCase(Character.toUpperCase(ch))
 
   private def toLowerCase(ch: Char): Char =
     Character.toLowerCase(ch)
@@ -203,23 +215,17 @@ final class _String()
     count - string.count
   }
 
-  def compareToIgnoreCase(string: _String): Int = {
-    var o1 = offset
-    var o2 = string.offset
-    val end =
-      if (count < string.count) offset + count
-      else offset + string.count
-    while (o1 < end) {
-      val c1: Char = compareValue(value(o1))
-      val c2: Char = compareValue(string.value(o2))
-      o1 += 1
-      o2 += 1
-      val result: Int = c1 - c2
-      if (result != 0) {
-        return result
+  def compareToIgnoreCase(str: _String): Int = {
+    val end = Math.min(count, str.count)
+    var i = 0
+    while (i < end) {
+      val cmp = caseFold(this.charAt(i)) - caseFold(str.charAt(i))
+      if (cmp != 0) {
+        return cmp
       }
+      i += 1
     }
-    count - string.count
+    count - str.count
   }
 
   def concat(string: _String): _String = {
@@ -240,7 +246,7 @@ final class _String()
   }
 
   def endsWith(suffix: _String): scala.Boolean =
-    regionMatches(count - suffix.count, suffix, 0, suffix.count)
+    regionMatches(false, count - suffix.count, suffix, 0, suffix.count)
 
   override def equals(obj: Any): scala.Boolean = obj match {
     case s: _String =>
@@ -275,26 +281,44 @@ final class _String()
       false
   }
 
-  def equalsIgnoreCase(string: _String): scala.Boolean = {
-    if (string == this) {
-      true
-    } else if (string == null || count != string.count) {
+  // Ported from Scala.js commit: 37df9c2ea dated: 2025-06-30
+  @inline
+  def equalsIgnoreCase(anotherString: String): scala.Boolean = {
+    val len = length()
+    if (anotherString == null || anotherString.length() != len) {
       false
     } else {
-      var o1 = offset
-      var o2 = string.offset
-      while (o1 < offset + count) {
-        val c1 = value(o1)
-        val c2 = string.value(o2)
-        o1 += 1
-        o2 += 1
-        if (c1 != c2 && toUpperCase(c1) != toUpperCase(c2) &&
-            toLowerCase(c1) != toLowerCase(c2)) {
+      var i = 0
+      while (i != len) {
+        if (caseFold(this.charAt(i)) != caseFold(anotherString.charAt(i)))
           return false
-        }
+        i += 1
       }
       true
     }
+  }
+
+  /** Performs case folding of a single character for use by `equalsIgnoreCase`
+   *  and `compareToIgnoreCase`.
+   *
+   *  This implementation respects the specification of those two methods,
+   *  although that behavior does not generally conform to Unicode Case Folding.
+   *
+   *  Ported from Scala.js commit: 37df9c2ea dated: 2025-06-30
+   */
+  @inline private def caseFold(c: Char): Char =
+    Character.toLowerCase(Character.toUpperCase(c))
+
+  /** @since Java 12 */
+  def formatted(args: Array[AnyRef]): String = {
+    /* Delegating to the companion static method costs a call but
+     * preserves a Single Point of Truth and ensures identical output.
+     *
+     * Attention!: Using "String.format", no leading underbar, will
+     * use the wrong entry point and bring woe.
+     */
+
+    _String.format(this, args) // Must use underbarString.format()
   }
 
   def getBytes(): Array[scala.Byte] = {
@@ -384,75 +408,157 @@ final class _String()
     }
   }
 
-  def indexOf(c: Int, _start: Int): Int = {
-    var start = _start
-    if (start < count) {
-      if (start < 0) {
-        start = 0
+  // Transform any Objects.checkFromIndex() OOB Exception; use common msg.
+  private def validateFromToIndex(
+      fromIndex: Int,
+      toIndex: Int,
+      length: Int
+  ): Int = {
+    try {
+      Objects.checkFromToIndex(fromIndex, toIndex, length)
+    } catch {
+      case exc: IndexOutOfBoundsException =>
+        throw new StringIndexOutOfBoundsException(exc.getMessage())
+    }
+
+    fromIndex
+  }
+
+  /* Preconditions:
+   *   By convention, caller has validated arguments, but strangely.
+   *   beginIndex is usually guaranteed to be within 'this' but there is no
+   *   such guarantee here.
+   *
+   *   For details, see note above indexOfImpl(str, fromIndex, toIndex).
+   */
+  private def indexOfImpl(ch: Int, beginIndex: Int, endIndex: Int): Int = {
+    // This is a good candidate for someday using memchr().
+
+    var start = beginIndex
+
+    if (ch >= 0 && ch <= Character.MAX_VALUE) {
+      var i = offset + start
+      while (i < offset + endIndex) {
+        if (value(i) == ch)
+          return i - offset
+
+        i += 1
       }
-      if (c >= 0 && c <= Character.MAX_VALUE) {
-        var i = offset + start
-        while (i < offset + count) {
-          if (value(i) == c) {
-            return i - offset
-          }
+    } else if (ch > Character.MAX_VALUE && ch <= Character.MAX_CODE_POINT) {
+      var i = start
+      while (i < endIndex) {
+        val codePoint = codePointAt(i)
+        if (codePoint == ch) {
+          return i
+        } else if (codePoint >= Character.MIN_SUPPLEMENTARY_CODE_POINT) {
           i += 1
         }
-      } else if (c > Character.MAX_VALUE && c <= Character.MAX_CODE_POINT) {
-        var i = start
-        while (i < count) {
-          val codePoint = codePointAt(i)
-          if (codePoint == c) {
-            return i
-          } else if (codePoint >= Character.MIN_SUPPLEMENTARY_CODE_POINT) {
-            i += 1
-          }
-          i += 1
-        }
+        i += 1
       }
     }
+
     -1
   }
 
-  def indexOf(c: Int): Int =
-    indexOf(c, 0)
+  def indexOf(ch: Int): Int =
+    indexOfImpl(ch, 0, count)
 
-  def indexOf(string: _String): Int =
-    indexOf(string, 0)
+  def indexOf(ch: Int, fromIndex: Int): Int = {
+    // per JVM, clamp fromIndex; do not throw when arg negative or too large.
+    indexOfImpl(ch, Math.clamp(fromIndex, 0, count), count)
+  }
 
-  def indexOf(subString: _String, _start: Int): Int = {
-    var start = _start
-    if (start < 0) {
-      start = 0
-    }
-    val subCount = subString.count
-    if (subCount > 0) {
-      if (subCount + start > count) {
-        return -1
-      }
-      val target = subString.value
-      val subOffset = subString.offset
-      val firstChar = target(subOffset)
-      val end = subOffset + subCount
-      while (true) {
-        val i = indexOf(firstChar, start)
-        if (i == -1 || subCount + i > count) {
-          return -1
+  /** @since Java 21 */
+  def indexOf(ch: Int, beginIndex: Int, endIndex: Int): Int = {
+    validateFromToIndex(beginIndex, endIndex, count)
+    indexOfImpl(ch, beginIndex, endIndex)
+  }
+
+  /* Preconditions:
+   *   By convention, caller has validated index arguments so that:
+   *     - beginIndex >= 0
+   *     - beginIndex <= endIndex
+   *     - endIndex <= this.count
+   *
+   *   Beware & handle an empty 'this' or an empty slice range!
+   *   beginIndex is usually guaranteed to be a valid index for this.value
+   *   but there is no such guarantee here.
+   *
+   *   Especially note that when (this.count == 0) indexOf(str, 0, 0)
+   *   fulfills the preconditions but 'this(beginIndex)' will throw.
+   */
+  private def indexOfImpl(str: _String, beginIndex: Int, endIndex: Int): Int = {
+    val needleLen = str.count
+
+    if (needleLen == 0) {
+      beginIndex
+    } else if (needleLen > (endIndex - beginIndex)) {
+      /* needleLen is now known to be >= 1.
+       * If needle is longer than haystack slice, it will never match.
+       * Given prior precondition checking, this also filters out either
+       * or both of 'this' or the slice being a zero length empty _String,
+       * a.k.a "".
+       */
+      -1
+    } else {
+      val haystackStartPtr =
+        this.value.at(offset + beginIndex).asInstanceOf[Ptr[Byte]]
+
+      val haystackEndPtr =
+        haystackStartPtr + ((endIndex - beginIndex) * 2) // First excluded byte
+
+      var result = -1
+
+      var cursor = haystackStartPtr
+
+      while (cursor.toLong < haystackEndPtr.toLong) {
+        val nHaystackBytesRemaining = (haystackEndPtr - cursor).toInt
+
+        val foundAt = MemmemImpl
+          .memmem(
+            cursor,
+            nHaystackBytesRemaining,
+            str.value.at(str.offset),
+            str.count * 2
+          )
+          .asInstanceOf[Ptr[Byte]]
+
+        if (foundAt == null) {
+          cursor = haystackEndPtr
+        } else if ((foundAt.toInt & 0x1) == 1) { // found on odd bit boundary
+          cursor = foundAt + 1 // skip to next 16 bit Character boundary
+        } else { // found on even bit boundary
+          cursor = haystackEndPtr
+          val foundOffsetCharCount =
+            ((foundAt.toLong - haystackStartPtr.toLong) >> 1).toInt
+
+          // Make relative to public start of 'this': (this.value + offset)
+          result = beginIndex + foundOffsetCharCount
         }
-        var o1 = offset + i
-        var o2 = subOffset
-        while ({ o2 += 1; o2 } < end && value({ o1 += 1; o1 }) == target(o2)) ()
-        if (o2 == end) {
-          return i
-        }
-        start = i + 1
       }
+
+      result
     }
-    if (start < count) start else count
+  }
+
+  def indexOf(str: _String): Int =
+    indexOfImpl(str, 0, count)
+
+  def indexOf(str: String, fromIndex: Int): Int = {
+    // per JVM, clamp fromIndex; do not throw when arg negative or too large.
+    indexOfImpl(str, Math.clamp(fromIndex, 0, count), count)
+  }
+
+  /** @since Java 21 */
+  def indexOf(str: _String, beginIndex: Int, endIndex: Int): Int = {
+    validateFromToIndex(beginIndex, endIndex, count)
+    indexOfImpl(str, beginIndex, endIndex)
   }
 
   // See https://github.com/scala-native/scala-native/issues/486
   def intern(): _String = this
+
+  override def isEmpty(): scala.Boolean = count == 0
 
   def lastIndexOf(c: Int): Int =
     lastIndexOf(c, count - 1)
@@ -526,76 +632,133 @@ final class _String()
     }
   }
 
-  def length(): Int = count
+  @inline def length(): Int = count
 
-  def isEmpty(): scala.Boolean = 0 == count
+  private class _StringLineReader(
+      src: Array[Char],
+      srcOffset: Int,
+      srcCount: Int
+  ) {
+    /* See also similar code in java.io.BufferedReader
+     * Strings are immutable, so the content of the array should not
+     * change while it is being traversed by this class.
+     */
 
-  def regionMatches(
-      thisStart: Int,
-      string: _String,
-      start: Int,
-      length: Int
-  ): scala.Boolean = {
-    if (string.count - start < length || start < 0) {
-      false
-    } else if (thisStart < 0 || count - thisStart < length) {
-      false
-    } else if (length <= 0) {
-      true
-    } else {
-      val o1 = offset + thisStart
-      val o2 = string.offset + start
+    var nextOrigin = srcOffset
+    val srcEnd = srcOffset + srcCount
 
-      var i = 0
-      while (i < length) {
-        if (value(o1 + i) != string.value(o2 + i)) {
-          return false
+    def readLine(): _String = {
+      if (nextOrigin >= srcEnd) {
+        null
+      } else {
+        val origin = nextOrigin
+        var cursor = origin
+
+        while ((cursor < srcEnd) &&
+            ((src(cursor) != '\n') && src(cursor) != '\r')) {
+          cursor += 1
         }
-        i += 1
-      }
 
-      true
+        val nChars = cursor - origin
+
+        if (cursor < srcEnd) {
+          if (src(cursor) == '\r')
+            cursor += 1
+
+          if ((cursor < srcEnd) && src(cursor) == '\n')
+            cursor += 1
+        }
+
+        nextOrigin = cursor
+
+        new _String(src, origin, nChars)
+      }
     }
   }
 
+  /** @since JDK 11 */
+  def lines(): jus.Stream[_String] = {
+    /* Library methods are supposed to be reasonably fast.
+     * The obvious implementation, which works, is
+     *    (new java.io.BufferedReader(new java.io.StringReader(this))).lines()
+     *
+     * Since this method is a member of the _String class, it has access to the
+     * underlying Class "value" Array[Char]. Allowing it to use Array indexing
+     * to pursue faster execution and fewer allocations.
+     */
+
+    val lineSrc = new _StringLineReader(value, offset, count)
+
+    // "this.count" - high guess for maximum possible lines not an exact number
+    val spliter =
+      new java.util.Spliterators.AbstractSpliterator[_String](this.count, 0) {
+        def tryAdvance(action: Consumer[_ >: _String]): scala.Boolean = {
+          lineSrc.readLine() match {
+            case null =>
+              false
+
+            case line =>
+              action.accept(line)
+              true
+          }
+        } // tryAdvance
+      }
+
+    jus.StreamSupport.stream(spliter, parallel = false)
+  }
+
+  /* Both regionMatches ported from:
+   *   https://github.com/gwtproject/gwt/blob/master/
+   *     user/super/com/google/gwt/emul/java/lang/String.java
+   *
+   * regionMatches(ignoreCase) modified to take advantage of Scala Native
+   * capabilities.
+   */
   def regionMatches(
       ignoreCase: scala.Boolean,
-      _thisStart: Int,
-      string: _String,
-      _start: Int,
-      length: Int
+      toffset: Int,
+      other: _String,
+      ooffset: Int,
+      len: Int
   ): scala.Boolean = {
-    var thisStart = _thisStart
-    var start = _start
-    if (!ignoreCase) {
-      regionMatches(thisStart, string, start, length)
-    } else if (string != null) {
-      if (thisStart < 0 || length > count - thisStart) {
-        false
-      } else if (start < 0 || length > string.count - start) {
-        false
-      } else {
-        thisStart += offset
-        start += string.offset
-        val end = thisStart + length
-        val target = string.value
-
-        while (thisStart < end) {
-          val c1 = value(thisStart)
-          val c2 = target(start)
-          thisStart += 1
-          start += 1
-          if (c1 != c2 && toUpperCase(c1) != toUpperCase(c2) &&
-              toLowerCase(c1) != toLowerCase(c2)) {
-            return false
-          }
-        }
-
-        true
-      }
-    } else {
+    if (other == null) {
       throw new NullPointerException()
+    } else if (toffset < 0 || ooffset < 0 || len > this.length() - toffset ||
+        len > other.length() - ooffset) {
+      false
+    } else if (len <= 0) {
+      true
+    } else if (ignoreCase) {
+      val left = this.substring(toffset, toffset + len)
+      val right = other.substring(ooffset, ooffset + len)
+      left.equalsIgnoreCase(right)
+    } else {
+      /* Avoid actually instantiating substrings.
+       *
+       * This is logically a six argument ju.Arrays.equals(). Open code here
+       * to skip the latter checking arguments that have already been checked.
+       */
+
+      val data1 = this.value
+        .at(this.offset + toffset)
+        .asInstanceOf[Ptr[scala.Byte]]
+
+      val data2 = other.value
+        .at(other.offset + ooffset)
+        .asInstanceOf[Ptr[scala.Byte]]
+
+      memcmp(data1, data2, (len * 2).toUInt) == 0
     }
+  }
+
+  @inline
+  def regionMatches(
+      toffset: Int,
+      other: _String,
+      ooffset: Int,
+      len: Int
+  ): scala.Boolean = {
+    regionMatches(false, toffset, other, ooffset, len)
   }
 
   def repeat(count: Int): String = {
@@ -687,10 +850,10 @@ final class _String()
   }
 
   def startsWith(prefix: _String, start: Int): scala.Boolean =
-    regionMatches(start, prefix, 0, prefix.count)
+    regionMatches(false, start, prefix, 0, prefix.count)
 
   def startsWith(prefix: _String): scala.Boolean =
-    startsWith(prefix, 0)
+    regionMatches(false, 0, prefix, 0, prefix.count)
 
   def substring(start: Int): _String =
     if (start == 0) {
@@ -1189,25 +1352,11 @@ for (cp <- 0 to Character.MAX_CODE_POINT) {
     }
   }
 
-  def contentEquals(sb: StringBuffer): scala.Boolean = {
-    val size = sb.length()
-    if (count != size) {
-      false
-    } else {
-      regionMatches(0, new _String(0, size, sb.getValue()), 0, size)
-    }
-  }
+  def contentEquals(sb: StringBuffer): scala.Boolean =
+    this.equals(sb.toString())
 
-  def contentEquals(cs: CharSequence): scala.Boolean = {
-    val len = cs.length()
-    if (len != count) {
-      false
-    } else if (len == 0 && count == 0) {
-      true
-    } else {
-      regionMatches(0, _String.valueOf(cs.toString), 0, len)
-    }
-  }
+  def contentEquals(cs: CharSequence): scala.Boolean =
+    this.equals(cs.toString())
 
   def matches(expr: _String): scala.Boolean =
     Pattern.matches(expr, this)
@@ -1300,7 +1449,7 @@ for (cp <- 0 to Character.MAX_CODE_POINT) {
     }
 
   def contains(cs: CharSequence): scala.Boolean =
-    indexOf(_String.valueOf(cs.toString)) >= 0
+    indexOf(cs.toString) >= 0
 
   def offsetByCodePoints(index: Int, codePointOffset: Int): Int = {
     val s = index + offset
@@ -1524,29 +1673,31 @@ for (cp <- 0 to Character.MAX_CODE_POINT) {
     result.toString()
   }
 
-  // Java 15 and above.
-  def transform[R](f: java.util.function.Function[String, R]): R =
+  /** @since Java 12 */
+  def transform[R](f: java.util.function.Function[_ >: String, _ <: R]): R =
     f.apply(thisString)
 }
 
 object _String {
-  final val CASE_INSENSITIVE_ORDER: Comparator[_String] =
-    new CaseInsensitiveComparator()
-  private final val ascii = {
-    val ascii = new Array[Char](128)
-    var i = 0
-    while (i < ascii.length) {
-      ascii(i) = i.toChar
-      i += 1
-    }
-    ascii
-  }
+  final def CASE_INSENSITIVE_ORDER: Comparator[_String] =
+    CaseInsensitiveComparator
 
-  private class CaseInsensitiveComparator
+  private object CaseInsensitiveComparator
       extends Comparator[_String]
       with Serializable {
     def compare(o1: _String, o2: _String): Int =
       o1.compareToIgnoreCase(o2)
+  }
+
+  private object ASCII {
+    val chars: Array[Char] = new Array[Char](128)
+    locally {
+      var i = 0
+      while (i < chars.length) {
+        chars(i) = i.toChar
+        i += 1
+      }
+    }
   }
 
   def copyValueOf(data: Array[Char], start: Int, length: Int): _String =
@@ -1586,7 +1737,7 @@ object _String {
 
   def valueOf(value: Char): _String = {
     val s =
-      if (value < 128) new _String(value, 1, ascii)
+      if (value < 128) new _String(value, 1, ASCII.chars)
       else new _String(0, 1, Array(value))
     s.cachedHashCode = value
     s

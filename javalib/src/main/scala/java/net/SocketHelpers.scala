@@ -1,23 +1,25 @@
 package java.net
 
-import scala.scalanative.unsigned._
-import scala.scalanative.unsafe._
-
-import java.io.IOException
-import java.io.FileDescriptor
-
-import scala.scalanative.posix.arpa.inet
-import scala.scalanative.posix.{netdb, netdbOps}, netdb._, netdbOps._
-import scala.scalanative.posix.netinet.{in, inOps}, in._, inOps._
-import scala.scalanative.posix.sys.socket
-import scala.scalanative.posix.sys.socket._
-import scala.scalanative.posix.sys.socketOps._
-import scala.scalanative.posix.string.memcpy
+import java.io.{FileDescriptor, IOException}
 
 import scala.scalanative.meta.LinktimeInfo
 import scala.scalanative.meta.LinktimeInfo.isWindows
-
+import scala.scalanative.posix.arpa.inet
+import scala.scalanative.posix.netinet.{in, inOps}
+import scala.scalanative.posix.string.memcpy
+import scala.scalanative.posix.sys.socket
+import scala.scalanative.posix.sys.socket._
+import scala.scalanative.posix.sys.socketOps._
+import scala.scalanative.posix.{netdb, netdbOps}
+import scala.scalanative.unsafe._
+import scala.scalanative.unsigned._
 import scala.scalanative.windows.WinSocketApiOps
+
+import in._
+import netdb._
+
+import inOps._
+import netdbOps._
 
 object SocketHelpers {
   if (isWindows) {
@@ -198,7 +200,7 @@ object SocketHelpers {
 
       val dst = sa6.sin6_addr.toPtr.s6_addr
 
-      // By contract, the leading bytes are already zero already.
+      // By contract, the leading bytes are already zero.
       val FF = 255.toUByte
       dst(10) = FF // set the IPv4mappedIPv6 indicator bytes
       dst(11) = FF
@@ -361,7 +363,7 @@ object SocketHelpers {
   private lazy val useLoopbackIPv6: Boolean = {
     getPreferIPv6Addresses() match {
       case Some(useIPv6) => useIPv6
-      case None =>
+      case None          =>
         try {
           // "system" case relies on local nameserver having "localhost" defined.
           InetAddress.getByName("localhost").isInstanceOf[Inet6Address]

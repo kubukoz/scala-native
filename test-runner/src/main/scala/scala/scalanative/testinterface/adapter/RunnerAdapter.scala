@@ -3,15 +3,13 @@ package scala.scalanative.testinterface.adapter
 // Ported from Scala.js
 
 import sbt.testing._
+
 import scala.collection.concurrent.TrieMap
 import scala.concurrent.ExecutionContext
+
 import scala.scalanative.testinterface.adapter.TestAdapter.ManagedRunner
 import scala.scalanative.testinterface.common.{
-  FrameworkMessage,
-  JVMEndpoints,
-  NativeEndpoints,
-  RunMuxRPC,
-  RunnerArgs
+  FrameworkMessage, JVMEndpoints, NativeEndpoints, RunMuxRPC, RunnerArgs
 }
 
 private final class RunnerAdapter private (
@@ -50,7 +48,7 @@ private final class RunnerAdapter private (
       workers
         .map(_.mux.call(NativeEndpoints.done, runID)(()))
         .foreach(_.await())
-      // RPC connection was closed, probaly due to native runner crash, skip sending fruitless command
+      // RPC connection was closed, probably due to native runner crash, skip sending fruitless command
       if (controller.com.isClosed) ""
       else controller.mux.call(NativeEndpoints.done, runID)(()).await()
     } finally {

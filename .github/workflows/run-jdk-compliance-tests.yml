@@ -9,25 +9,18 @@ concurrency:
 
 jobs:
   # Compile and run tests against given version of the JDK to check compliance
-  # We test against Java 8 as default in other CI jobs
+  # We test against Java 17 as default in other CI jobs
   tests-unix-jdk-compliance:
     name: Test Unix JDK compliance
     runs-on: ${{matrix.os}}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-12]
+        os: [ubuntu-22.04, macos-15]
         scala: [3]
-        java: [11, 17, 21]
-        include:
-          - java: 21
-            scala: 2.13
-            os: ubuntu-22.04
-          - java: 17
-            scala: 2.12
-            os: macos-12
+        java: [25]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/macos-setup-env
         if: ${{ startsWith(matrix.os, 'macos') }}
         with:
@@ -40,6 +33,7 @@ jobs:
           java-version: ${{matrix.java}}
 
       - name: Test runtime
+        timeout-minutes: 45
         run: >
           _JAVA_OPTIONS='${{ matrix.java-options }}'
           SCALANATIVE_TEST_PREFETCH_DEBUG_INFO=1
@@ -55,12 +49,12 @@ jobs:
       fail-fast: false
       matrix:
         scala: [3]
-        java: [11, 17, 21]
+        java: [25]
     steps:
       # Disable autocrlf setting, otherwise scalalib patches might not be possible to apply
       - name: Setup git config
         run: git config --global core.autocrlf false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/windows-setup-env
         id: setup
         with:
@@ -68,6 +62,7 @@ jobs:
           java-version: ${{matrix.java}}
 
       - name: Test runtime
+        timeout-minutes: 45
         shell: cmd
         run: >
           set SCALANATIVE_INCLUDE_DIRS=${{steps.setup.outputs.vcpkg-dir}}\include&

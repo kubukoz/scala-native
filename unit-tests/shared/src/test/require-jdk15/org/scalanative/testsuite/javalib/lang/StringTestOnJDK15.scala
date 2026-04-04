@@ -1,78 +1,14 @@
 // Ported from Scala.js, revision c8ddba0 dated 4 Dec 2021
+// For Scala Native additions & changes, check GitHub history.
+
 package org.scalanative.testsuite.javalib.lang
 
-import org.junit.Test
 import org.junit.Assert._
+import org.junit.Test
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
 
 class StringTestOnJDK15 {
-
-  // indent and transform are available since JDK 12 but we're not testing them separately
-
-  @Test def indent(): Unit = {
-    assertEquals("", "".indent(1))
-    assertEquals("", "".indent(0))
-    assertEquals("", "".indent(-1))
-    assertEquals(" \n", "\n".indent(1))
-    assertEquals("\n", "\n".indent(0))
-    assertEquals("\n", "\n".indent(-1))
-
-    // indent adds the extra new line due to JDK normalization requirements
-    assertEquals("  abc\n", "abc".indent(2))
-    assertEquals(" abc\n", "abc".indent(1))
-    assertEquals("abc\n", "abc".indent(0))
-    assertEquals("abc\n", "abc".indent(-1))
-    assertEquals("abc\n", "abc".indent(-2))
-    assertEquals("     a\n       b\n", "a\n  b\n".indent(5))
-    assertEquals("a\n  b\n", "a\n  b\n".indent(0))
-    assertEquals("a\nb\n", "a\n  b\n".indent(-5))
-    assertEquals("      \n", "      ".indent(0))
-    assertEquals("            \n", "      ".indent(6))
-    assertEquals("\n", "      ".indent(-6))
-    assertEquals(" \n", "   ".indent(-2))
-    assertEquals("  \n", "        ".indent(-6))
-
-    assertEquals("  a\n  \n  c\n", "a\n\nc".indent(2))
-    assertEquals("  abc\n  def\n", "abc\ndef".indent(2))
-    assertEquals(
-      "  abc\n  def\n  \n  \n  \n  a\n",
-      "abc\ndef\n\n\n\na".indent(2)
-    )
-
-    assertEquals(" \n  \n", "\n \n".indent(1))
-    assertEquals("  \n  \n  \n", " \n \n ".indent(1))
-    assertEquals(" \n \n \n \n", "\n\n\n\n".indent(1))
-    assertEquals(" 0\n A\n B\n C\n D\n", "0\r\nA\r\nB\r\nC\r\nD".indent(1))
-    assertEquals(" 0\n A\n B\n C\n D\n", "0\rA\rB\rC\rD".indent(1))
-
-    assertEquals("  \n  \n  \n", "\r\r\n\n".indent(2))
-    assertEquals("  \n  \n  \n  \n", "\r\r\r\r".indent(2))
-    assertEquals("  \n  \n", "\r\n\r\n".indent(2))
-    assertEquals("\n\n\n", "\r\n\n\n".indent(-1))
-    assertEquals("\n\n\n", "\r\n\n\n".indent(0))
-
-    // non-U+0020 WS
-    assertEquals(
-      "  \u2028 \u2029 \u2004 \u200a \u3000 \n",
-      "\u2028 \u2029 \u2004 \u200A \u3000 ".indent(2)
-    )
-    assertEquals(
-      "\u2029 \u2004 \u200A \u3000 \n",
-      "\u2028 \u2029 \u2004 \u200A \u3000 ".indent(-2)
-    )
-    assertEquals(
-      "\u2028 \u2029 \u2004 \u200A \u3000 \n",
-      "\u2028 \u2029 \u2004 \u200A \u3000 ".indent(0)
-    )
-
-  }
-
-  @Test def transform(): Unit = {
-    assertEquals("", "".transform(x => x))
-    assertEquals("abcabc", "abc".transform(_ * 2))
-    assertEquals("bar", "foo".transform(_ => "bar"))
-  }
 
   @Test def stripIndent(): Unit = {
 
@@ -289,6 +225,23 @@ class StringTestOnJDK15 {
     assertEquals("abcd\\", """abcd\\""".translateEscapes())
     assertEquals("\\abcd\\", """\\abcd\\""".translateEscapes())
     assertEquals("\\\\\\", """\\\\\\""".translateEscapes())
+  }
+
+  /* "formatted" test adapted from "format" test
+   *  Scala.js, commit: e10803c, dated: 2024-09-16
+   */
+  @Test def formatted(): Unit = {
+    assertEquals("5", "%d".formatted(new Integer(5)))
+    assertEquals("00005", "%05d".formatted(new Integer(5)))
+    assertEquals("0x005", "%0#5x".formatted(new Integer(5)))
+    assertEquals("  0x5", "%#5x".formatted(new Integer(5)))
+    assertEquals("  0X5", "%#5X".formatted(new Integer(5)))
+    assertEquals("  -10", "%5d".formatted(new Integer(-10)))
+    assertEquals("-0010", "%05d".formatted(new Integer(-10)))
+    assertEquals("fffffffd", "%x".formatted(new Integer(-3)))
+
+    // See note in String.scala about SN & JVM "fc" vs Scala.js "fffffffc"
+    assertEquals("fc", "%x".formatted(new java.lang.Byte(-4.toByte)))
   }
 
 }

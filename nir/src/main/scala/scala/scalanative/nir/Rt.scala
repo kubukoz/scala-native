@@ -7,6 +7,7 @@ private[scalanative] object Rt {
   val Object = Ref(Global.Top("java.lang.Object"))
   val Class = Ref(Global.Top("java.lang.Class"))
   val String = Ref(Global.Top("java.lang.String"))
+  val Throwable = Ref(Global.Top("java.lang.Throwable"))
   val Runtime = Ref(Global.Top("scala.scalanative.runtime.package$"))
   val RuntimeNothing = Type.Ref(Global.Top("scala.runtime.Nothing$"))
   val RuntimeNull = Type.Ref(Global.Top("scala.runtime.Null$"))
@@ -36,31 +37,47 @@ private[scalanative] object Rt {
   val ToRawPtrSig = Sig.Method("toRawPtr", Seq(BoxedPtr, Ptr)).mangled
 
   val ClassName = Class.name
-  val ClassIdName = ClassName.member(Sig.Field("id"))
-  val ClassTraitIdName = ClassName.member(Sig.Field("traitId"))
-  val ClassNameName = ClassName.member(Sig.Field("name"))
-  val ClassSizeName = ClassName.member(Sig.Field("size"))
-  val ClassIdRangeUntilName = ClassName.member(Sig.Field("idRangeUntil"))
+  def jlClassFields = Seq(
+    ClassName.member(Sig.Field("id")),
+    ClassName.member(Sig.Field("interfacesCount")),
+    ClassName.member(Sig.Field("interfaces")),
+    ClassName.member(Sig.Field("name")),
+    ClassName.member(Sig.Field("size")),
+    ClassName.member(Sig.Field("idRangeUntil")),
+    ClassName.member(Sig.Field("refFieldOffsets")),
+    ClassName.member(Sig.Field("itablesCount")),
+    ClassName.member(Sig.Field("itables")),
+    ClassName.member(Sig.Field("superClass"))
+  )
 
   val StringName = String.name
   val StringValueName = StringName.member(Sig.Field("value"))
   val StringOffsetName = StringName.member(Sig.Field("offset"))
   val StringCountName = StringName.member(Sig.Field("count"))
   val StringCachedHashCodeName = StringName.member(Sig.Field("cachedHashCode"))
+  def jlStringFields = Seq(
+    StringValueName,
+    StringOffsetName,
+    StringCountName,
+    StringCachedHashCodeName
+  )
 
   val PrimitiveTypes: Seq[Global.Top] = Seq(
-    "Byte",
-    "Short",
-    "Int",
-    "Long",
-    "Char",
-    "Float",
-    "Double",
-    "Boolean",
-    "Unit"
-  ).map(name => Global.Top(s"scala.scalanative.runtime.Primitive$name"))
+    "scala.scalanative.runtime.PrimitiveByte",
+    "scala.scalanative.runtime.PrimitiveShort",
+    "scala.scalanative.runtime.PrimitiveInt",
+    "scala.scalanative.runtime.PrimitiveLong",
+    "scala.scalanative.runtime.PrimitiveChar",
+    "scala.scalanative.runtime.PrimitiveFloat",
+    "scala.scalanative.runtime.PrimitiveDouble",
+    "scala.scalanative.runtime.PrimitiveBoolean",
+    "scala.scalanative.runtime.PrimitiveUnit",
+    "scala.scalanative.runtime.RawSize",
+    "scala.scalanative.runtime.RawPtr"
+  ).map(nir.Global.Top(_))
 
   val GenericArray = Ref(Global.Top("scala.scalanative.runtime.Array"))
+  val BlobArray = Ref(Global.Top("scala.scalanative.runtime.BlobArray"))
 
   val arrayAlloc: Map[Sig, Global.Top] = Seq(
     "BooleanArray",

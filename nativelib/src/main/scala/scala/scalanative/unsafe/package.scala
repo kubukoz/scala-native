@@ -1,11 +1,13 @@
 package scala.scalanative
 
+import java.nio.CharBuffer
 import java.nio.charset.{Charset, StandardCharsets}
+
+import scala.scalanative.memory.PointerBuffer
 import scalanative.annotation.alwaysinline
-import scalanative.runtime.{Platform, fromRawPtr, intrinsic, ffi}
 import scalanative.runtime.Intrinsics._
+import scalanative.runtime.{Platform, RawSize, ffi, fromRawPtr, intrinsic}
 import scalanative.unsigned._
-import scala.scalanative.meta.LinktimeInfo
 
 package object unsafe extends unsafe.UnsafePackageCompat {
 
@@ -119,27 +121,31 @@ package object unsafe extends unsafe.UnsafePackageCompat {
   // UnsafeRich* have lower priority then extension methods defined in scala-3 UnsafePackageCompat
   /** Scala Native unsafe extensions to the standard Byte. */
   implicit class UnsafeRichByte(val value: Byte) extends AnyVal {
-    @inline def toSize: Size = Size.valueOf(castIntToRawSize(value.toInt))
+    @inline def toSize: Size = value.toInt.toSize
     @inline def toCSSize: CSSize = toSize
   }
 
   /** Scala Native unsafe extensions to the standard Short. */
   implicit class UnsafeRichShort(val value: Short) extends AnyVal {
-    @inline def toSize: Size = Size.valueOf(castIntToRawSize(value.toInt))
+    @inline def toSize: Size = value.toInt.toSize
     @inline def toCSSize: CSSize = toSize
   }
 
   /** Scala Native unsafe extensions to the standard Int. */
   implicit class UnsafeRichInt(val value: Int) extends AnyVal {
     @inline def toPtr[T]: Ptr[T] = fromRawPtr[T](castIntToRawPtr(value))
-    @inline def toSize: Size = Size.valueOf(castIntToRawSize(value))
+    @inline private[scalanative] def toRawSize: RawSize =
+      castIntToRawSize(value)
+    @inline def toSize: Size = Size.valueOf(toRawSize)
     @inline def toCSSize: CSSize = toSize
   }
 
   /** Scala Native unsafe extensions to the standard Long. */
   implicit class UnsafeRichLong(val value: Long) extends AnyVal {
     @inline def toPtr[T]: Ptr[T] = fromRawPtr[T](castLongToRawPtr(value))
-    @inline def toSize: Size = Size.valueOf(castLongToRawSize(value))
+    @inline private[scalanative] def toRawSize: RawSize =
+      castLongToRawSize(value)
+    @inline def toSize: Size = Size.valueOf(toRawSize)
     @inline def toCSSize: CSSize = toSize
   }
 
@@ -161,14 +167,72 @@ package object unsafe extends unsafe.UnsafePackageCompat {
       val len = ffi.strlen(cstr)
       val intLen = len.toInt
       if (intLen > 0) {
-        val bytes = new Array[Byte](intLen)
-
-        ffi.memcpy(bytes.at(0), cstr, len)
-
-        new String(bytes, charset)
+        val inputBuffer = PointerBuffer.wrap(cstr, intLen)
+        javalibintf.String.fromByteBuffer(
+          inputBuffer,
+          charset
+        )
       } else ""
     }
   }
+
+  /** Convert a CString to a String using given charset and length (in bytes).
+   *
+   *  If the value of length is larger than the underlying data, this method has
+   *  undefined behavior.
+   */
+  def fromCStringSlice(
+      cstr: CString,
+      length: CSize,
+      charset: Charset = Charset.defaultCharset()
+  ): String = {
+    if (cstr == null) {
+      null
+    } else {
+      val intLen = length.toInt
+      if (intLen > 0) {
+        val inputBuffer = PointerBuffer.wrap(cstr, intLen)
+        javalibintf.String.fromByteBuffer(
+          inputBuffer,
+          charset
+        )
+      } else ""
+    }
+  }
+
+  private def nonNullToCString(
+      cb: CharBuffer,
+      cs: Charset,
+      charSize: CInt
+  )(implicit z: Zone): Ptr[Byte] = {
+    val buf = cs.encode(cb)
+    val off = buf.position()
+
+    val size = buf.limit() - off
+    val cstr = z.alloc(size + charSize)
+    ffi.memcpy(cstr, buf.array().at(off), size.toUSize)
+
+    // Set null termination bytes (z.alloc does not initialize memory)
+    val cstrEndRaw = elemRawPtr(cstr.rawptr, size)
+    if (charSize == 1) storeByte(cstrEndRaw, 0) // most common case
+    else ffi.memset(cstrEndRaw, 0, charSize.toRawSize): Unit
+
+    cstr
+  }
+
+  @inline
+  private def toCString(str: String, cs: Charset, charSize: CInt)(implicit
+      z: Zone
+  ): Ptr[Byte] =
+    if (str eq null) null
+    else nonNullToCString(CharBuffer.wrap(str), cs, charSize)
+
+  @inline
+  private def toCString(cb: CharBuffer, cs: Charset, charSize: CInt)(implicit
+      z: Zone
+  ): Ptr[Byte] =
+    if (cb eq null) null
+    else nonNullToCString(cb, cs, charSize)
 
   /** Convert a java.lang.String to a CString using default charset and given
    *  allocator.
@@ -176,29 +240,33 @@ package object unsafe extends unsafe.UnsafePackageCompat {
   def toCString(str: String)(implicit z: Zone): CString =
     toCString(str, Charset.defaultCharset())(z)
 
+  def toCString(cb: CharBuffer)(implicit z: Zone): CString =
+    toCString(cb, Charset.defaultCharset())(z)
+
   /** Convert a java.lang.String to a CString using given charset and allocator.
    */
   def toCString(str: String, charset: Charset)(implicit z: Zone): CString = {
     if (str == null) {
       null
+    } else if (str.isEmpty) {
+      c""
     } else {
-      val bytes = str.getBytes(charset)
-      if (bytes.length > 0) {
-        val len = bytes.length
-        val rawSize = castIntToRawSizeUnsigned(len + 1)
-        val size = unsignedOf(rawSize)
+      nonNullToCString(CharBuffer.wrap(str), charset, charSize = 1)
+    }
+  }
 
-        val cstr = z.alloc(size)
-        ffi.memcpy(cstr, bytes.at(0), size)
-        cstr(len) = 0.toByte
-
-        cstr
-      } else c""
+  def toCString(cb: CharBuffer, cs: Charset)(implicit z: Zone): CString = {
+    if (cb eq null) {
+      null
+    } else if (cb.length() == 0) {
+      c""
+    } else {
+      nonNullToCString(cb, cs, charSize = 1)
     }
   }
 
   // wchar_t size may vary across platforms from 2 to 4 bytes.
-  private final val WideCharSize = Platform.SizeOfWChar.toInt
+  final def WideCharSize = Platform.SizeOfWChar.toInt
 
   /** Convert a java.lang.String to a CWideString using given charset and
    *  allocator.
@@ -206,43 +274,32 @@ package object unsafe extends unsafe.UnsafePackageCompat {
   @alwaysinline
   def toCWideString(str: String, charset: Charset = StandardCharsets.UTF_16LE)(
       implicit z: Zone
-  ): Ptr[CWideString] = {
-    toCWideStringImpl(str, charset, WideCharSize)
+  ): CWideString = {
+    toCString(str, charset, WideCharSize).asInstanceOf[CWideString]
+  }
+
+  @inline
+  def toCWideString(cb: CharBuffer)(implicit z: Zone): CWideString = {
+    toCWideString(cb, StandardCharsets.UTF_16LE)
+  }
+
+  @inline
+  def toCWideString(cb: CharBuffer, cs: Charset)(implicit
+      z: Zone
+  ): CWideString = {
+    toCString(cb, cs, WideCharSize).asInstanceOf[CWideString]
   }
 
   /** Convert a java.lang.String to a CWideString using given UTF-16 LE charset.
    */
   @alwaysinline
   def toCWideStringUTF16LE(str: String)(implicit z: Zone): Ptr[CChar16] = {
-    toCWideStringImpl(str, StandardCharsets.UTF_16LE, 2)
-      .asInstanceOf[Ptr[CChar16]]
+    toCString(str, StandardCharsets.UTF_16LE, 2).asInstanceOf[Ptr[CChar16]]
   }
 
-  private def toCWideStringImpl(str: String, charset: Charset, charSize: CInt)(
-      implicit z: Zone
-  ) = {
-    if (str == null) {
-      null
-    } else {
-      val bytes = str.getBytes(charset)
-      val rawSize = castIntToRawSizeUnsigned(bytes.length + charSize)
-      val cstr = z.alloc(unsignedOf(rawSize))
-
-      var c = 0
-      while (c < bytes.length) {
-        !(cstr + c) = bytes(c)
-        c += 1
-      }
-
-      // Set null termination bytes
-      val cstrEnd = cstr + c
-      c = 0
-      while (c < charSize) {
-        !(cstrEnd + c) = 0.toByte
-        c += 1
-      }
-      cstr.asInstanceOf[Ptr[CWideString]]
-    }
+  @inline
+  def toCWideStringUTF16LE(cb: CharBuffer)(implicit z: Zone): Ptr[CChar16] = {
+    toCString(cb, StandardCharsets.UTF_16LE, 2).asInstanceOf[Ptr[CChar16]]
   }
 
   /** Convert a CWideString to a String using given charset, assumes platform
@@ -280,15 +337,10 @@ package object unsafe extends unsafe.UnsafePackageCompat {
     } else {
       val cwstr = bytes.asInstanceOf[CWideString]
       val len = charSize * ffi.wcslen(cwstr).toInt
-      val buf = new Array[Byte](len)
-
-      var c = 0
-      while (c < len) {
-        buf(c) = !(bytes + c)
-        c += 1
-      }
-
-      new String(buf, charset)
+      javalibintf.String.fromByteBuffer(
+        PointerBuffer.wrap(bytes, len),
+        charset
+      )
     }
   }
 

@@ -15,10 +15,10 @@ abstract class PrepNativeInterop[G <: Global with Singleton](
     override val global: G
 ) extends NirPhase[G](global)
     with transform.Transform {
-  import PrepNativeInterop._
-
   import global._
-  import definitions._
+  import global.definitions._
+
+  import PrepNativeInterop._
   import nirAddons.nirDefinitions._
 
   val phaseName: String = "scalanative-prepareInterop"
@@ -56,7 +56,7 @@ abstract class PrepNativeInterop[G <: Global with Singleton](
     /** Nicer syntax for `allEnclosingOwners is kind`. */
     private def anyEnclosingOwner: OwnerKind = allEnclosingOwners
 
-    /** Nicer syntax for `allEnclosingOwners isnt kind`. */
+    /** Nicer syntax for `allEnclosingOwners isn't kind`. */
     private object noEnclosingOwner {
       @inline def is(kind: OwnerKind): Boolean =
         allEnclosingOwners isnt kind
@@ -207,9 +207,9 @@ abstract class PrepNativeInterop[G <: Global with Singleton](
             if noEnclosingOwner is OwnerKind.EnumImpl =>
           reporter.warning(
             tree.pos,
-            """Couldn't transform call to Enumeration.Value.
-              |The resulting program is unlikely to function properly as this
-              |operation requires reflection.""".stripMargin
+            """|Couldn't transform call to Enumeration.Value.
+               |The resulting program is unlikely to function properly as this
+               |operation requires reflection.""".stripMargin
           )
           super.transform(tree)
 
@@ -217,18 +217,18 @@ abstract class PrepNativeInterop[G <: Global with Singleton](
             if noEnclosingOwner is OwnerKind.EnumImpl =>
           reporter.warning(
             tree.pos,
-            """Passing null as name to Enumeration.Value
-              |requires reflection at runtime. The resulting
-              |program is unlikely to function properly.""".stripMargin
+            """|Passing null as name to Enumeration.Value
+               |requires reflection at runtime. The resulting
+               |program is unlikely to function properly.""".stripMargin
           )
           super.transform(tree)
 
         case ScalaEnumVal.NoName(_) if noEnclosingOwner is OwnerKind.EnumImpl =>
           reporter.warning(
             tree.pos,
-            """Calls to the non-string constructors of Enumeration.Val
-              |require reflection at runtime. The resulting
-              |program is unlikely to function properly.""".stripMargin
+            """|Calls to the non-string constructors of Enumeration.Val
+               |require reflection at runtime. The resulting
+               |program is unlikely to function properly.""".stripMargin
           )
           super.transform(tree)
 
@@ -236,9 +236,9 @@ abstract class PrepNativeInterop[G <: Global with Singleton](
             if noEnclosingOwner is OwnerKind.EnumImpl =>
           reporter.warning(
             tree.pos,
-            """Passing null as name to a constructor of Enumeration.Val
-              |requires reflection at runtime. The resulting
-              |program is unlikely to function properly.""".stripMargin
+            """|Passing null as name to a constructor of Enumeration.Val
+               |requires reflection at runtime. The resulting
+               |program is unlikely to function properly.""".stripMargin
           )
           super.transform(tree)
 
@@ -249,6 +249,22 @@ abstract class PrepNativeInterop[G <: Global with Singleton](
             args.map(t => widenDealiasType(t.tpe)) :+
               widenDealiasType(tree.tpe.finalResultType)
           tree.updateAttachment(NonErasedTypes(paramTypes))
+
+        case Apply(fun, List(lambda))
+            if CFuncPtrFromFunctionMethods.contains(fun.symbol) =>
+          lambda
+            .collect {
+              case tree @ Select(This(_), _)
+                  if !tree.symbol.owner.isStaticOwner =>
+                tree
+            }
+            .foreach { selfRef =>
+              reporter.error(
+                selfRef.pos,
+                s"CFuncPtr lambda can only refer to statically reachable symbols, but it's using ${show(selfRef.symbol)}"
+              )
+            }
+          tree
 
         case _ =>
           super.transform(tree)

@@ -1,32 +1,34 @@
 package scala.scalanative.nio.fs
 
-import scalanative.unsigned._
-import scalanative.libc._
-import scalanative.posix.dirent._
+import java.io.{File, IOException}
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Path, PosixException, WindowsException}
+import java.{lang => jl, util => ju}
 
-// Import posix name errno as variable, not class or type.
-import scalanative.posix.{errno => posixErrno}, posixErrno._
-import scalanative.posix.unistd, unistd.access
-
-import scalanative.unsafe._, stdio._
-import scalanative.meta.LinktimeInfo.isWindows
 import scala.collection.mutable.UnrolledBuffer
 import scala.reflect.ClassTag
 
-import java.io.{File, IOException}
-import java.nio.charset.StandardCharsets
-import java.{util => ju}
-
-import scala.scalanative.windows._
-import scala.scalanative.windows.HandleApiExt.INVALID_HANDLE_VALUE
+import scala.scalanative.nio.fs.unix.UnixException
+import scala.scalanative.windows.ErrorHandlingApi._
 import scala.scalanative.windows.FileApi._
 import scala.scalanative.windows.FileApiExt._
 import scala.scalanative.windows.FileApiOps._
-import scala.scalanative.windows.ErrorHandlingApi._
+import scala.scalanative.windows.HandleApiExt.INVALID_HANDLE_VALUE
+import scala.scalanative.windows._
 import scala.scalanative.windows.winnt.AccessRights._
+import scalanative.libc._
+import scalanative.meta.LinktimeInfo.isWindows
+import scalanative.posix.DirentImpl.scalanative_readdirImpl
+import scalanative.posix.dirent._
+// Import posix name errno as variable, not class or type.
+import scalanative.posix.{errno => posixErrno, stdlib, unistd}
+import scalanative.unsafe._
+import scalanative.unsigned._
 
-import java.nio.file.WindowsException
-import scala.scalanative.nio.fs.unix.UnixException
+import stdio._
+import unistd.access
+
+import posixErrno._
 
 object FileHelpers {
   sealed trait FileType
@@ -71,23 +73,25 @@ object FileHelpers {
       if (dir == null) {
         if (!allowEmpty) throw UnixException(path, posixErrno.errno)
         null
-      } else {
+      } else
         Zone.acquire { implicit z =>
-          var elem = alloc[dirent]()
-          var res = 0
-          while ({ res = readdir(dir, elem); res == 0 }) {
-            val name = fromCString(elem._2.at(0))
-            val fileType = FileType.unixFileType(elem._3)
-            collectFile(name, fileType)
-          }
-          closedir(dir)
-          res match {
-            case e if e == EBADF || e == EFAULT || e == EIO =>
-              throw UnixException(path, res)
-            case _ => buffer.toArray
-          }
+          try {
+            var elem = alloc[dirent]()
+            var res = 0
+            // Avoid deprecated non-POSIX method, use private implementation
+            while ({ res = scalanative_readdirImpl(dir, elem); res == 0 }) {
+              val name = fromCString(elem._2.at(0))
+              val fileType = FileType.unixFileType(elem._3)
+              collectFile(name, fileType)
+            }
+
+            res match {
+              case e if e == EBADF || e == EFAULT || e == EIO =>
+                throw UnixException(path, res)
+              case _ => buffer.toArray
+            }
+          } finally closedir(dir)
         }
-      }
     }
 
     def listWindows() = Zone.acquire { implicit z =>
@@ -145,7 +149,7 @@ object FileHelpers {
           HandleApi.CloseHandle(handle)
           GetLastError() match {
             case ErrorCodes.ERROR_FILE_EXISTS => false
-            case errCode =>
+            case errCode                      =>
               if (handle != INVALID_HANDLE_VALUE) true
               else if (throwOnError)
                 throw WindowsException(
@@ -163,6 +167,53 @@ object FileHelpers {
           }
         }
       }
+
+  def createTempDirectoryUnixImpl(
+      dir: Path,
+      prefix: String
+  ): Path = Zone.acquire { implicit z =>
+    /* Use os 'mkdtemp()' to come closer to atomically determining
+     * a temporary name and creating a directory with that name and
+     * its specified default 700 file permissions.  This also the JVM
+     * default, so everything is harmonious.
+     *
+     * Go thru the extra step of using genTempIdent() so that user visible
+     * names are similar, but not identical, to JVM practice. The
+     * detail oriented or those running scripts may notice that the
+     * last (righmost) 6 characters are now alpha-numeric. JVM practice
+     * is that they be strictly numeric.  The added safety of atomic action
+     * is worth the slight but regretable difference. It is hard being atomic.
+     */
+
+    val maxElementLen = 255
+    val reservedLen = 6 // leave room for template suffix length
+
+    val sb = new jl.StringBuilder(maxElementLen).append(dir.toString)
+
+    if (sb.charAt(sb.length() - 1) != '/')
+      sb.append('/')
+
+    sb.append(genTempIdent(if (prefix == null) "" else prefix, ""))
+
+    val maxUnReservedLen = (maxElementLen - reservedLen)
+    if (sb.length() > maxUnReservedLen)
+      sb.setLength(maxUnReservedLen)
+
+    sb.repeat('X', reservedLen)
+
+    val template = sb.toString()
+
+    val cDir = stdlib.mkdtemp(toCString(template))
+
+    if (cDir == null) {
+      throw PosixException(
+        s"Create temporary directory '${template}'",
+        posixErrno.errno
+      )
+    }
+
+    Path.of(fromCString(cDir), Array.empty)
+  }
 
   def createTempFile(
       prefix: String,
@@ -218,16 +269,19 @@ object FileHelpers {
 
   private lazy val random = new scala.util.Random()
 
-  private def genTempFile(
-      prefix: String,
-      suffix: String,
-      directory: String
-  ): File = {
+  private def genTempIdent(prefix: String, suffix: String): String = {
     val id = random.nextLong() match {
       case l if l == java.lang.Long.MIN_VALUE => 0
       case l                                  => math.llabs(l)
     }
-    val fileName = prefix + id + suffix
-    new File(directory, fileName)
+
+    s"${prefix}${id}${suffix}"
   }
+
+  private def genTempFile(
+      prefix: String,
+      suffix: String,
+      directory: String
+  ): File =
+    new File(directory, genTempIdent(prefix, suffix))
 }

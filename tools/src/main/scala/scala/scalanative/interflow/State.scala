@@ -2,9 +2,10 @@ package scala.scalanative
 package interflow
 
 import scala.collection.mutable
-import scalanative.util.unreachable
-import scalanative.linker._
+
 import scalanative.codegen.Lower
+import scalanative.linker._
+import scalanative.util.unreachable
 
 private[interflow] final class State(val blockId: nir.Local)(
     preserveDebugInfo: Boolean
@@ -115,9 +116,9 @@ private[interflow] final class State(val blockId: nir.Local)(
     import instance.{srcPosition, scopeId}
 
     val value = emit(op, idempotent)
-    // there might cases when virtualName for given addres might be assigned to two different instances
-    // It can happend when we deal with partially-evaluated instances, eg. arrayalloc + arraystore
-    // Don't emit local names for ops returing unit value
+    // there might be cases when virtualName for given address might be assigned to two different instances
+    // It can happen when we deal with partially-evaluated instances, e.g. arrayalloc + arraystore
+    // Don't emit local names for ops returning unit value
     if (preserveDebugInfo && op.resty != nir.Type.Unit) {
       virtualNames.get(addr).foreach { name =>
         this.localNames += value.id -> name
@@ -508,7 +509,7 @@ private[interflow] final class State(val blockId: nir.Local)(
         nir.Op.Copy(escapedVal(v))
       case op: nir.Op.SizeOf      => op
       case op: nir.Op.AlignmentOf => op
-      case nir.Op.Box(ty, v) =>
+      case nir.Op.Box(ty, v)      =>
         nir.Op.Box(ty, escapedVal(v))
       case nir.Op.Unbox(ty, v) =>
         nir.Op.Unbox(ty, escapedVal(v))

@@ -19,9 +19,10 @@
 package java.lang
 
 import java.lang.ref.{Reference, WeakReference}
+import java.util.Objects
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.function.Supplier
-import java.util.Objects
+
 import scala.scalanative.meta.LinktimeInfo.isMultithreadingEnabled
 
 object ThreadLocal {
@@ -45,11 +46,11 @@ object ThreadLocal {
 
     /** Size must always be a power of 2.
      */
-    private val INITIAL_SIZE = 16
+    private final val INITIAL_SIZE = 16
 
-    private def DefaultCapacity = INITIAL_SIZE << 1
-    private def DefaultMask = DefaultCapacity - 1
-    private def DefaultMaximumLoad = DefaultCapacity * 2 / 3
+    private final val DefaultCapacity = INITIAL_SIZE << 1
+    private final val DefaultMask = DefaultCapacity - 1
+    private final val DefaultMaximumLoad = INITIAL_SIZE * 2 / 3
 
     /** Placeholder for deleted entries. */
     private case object TOMBSTONE
@@ -132,7 +133,7 @@ object ThreadLocal {
       this.table = new Array[AnyRef](capacity << 1)
       this.mask = table.length - 1
       this.clean = 0
-      this.maximumLoad = capacity * 2 / 3 // 2/3
+      this.maximumLoad = capacity * 2 / 3
     }
 
     /** Cleans up after garbage-collected thread locals.
@@ -370,7 +371,7 @@ class ThreadLocal[T <: AnyRef]() {
     val values = this.values(currentThread) match {
       case Unsupported => return initialValue()
       case null        => initializeValues(currentThread)
-      case values =>
+      case values      =>
         assert(values != null)
         val table = values.table
         val index = hash & values.mask
@@ -422,7 +423,7 @@ class ThreadLocal[T <: AnyRef]() {
   }
 
   /** Weak reference to this thread local instance. */
-  final private val reference = new WeakReference[ThreadLocal[T]](this)
+  private final val reference = new WeakReference[ThreadLocal[T]](this)
 
   /** Internal hash. We deliberately don't bother with #hashCode(). Hashes must
    *  be even. This ensures that the result of (hash & (table.length - 1))
@@ -431,7 +432,7 @@ class ThreadLocal[T <: AnyRef]() {
    *  We increment by Doug Lea's Magic Number(TM) (*2 since keys are in every
    *  other bucket) to help prevent clustering.
    */
-  final private val hash =
+  private final val hash =
     if (isMultithreadingEnabled)
       ThreadLocal.hashCounterAtomic.getAndAdd(0x61c88647 << 1)
     else

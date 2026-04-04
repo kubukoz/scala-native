@@ -7,10 +7,15 @@
 #include <windows.h>
 #endif
 
+// Idiomatic 'stringify' macros for compile time memory
+#define VAL_STR(x) STR(x)
+#define STR(x) #x
+
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "shared/Parsing.h"
+#include "shared/Log.h"
 
 size_t Parse_Size_Or_Default(const char *str, size_t defaultSizeInBytes) {
     if (str == NULL) {
@@ -50,17 +55,92 @@ size_t Parse_Size_Or_Default(const char *str, size_t defaultSizeInBytes) {
     return defaultSizeInBytes;
 }
 
+const char *get_defined_or_env(const char *envName) {
+    if (envName == NULL)
+        return NULL;
+
+    const char *env = getenv(envName);
+    if (env != NULL)
+        return env; // environment overrides compile time
+
+// check for compile time defined values
+#if defined(GC_INITIAL_HEAP_SIZE)
+    if (strcmp(envName, "GC_INITIAL_HEAP_SIZE") == 0) {
+        return VAL_STR(GC_INITIAL_HEAP_SIZE);
+    }
+#endif
+
+#if defined(GC_MAXIMUM_HEAP_SIZE)
+    if (strcmp(envName, "GC_MAXIMUM_HEAP_SIZE") == 0) {
+        return VAL_STR(GC_MAXIMUM_HEAP_SIZE);
+    }
+#endif
+
+#if defined(GC_THREAD_HEAP_BLOCK_SIZE)
+    if (strcmp(envName, "GC_THREAD_HEAP_BLOCK_SIZE") == 0) {
+        return VAL_STR(GC_THREAD_HEAP_BLOCK_SIZE);
+    }
+#endif
+
+    return NULL; // no compile time or runtime value
+}
+
 size_t Parse_Env_Or_Default(const char *envName, size_t defaultSizeInBytes) {
-    return Parse_Size_Or_Default(getenv(envName), defaultSizeInBytes);
+    const char *res = get_defined_or_env(envName);
+    size_t result = Parse_Size_Or_Default(res, defaultSizeInBytes);
+    if (res != NULL) {
+        GC_LOG_INFO("Found %s=%s, parsed to %zu", envName, res, result);
+    } else {
+        GC_LOG_INFO("%s not set, using default %zu", envName,
+                    defaultSizeInBytes);
+    }
+    return result;
 }
 
 size_t Parse_Env_Or_Default_String(const char *envName,
                                    const char *defaultSizeString) {
+    size_t defaultSizeInBytes = Parse_Size_Or_Default(defaultSizeString, 0L);
     if (envName == NULL)
-        return Parse_Size_Or_Default(defaultSizeString, 0L);
+        return defaultSizeInBytes;
     else
-        return Parse_Size_Or_Default(
-            getenv(envName), Parse_Size_Or_Default(defaultSizeString, 0L));
+        return Parse_Env_Or_Default(envName, defaultSizeInBytes);
+}
+
+// =============================================================================
+// Plain Integer Parsing (for timeouts, counts, etc.)
+// =============================================================================
+
+uint64_t Parse_Long_Or_Default(const char *str, uint64_t defaultValue) {
+    if (str == NULL || str[0] == '\0') {
+        return defaultValue;
+    }
+
+    char *endptr;
+    unsigned long long value = strtoull(str, &endptr, 10);
+
+    // Check if parsing succeeded (at least one digit consumed)
+    if (endptr == str) {
+        return defaultValue;
+    }
+
+    return (uint64_t)value;
+}
+
+uint64_t Parse_Env_Or_Default_Long(const char *envName, uint64_t defaultValue) {
+    if (envName == NULL) {
+        return defaultValue;
+    }
+
+    const char *env = getenv(envName);
+    uint64_t result = Parse_Long_Or_Default(env, defaultValue);
+    if (env != NULL) {
+        GC_LOG_DEBUG("Found %s=%s, parsed to %llu", envName, env,
+                     (unsigned long long)result);
+    } else {
+        GC_LOG_DEBUG("%s not set, using default %llu", envName,
+                     (unsigned long long)defaultValue);
+    }
+    return result;
 }
 
 size_t Choose_IF(size_t left, qualifier qualifier, size_t right) {

@@ -3,12 +3,14 @@
 package scala.tools.partest
 package scalanative
 
-import _root_.sbt.testing._
 import java.io.File
 import java.net.URLClassLoader
 import java.util.concurrent.TimeUnit
+
 import scala.tools.partest.nest._
 import scala.tools.partest.sbt.SBTRunner
+
+import _root_.sbt.testing._
 
 /* Pre-mixin ScalaNativeSuiteRunner in SBTRunner, because this is looked up
  * via reflection from the sbt partest interface of Scala Native
@@ -52,10 +54,11 @@ class ScalaNativeSBTRunner(
   override def banner: String = {
     import scala.scalanative.nir.Versions.{current => currentVersion}
 
-    super.banner.trim + s"""
-   |Scala Native version is: $currentVersion
-   |${options.show}
-   |""".stripMargin
+    super.banner.trim +
+      s"""|
+          |Scala Native version is: $currentVersion
+          |${options.show}
+          |""".stripMargin
   }
 
   override def runTest(testFile: File): TestState = {

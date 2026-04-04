@@ -1,9 +1,9 @@
 package java.util.stream
 
-import java.{util => ju}
 import java.util._
 import java.util.function._
 import java.util.stream.Collector._
+import java.{util => ju}
 
 private[stream] class StreamImpl[T](
     val pipeline: ArrayDeque[StreamImpl[T]]
@@ -151,7 +151,7 @@ private[stream] class StreamImpl[T](
     this
   }
 
-  def spliterator(): Spliterator[_ <: T] = {
+  def spliterator(): Spliterator[T] = {
     commenceOperation()
     _spliter
   }
@@ -265,13 +265,14 @@ private[stream] class StreamImpl[T](
 
     val seenElements = new ju.HashSet[T]()
 
-    // Some items may be dropped, so the estimated size is a high bound.
-    val estimatedSize = _spliter.estimateSize()
-
+    // Create an unsized spliterator with characteristics matching JVM.
     val spl =
       new Spliterators.AbstractSpliterator[T](
-        estimatedSize,
-        _spliter.characteristics()
+        Long.MaxValue,
+        Spliterators.maskOff(
+          _spliter.characteristics(),
+          Spliterators.sizedCharacteristicsMask | Spliterator.IMMUTABLE
+        ) | Spliterator.DISTINCT
       ) {
         def tryAdvance(action: Consumer[_ >: T]): Boolean = {
           var success = false
@@ -300,12 +301,16 @@ private[stream] class StreamImpl[T](
   def filter(pred: Predicate[_ >: T]): Stream[T] = {
     commenceOperation()
 
-    // Some items may be filtered out, so the estimated size is a high bound.
-    val estimatedSize = _spliter.estimateSize()
-
+    /* Create an unsized spliterator with characteristics matching JVM.
+     * JVM drops some upstream spliterator characteristics. IMMUTABLE
+     * is definitely dropped. Time will tell if others also need to be dropped.
+     */
     val spl = new Spliterators.AbstractSpliterator[T](
-      estimatedSize,
-      _spliter.characteristics()
+      Long.MaxValue,
+      Spliterators.maskOff(
+        _spliter.characteristics(),
+        Spliterators.sizedCharacteristicsMask | Spliterator.IMMUTABLE
+      )
     ) {
       def tryAdvance(action: Consumer[_ >: T]): Boolean = {
         var success = false
@@ -671,13 +676,36 @@ private[stream] class StreamImpl[T](
 
     commenceOperation() // JVM tests argument before operatedUpon or closed.
 
+    val preSkipSize = _spliter.getExactSizeIfKnown()
+
     var nSkipped = 0L
 
     while ((nSkipped < n)
         && (_spliter.tryAdvance((e) => nSkipped += 1L))) { /* skip */ }
 
+    val spl =
+      if (preSkipSize == -1) _spliter // Not SIZED at beginning
+      else {
+        val postSkipSize = _spliter.getExactSizeIfKnown()
+        if (postSkipSize != preSkipSize) {
+          _spliter // save allocation, use tryAdvance's bookkeeping
+        } else {
+          /* Current stream is SIZED and its tryAdvance does not do
+           * bookkeeping. Give downstream an accurate exactSize().
+           */
+
+          new Spliterators.AbstractSpliterator[T](
+            preSkipSize - nSkipped,
+            _spliter.characteristics()
+          ) {
+            def tryAdvance(action: Consumer[_ >: T]): Boolean =
+              _spliter.tryAdvance((e) => action.accept(e))
+          }
+        }
+      }
+
     // Follow JVM practice; return new stream, not remainder of "this" stream.
-    new StreamImpl[T](_spliter, _parallel, pipeline)
+    new StreamImpl[T](spl, _parallel, pipeline)
   }
 
   def sorted(): Stream[T] = {

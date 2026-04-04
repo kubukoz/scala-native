@@ -3,12 +3,17 @@
 In this section you can find some tips on how to profile your Scala
 Native binary in Linux.
 
+Scala Native binaries are regular executables. Tools that works with native executables will work with Scala
+Native executables. That includes the Linux `perf` performance analysis tool.
+
 ## Measuring execution time and memory
 
 -   With the `time` command you can measure execution time:
 
 ``` shell
-$ time ./target/scala-2.13/scala-native-out 
+time ./target/scala-2.13/scala-native-out
+```
+```
 real  0m0,718s
 user  0m0,419s
 sys   0m0,299s
@@ -17,8 +22,10 @@ sys   0m0,299s
 -   With the `/usr/bin/time --verbose` command you can also see memory
     consumption:
 
-``` 
-$ /usr/bin/time --verbose ./target/scala-2.13/scala-native-out 
+```shell
+/usr/bin/time --verbose ./target/scala-2.13/scala-native-out
+```
+```
 Command being timed: "./target/scala-2.13/scala-native-out"
 User time (seconds): 0.49
 System time (seconds): 0.23
@@ -49,30 +56,43 @@ Exit status: 0
 A [flamegraph](http://www.brendangregg.com/flamegraphs.html) is a
 visualization of the most frequent code-paths of a program. You can use
 flamegraphs to see where your program spends most of its CPU time.
+
+### Use samply
+
+[samply](https://github.com/mstange/samply) is a command line CPU profiler which uses the Firefox profiler as
+its UI. Samply has support for de-mangling Scala Native symbols.
+
+### Use hotspot
+
+[hotspot](https://github.com/KDAB/hotspot) is a GUI for `perf` which provides a flamegraph view. As of this
+writing, hotspot does not de-mangle Scala Native symbols.
+
+### Using `perf` and `FlameGraph`
+
 Follow these steps:
 
--   You need to install the `perf` command if you haven\'t got it
+-   You need to install the `perf` command if you haven't got it
     already:
 
 ``` shell
-$ sudo apt update && sudo apt install linux-tools-generic
+sudo apt update && sudo apt install linux-tools-generic
 ```
 
 -   Then clone the flamegraph repository into e.g. `~/git/hub/`
 
 ``` shell
-$ cd ~ && mkdir -p git/hub && cd git/hub/ 
-$ git clone git@github.com:brendangregg/FlameGraph.git
+cd ~ && mkdir -p git/hub && cd git/hub/
+git clone git@github.com:brendangregg/FlameGraph.git
 ```
 
 -   Then navigate to your Scala Native project and, after building your
     binary, you can create a flamegraph like so:
 
 ``` shell
-$ sudo perf record -F 1000 -a -g ./target/scala-2.13/scala-native-out
-$ sudo perf script > out.perf
-$ ~/git/hub/FlameGraph/stackcollapse-perf.pl out.perf > out.folded
-$ ~/git/hub/FlameGraph/flamegraph.pl out.folded > kernel.svg
+sudo perf record -F 1000 -a -g ./target/scala-2.13/scala-native-out
+sudo perf script > out.perf
+~/git/hub/FlameGraph/stackcollapse-perf.pl out.perf > out.folded
+~/git/hub/FlameGraph/flamegraph.pl out.folded > kernel.svg
 ```
 
 -   Open the file `kernel.svg` in your browser and you can zoom in the

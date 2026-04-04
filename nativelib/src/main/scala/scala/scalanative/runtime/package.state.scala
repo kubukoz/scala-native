@@ -1,6 +1,7 @@
 package scala.scalanative.runtime
 
 import java.util.concurrent.locks.LockSupport
+
 import scala.scalanative.meta.LinktimeInfo.isMultithreadingEnabled
 
 // Extracted fields from runtime package to ensure it does not require initialization
@@ -22,4 +23,5 @@ private[scalanative] object MainThreadShutdownContext {
 
 private object ExecInfo {
   var filename: String = null
+  var startTime: Long = 0L
 }

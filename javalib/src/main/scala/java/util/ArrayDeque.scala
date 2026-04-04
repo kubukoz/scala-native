@@ -11,9 +11,7 @@
 package java.util
 
 import java.io.Serializable
-import java.util.function.Consumer
-import java.util.function.Predicate
-import java.util.function.UnaryOperator
+import java.util.function.{Consumer, Predicate, UnaryOperator}
 
 import ArrayDeque._
 
@@ -248,7 +246,7 @@ class ArrayDeque[E](
   }
 
   /** Subtracts j from i, mod modulus. Index i must be logically ahead of index
-   *  j. Precondition: 0 <= i < modulus, 0 <= j < modulus.
+   *  j as follows. Precondition: 0 <= i < modulus, 0 <= j < modulus.
    *  @return
    *    the "circular distance" from j to i; corner case i == j is disambiguated
    *    to "empty", returning 0.
@@ -288,7 +286,7 @@ class ArrayDeque[E](
    *  @throws java.lang.NullPointerException
    *    if the specified element is null
    */
-  def addFirst(e: E): Unit = {
+  override def addFirst(e: E): Unit = {
     if (e == null)
       throw new NullPointerException()
     val es = elements
@@ -307,7 +305,7 @@ class ArrayDeque[E](
    *  @throws java.lang.NullPointerException
    *    if the specified element is null
    */
-  def addLast(e: E): Unit = {
+  override def addLast(e: E): Unit = {
     if (e == null)
       throw new NullPointerException()
     val es = elements
@@ -370,7 +368,7 @@ class ArrayDeque[E](
   }
 
   /** @throws NoSuchElementException */
-  def removeFirst(): E = {
+  override def removeFirst(): E = {
     val e = pollFirst()
     if (e == null)
       throw new NoSuchElementException()
@@ -378,7 +376,7 @@ class ArrayDeque[E](
   }
 
   /** @throws NoSuchElementException */
-  def removeLast(): E = {
+  override def removeLast(): E = {
     val e = pollLast()
     if (e == null)
       throw new NoSuchElementException()
@@ -408,7 +406,7 @@ class ArrayDeque[E](
   }
 
   /** @throws NoSuchElementException */
-  def getFirst(): E = {
+  override def getFirst(): E = {
     val e = elementAt(elements, head)
     if (e == null)
       throw new NoSuchElementException()
@@ -416,7 +414,7 @@ class ArrayDeque[E](
   }
 
   /** @throws NoSuchElementException */
-  def getLast(): E = {
+  override def getLast(): E = {
     val es = elements
     val e = elementAt(es, dec(tail, es.length))
     if (e == null)
@@ -691,7 +689,7 @@ class ArrayDeque[E](
 
   /** Returns an iterator over the elements in this deque. The elements will be
    *  ordered from first (head) to last (tail). This is the same order that
-   *  elements would be dequeued (via successive calls to remove or popped (via
+   *  elements would be dequeued (via successive calls to remove) or popped (via
    *  successive calls to {@link #pop}).
    *
    *  @return
@@ -777,7 +775,7 @@ class ArrayDeque[E](
   private class DescendingIterator
       extends DeqIterator(dec(tail, elements.length)) {
 
-    final override def next(): E = {
+    override final def next(): E = {
       if (remaining <= 0)
         throw new NoSuchElementException()
       val es = elements
@@ -793,7 +791,7 @@ class ArrayDeque[E](
         cursor = inc(cursor, elements.length)
     }
 
-    final override def forEachRemaining(action: Consumer[_ >: E]): Unit = {
+    override final def forEachRemaining(action: Consumer[_ >: E]): Unit = {
       Objects.requireNonNull(action)
       val r = remaining
       if (r <= 0)

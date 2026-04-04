@@ -1,8 +1,8 @@
 package scala.scalanative.nir
 
-import java.nio.file.Paths
+import java.nio.file.{Path, Paths}
+
 import scala.util.Try
-import java.nio.file.Path
 
 sealed case class NIRSource(directory: Path, path: Path) {
   def debugName = s"${directory}:${path}"
@@ -33,7 +33,13 @@ final case class SourcePosition(
 
   /** One-based column number */
   def sourceColumn: Int = column + 1
-  def show: String = s"$source:$sourceLine:$sourceColumn"
+  def show: String = {
+    val source = this.source match {
+      case SourceFile.Virtual              => "<virtual>"
+      case SourceFile.Relative(pathString) => pathString
+    }
+    s"$source:$sourceLine:$sourceColumn"
+  }
 
   def isEmpty: Boolean = this eq SourcePosition.NoPosition
   def isDefined: Boolean = !isEmpty
@@ -48,19 +54,19 @@ object SourcePosition {
 
 sealed trait SourceFile {
   def filename: Option[String] = this match {
-    case SourceFile.Virtual => None
+    case SourceFile.Virtual          => None
     case source: SourceFile.Relative =>
       Option(source.path.getFileName()).map(_.toString())
   }
   def directory: Option[String] = this match {
-    case SourceFile.Virtual => None
+    case SourceFile.Virtual          => None
     case source: SourceFile.Relative =>
       Option(source.path.getParent()).map(_.toString())
   }
 }
 object SourceFile {
 
-  /** An abstract file without location, eg. in-memory source or generated */
+  /** An abstract file without location, e.g. in-memory source or generated */
   case object Virtual extends SourceFile
 
   /** Relative path to source file based on the workspace path. Used for

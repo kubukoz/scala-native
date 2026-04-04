@@ -1,12 +1,12 @@
 package java.lang
 
-import java.util.{Spliterator, Spliterators}
-import java.util.stream.{IntStream, StreamSupport}
 import java.util.function.IntConsumer
+import java.util.stream.{IntStream, StreamSupport}
+import java.util.{Spliterator, Spliterators}
 
 trait CharSequence {
 
-  /* sub classes, particularly those with fast access to an internal array,
+  /* subclasses, particularly those with fast access to an internal array,
    * should override the default implementations of chars() and
    * codePoints() to avoid the cost of the frequent charAt(index) calls
    * below.
@@ -116,8 +116,56 @@ trait CharSequence {
     StreamSupport.intStream(spl, parallel = false)
   }
 
-  def length(): scala.Int
   def charAt(index: scala.Int): scala.Char
+
+  /** @since JDK 15 */
+
+  def isEmpty(): scala.Boolean = length() == 0
+
+  def length(): scala.Int
+
   def subSequence(start: scala.Int, end: scala.Int): CharSequence
   def toString(): String
+}
+
+object CharSequence {
+
+  /** @since JDK 11 */
+
+  def compare(cs1: CharSequence, cs2: CharSequence): Int = {
+    /* If both arguments have a fast charAt() method, such as
+     * String, this implementation works for small, large, and huge
+     * CharSequences.
+     *
+     * If one or both of the arguments have a slow, say
+     * "re-start from beginning of sequence" charAt(), then this algorithm
+     * will get progressively slower as the compared sequences get larger.
+     *
+     * That is, it is an instance of what has been called the
+     * "Shlemiel the painter" algorithm.
+     *
+     * URL:
+     *   https://www.joelonsoftware.com/2001/12/11/back-to-basics/
+     *
+     * An implementation using IntStreams from chars() does not solve
+     * this problem because such a stream uses charAt() internally.
+     * That approach also has higher startup & execution costs.
+     */
+
+    val cs1Len = cs1.length()
+    val cs2Len = cs2.length()
+    val prefixLen = Math.min(cs1Len, cs2Len)
+
+    var balance = 0
+    var k = 0
+
+    while ((k < prefixLen) && (balance == 0)) {
+      balance = cs1.charAt(k) - cs2.charAt(k)
+      k += 1
+    }
+
+    if (balance != 0) balance
+    else cs1Len - cs2Len
+  }
+
 }

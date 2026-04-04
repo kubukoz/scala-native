@@ -5,17 +5,19 @@
  */
 package org.scalanative.testsuite.javalib.util.concurrent
 
-import org.junit.Assert._
-import org.junit.Assume._
-import org.junit.{Test, Ignore}
-import JSR166Test._
-
-import java.util.concurrent.TimeUnit._
 import java.util
 import java.util._
+import java.util.concurrent.TimeUnit._
 import java.util.concurrent._
 import java.util.concurrent.atomic._
+
+import org.junit.Assert._
+import org.junit.Assume._
+import org.junit.{Ignore, Test}
+
 import org.scalanative.testsuite.utils.Platform
+
+import JSR166Test._
 
 object ForkJoinTaskTest {
   // Runs with "mainPool" use > 1 thread. singletonPool tests use 1
@@ -49,7 +51,7 @@ object ForkJoinTaskTest {
     private var parent: BinaryAsyncAction = _
     private var sibling: BinaryAsyncAction = _
     override final def getRawResult(): Void = null
-    override final protected def setRawResult(mustBeNull: Void): Unit = {}
+    override protected final def setRawResult(mustBeNull: Void): Unit = {}
     final def linkSubtasks(
         x: BinaryAsyncAction,
         y: BinaryAsyncAction
@@ -123,17 +125,17 @@ object ForkJoinTaskTest {
       sibling = null
       super.reinitialize()
     }
-    final protected def getControlState: Int = controlState
-    final protected def compareAndSetControlState(
+    protected final def getControlState: Int = controlState
+    protected final def compareAndSetControlState(
         expect: Int,
         update: Int
     ): Boolean = atomicControlState.compareAndSet(expect, update)
-    final protected def setControlState(value: Int): Unit =
+    protected final def setControlState(value: Int): Unit =
       atomicControlState.set(value)
-    final protected def incrementControlState(): Unit = {
+    protected final def incrementControlState(): Unit = {
       BinaryAsyncAction.controlStateUpdater.incrementAndGet(this)
     }
-    final protected def decrementControlState(): Unit = {
+    protected final def decrementControlState(): Unit = {
       BinaryAsyncAction.controlStateUpdater.decrementAndGet(this)
     }
   }

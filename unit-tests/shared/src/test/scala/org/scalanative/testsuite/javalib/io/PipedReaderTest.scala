@@ -17,10 +17,10 @@
 
 package org.scalanative.testsuite.javalib.io
 
-import org.junit._
-import org.junit.Assert._
-
 import java.io.{IOException, PipedReader, PipedWriter}
+
+import org.junit.Assert._
+import org.junit._
 
 object PipedReaderTest {
   @BeforeClass def checkRuntime(): Unit =
@@ -44,7 +44,7 @@ class PipedReaderTest {
         Thread.sleep(10000)
       } catch {
         case _: InterruptedException => ()
-        case e: Exception =>
+        case e: Exception            =>
           println("Exception occurred: " + e.toString)
       }
     }

@@ -1,20 +1,16 @@
 package org.scalanative.testsuite.posixlib
 
-import org.junit.Test
 import org.junit.Assert._
 import org.junit.Assume._
-import org.junit.{BeforeClass, AfterClass}
+import org.junit.{AfterClass, BeforeClass, Test}
 
 import scala.scalanative.meta.LinktimeInfo
-
-import scala.scalanative.unsafe._
-import scala.scalanative.unsigned._
-
 import scala.scalanative.posix.errno.errno
 import scala.scalanative.posix.locale._
 import scala.scalanative.posix.localeOps._
-import scala.scalanative.posix.stdlib
-import scala.scalanative.posix.string
+import scala.scalanative.posix.{stdlib, string}
+import scala.scalanative.unsafe._
+import scala.scalanative.unsigned._
 
 object LocaleTest {
   var savedLocale: Option[CString] = None
@@ -37,17 +33,23 @@ object LocaleTest {
       savedLocale = Some(string.strdup(entryLocale)) // note: no CString
 
       val currentLocale = {
-        val en_US = setlocale(LC_ALL, c"en_US")
-        if (en_US != null) en_US
+        // macOS and recent (circa 2024) Ubuntu Linux
+        val en_US_UTF8 = setlocale(LC_ALL, c"en_US.UTF-8")
+
+        if (en_US_UTF8 != null) en_US_UTF8
         else {
-          val en_USutf8 = setlocale(LC_ALL, c"en_US.utf8") // Linux
-          if (en_USutf8 != null) en_USutf8
-          else setlocale(LC_ALL, c"en_US.UTF-8") // macOS
+          val en_US_utf8 = setlocale(LC_ALL, c"en_US.utf8") // older Linux
+          if (en_US_UTF8 != null) en_US_utf8
+          else {
+            setlocale(LC_ALL, c"en_US") // last chance fallback.
+            // an "assumeTrue" in caller will warn, not fail, on null locale.
+          }
         }
       }
 
-      if (currentLocale == null)
+      if (currentLocale == null) {
         savedLocale = None // Oops, no change! Nothing to restore.
+      }
     }
   }
 
@@ -82,9 +84,35 @@ class LocaleTest {
       savedLocale.isDefined
     )
 
+    def verifyGrouping(grouping: String, categoryName: String): Unit = {
+      // pre-condition: categoryName is not null.
+
+      val context = s"${categoryName} grouping"
+
+      if (grouping == null)
+        fail(s"${context} is null.")
+
+      val len = grouping.length
+
+      len match {
+        case 1 | 2 =>
+          val expected = 3 // e.g. 1,000,000
+          for (index <- 0 until len) {
+            assertEquals(
+              s"${context} len: ${len} index: ${index}",
+              expected,
+              grouping(index).toInt
+            )
+          }
+
+        case _ =>
+          fail("expected length of 1 or 2, got: ${len}")
+      }
+    }
+
     // OpenBSD support of locale quite incomplete, it never changes
     // LC_NUMERIC and LC_MONETARY that means that it always returns
-    // the smae value with C locale.
+    // the same value with C locale.
     if (!LinktimeInfo.isWindows && !LinktimeInfo.isOpenBSD) {
       val currentLconv = localeconv() // documented as always succeeds.
 
@@ -100,7 +128,7 @@ class LocaleTest {
         fromCString(currentLconv.thousands_sep)
       )
 
-      /* Skip grouping testing on FreeBSD. There is some long standing
+      /* Skip grouping testing on FreeBSD. There is some long-standing
        * discussion that FreeBSD does not use POSIX compliant values.
        * Do not test for an exact value that is known to be buggy.
        * The is to reduce them maintenance headache & cost if that
@@ -108,12 +136,8 @@ class LocaleTest {
        */
 
       if (!LinktimeInfo.isFreeBSD && !LinktimeInfo.isNetBSD) {
-        // Expect three byte-integers 3, 3, 0  meaning infinite group-by-three
-        assertEquals(
-          "US grouping",
-          "\u0003\u0003",
-          fromCString(currentLconv.grouping)
-        )
+        // same as command line: "locale LC_NUMERIC"
+        verifyGrouping(fromCString(currentLconv.grouping), "LC_NUMERIC")
       }
 
       assertEquals(
@@ -141,14 +165,9 @@ class LocaleTest {
       )
 
       // See "skip "FreeBSD"" comment before US grouping check above.
-
       if (!LinktimeInfo.isFreeBSD && !LinktimeInfo.isNetBSD) {
-        // Expect three byte-integers 3, 3, 0, meaning infinite group-by-3
-        assertEquals(
-          "US mon_grouping",
-          "\u0003\u0003",
-          fromCString(currentLconv.mon_grouping)
-        )
+        // same as command line: "locale LC_MONETARY"
+        verifyGrouping(fromCString(currentLconv.mon_grouping), "LC_MONETARY")
       }
 
       assertEquals(

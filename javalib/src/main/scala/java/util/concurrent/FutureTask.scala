@@ -6,10 +6,10 @@
 
 package java.util.concurrent
 import java.util.concurrent.locks.LockSupport
-import scalanative.libc.stdatomic.{AtomicInt, AtomicRef}
-import scalanative.libc.stdatomic.memory_order._
 
-import scalanative.runtime.{fromRawPtr, Intrinsics}
+import scalanative.libc.stdatomic.memory_order._
+import scalanative.libc.stdatomic.{AtomicInt, AtomicRef}
+import scalanative.runtime.{Intrinsics, fromRawPtr}
 
 object FutureTask {
   private final val NEW = 0
@@ -20,7 +20,7 @@ object FutureTask {
   private final val INTERRUPTING = 5
   private final val INTERRUPTED = 6
 
-  final private[concurrent] class WaitNode(@volatile var thread: Thread) {
+  private[concurrent] final class WaitNode(@volatile var thread: Thread) {
     @volatile var next: WaitNode = _
     def this() = this(Thread.currentThread())
   }
@@ -97,7 +97,7 @@ class FutureTask[V <: AnyRef](private var callable: Callable[V])
 
   override def resultNow(): V = state() match {
     case Future.State.SUCCESS => outcome.asInstanceOf[V]
-    case Future.State.FAILED =>
+    case Future.State.FAILED  =>
       throw new IllegalStateException("Task completed with exception");
     case Future.State.CANCELLED =>
       throw new IllegalStateException("Task was cancelled");
@@ -107,7 +107,7 @@ class FutureTask[V <: AnyRef](private var callable: Callable[V])
   override def exceptionNow(): Throwable = state() match {
     case Future.State.SUCCESS =>
       throw new IllegalStateException("Task completed with a result")
-    case Future.State.FAILED => outcome.asInstanceOf[Throwable]
+    case Future.State.FAILED    => outcome.asInstanceOf[Throwable]
     case Future.State.CANCELLED =>
       throw new IllegalStateException("Task was cancelled");
     case _ => throw new IllegalStateException("Task has not completed");
@@ -323,7 +323,7 @@ class FutureTask[V <: AnyRef](private var callable: Callable[V])
       case NORMAL      => "[Completed normally]"
       case EXCEPTIONAL => "[Completed exceptionally: " + outcome + "]"
       case CANCELLED | INTERRUPTED | INTERRUPTING => "[Cancelled]"
-      case _ =>
+      case _                                      =>
         val callable = this.callable
         if (callable == null) "[Not completed]"
         else "[Not completed, task = " + callable + "]"

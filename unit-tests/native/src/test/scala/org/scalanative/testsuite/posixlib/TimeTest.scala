@@ -1,30 +1,26 @@
 package org.scalanative.testsuite.posixlib
 
-import org.junit.Test
+import java.io.IOException
+import java.{lang => jl}
+
 import org.junit.Assert._
 import org.junit.Assume._
-import org.junit.BeforeClass
-
-import java.io.IOException
+import org.junit.{BeforeClass, Test}
 
 import org.scalanative.testsuite.utils.Platform
-import scala.scalanative.meta.LinktimeInfo.{isWindows, is32BitPlatform}
-import scala.scalanative.runtime.PlatformExt
 
 // libc.string is hidden by posix.string
 import scala.scalanative.libc.{string => libcString}
-
-/* Scala 2.11.n & 2.12.n complain about import of posixErrno.errno.
- * To span many Scala versions with same code used as
- * qualified posixErrno.errno below.
- */
-import scala.scalanative.posix.{errno => posixErrno}, posixErrno._
-
+import scala.scalanative.meta.LinktimeInfo.{is32BitPlatform, isWindows}
+import scala.scalanative.posix.timeOps.{timespecOps, tmOps}
+import scala.scalanative.posix.{errno => posixErrno, time}
+import scala.scalanative.runtime.PlatformExt
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 
-import scala.scalanative.posix.time._
-import scala.scalanative.posix.timeOps.{timespecOps, tmOps}
+import time._
+
+import posixErrno._
 
 object TimeTest {
 
@@ -48,7 +44,7 @@ class TimeTest {
    * compiled at all on Windows. A bigger task than today allows.
    */
 
-  // Note: both alloc & stackalloc clears allocated memory.
+  // Note: both alloc & stackalloc clear allocated memory.
 
   // In 2.11/2.12 time was resolved to posix.time.type, in 2.13 to
   // posix.time.time method.
@@ -86,7 +82,7 @@ class TimeTest {
       val haveCI =
         java.lang.Boolean.parseBoolean(System.getenv("GITHUB_ACTIONS"))
 
-      // Test has proven to fragile to run outside known environments.
+      // Test has proven too fragile to run outside known environments.
       assumeTrue(
         "Tested only by GitHub continuous integration or developer bypass.",
         haveCI
@@ -95,7 +91,7 @@ class TimeTest {
       /* unix epoch is defined as 0 seconds UTC (Universal Time).
        * 'timezone' is defined in Posix as seconds WEST of UTC. Yes WEST.
        * At 'epoch + timezone seconds' it will be 0 seconds local time.
-       * That local time should display as the expected "Thu Jan etc".
+       * That local time should display as the expected "Thu Jan etc.".
        *
        * The logic here is the inverse of what one would expect. This
        * is to avoid having to deal with daylight saving issues. We
@@ -141,87 +137,6 @@ class TimeTest {
     if (!isWindows) {
       // arbitrary date set at the time when I was writing this.
       assertTrue(now_time > 1502752688)
-    }
-
-  @Test def strftimeDoesNotReadMemoryOutsideStructTm(): Unit =
-    if (!isWindows) {
-      Zone.acquire { implicit z =>
-        // The purpose of this test is to check two closely related conditions.
-        // These conditions not a concern when the size of the C structure
-        // is the same as the Scala Native structure and the order of the
-        // fields match. They are necessary on BSD or glibc derived systems
-        // where the Operating System libc uses 56 bytes, where the "extra"
-        // have a time-honored, specified meaning.
-        //
-        //   1) Did time.scala strftime() have "@name" to ensure that structure
-        //      copy-in/copy-out happened? Failure case is if 36 byte
-        //      Scala Native tm got passed as-is to C strftime on a BSD/glibc
-        //      system.
-        //
-        //   2) Did time.c strftime() zero any "excess" bytes if the C structure
-        //      is larger than the Scala Native one? Failure case is that the
-        //      timezone name in the output fails to match the expected regex.
-        //      Often the mismatch consists of invisible, non-printing
-        //      characters.
-        //
-        // Review the logic of this test thoroughly if size of "tm" changes.
-        // This test may no longer be needed or need updating.
-        assertEquals(
-          "Review test! sizeof[Scala Native struct tm] changed",
-          sizeof[tm],
-          36.toUSize
-        )
-
-        val ttPtr = alloc[time_t]()
-        !ttPtr = (1490986064740L / 1000L).toSize // Fri Mar 31 14:47:44 EDT 2017
-
-        // This code is testing for reading past the end of a "short"
-        // Scala Native tm, so the linux 56 byte form is necessary here.
-        val tmBufCount = 7.toUSize
-
-        val tmBuf: Ptr[Ptr[Byte]] = alloc[Ptr[Byte]](tmBufCount)
-
-        val tmPtr = tmBuf.asInstanceOf[Ptr[tm]]
-
-        if (localtime_r(ttPtr, tmPtr) == null) {
-          throw new IOException(
-            fromCString(libcString.strerror(posixErrno.errno))
-          )
-        } else {
-          val unexpected = "BOGUS"
-
-          // With the "short" 36 byte SN struct tm tmBuf(6) is
-          // BSD linux tm_zone, and outside the posix minimal required
-          // range. strftime() should not read it.
-          tmBuf(6) = toCString(unexpected)
-
-          // grossly over-provision rather than chase fencepost bugs.
-          val bufSize = 70.toUSize
-          val buf: Ptr[Byte] = alloc[Byte](bufSize)
-
-          val n = strftime(buf, bufSize, c"%a %b %d %T %Z %Y", tmPtr)
-
-          // strftime does not set errno on error
-          assertNotEquals("unexpected zero from strftime", n, 0)
-
-          val result = fromCString(buf)
-          val len = "Fri Mar 31 14:47:44 ".length
-
-          // time.scala @name caused structure copy-in/copy-out.
-          assertEquals("strftime failed", result.indexOf(unexpected, len), -1)
-
-          val regex = "[A-Z][a-z]{2} [A-Z][a-z]{2} " +
-            "\\d\\d \\d{2}:\\d{2}:\\d{2} [A-Z]{2,5} 2017"
-
-          // time.c strftime() zeroed excess bytes in BSD/glibc struct tm.
-          if (!is32BitPlatform) {
-            assertTrue(
-              s"result: '${result}' does not match regex: '${regex}'",
-              result.matches(regex)
-            )
-          }
-        }
-      }
     }
 
   @Test def strftimeForJanOne1900ZeroZulu(): Unit = if (!isWindows) {
@@ -291,101 +206,6 @@ class TimeTest {
     assertTrue(s"expected null result, got pointer", result == null)
   }
 
-  @Test def strptimeDoesNotWriteMemoryOutsideStructTm(): Unit =
-    if (!isWindows) {
-      Zone.acquire { implicit z =>
-        // The purpose of this test is to check that time.scala method
-        // declaration had an "@name" annotation, so that structure
-        // copy-in/copy-out happened? Failure case is if 36 byte
-        // Scala Native tm got passed as-is to C strptime on a BSD/glibc
-        // or macOS system; see the tm_gmtoff & tm_zone handling below.
-
-        // This is not a concern when the size of the C structure
-        // is the same as the Scala Native structure and the order of the
-        // fields match. They are necessary on BSD, glibc derived, macOS,
-        // and possibly other systems where the Operating System libc
-        // uses 56 bytes, where the "extra" have a time-honored, specified
-        // meaning.
-        //
-        // Key to magic numbers 56 & 36.
-        // Linux _BSD_Source and macOS use at least 56 Bytes.
-        // Posix specifies 36 but allows more.
-
-        // Review logic of this test thoroughly if size of "tm" changes.
-        // This test may no longer be needed or need updating.
-        assertEquals(
-          "Review test! sizeof[Scala Native struct tm] changed",
-          sizeof[tm],
-          36.toUSize
-        )
-
-        val tmBufSize = 56.toUSize
-        val tmBuf: Ptr[Byte] = alloc[Byte](tmBufSize)
-
-        val tmPtr = tmBuf.asInstanceOf[Ptr[tm]]
-
-        val gmtIndex = 36.toUSize
-
-        // To detect the case where SN strptime() is writing tm_gmtoff
-        // use a value outside the known range of valid values.
-        // This can happen if "@name" annotation has gone missing.
-
-        val expectedGmtOff = Long.MaxValue.toSize
-        (tmBuf + gmtIndex).asInstanceOf[Ptr[CLong]](0) = expectedGmtOff
-
-        // %Z is not a supported posix conversion specification, but
-        // is useful here to detect a defect in the method-under-test.
-
-        val cp =
-          strptime(c"Fri Mar 31 14:47:44 2017", c"%a %b %d %T %Y", tmPtr)
-
-        assertNotNull(s"strptime returned unexpected null", cp)
-
-        val ch = cp(0) // last character not processed by strptime().
-        assertEquals("strptime() result is not NUL terminated", ch, '\u0000')
-
-        // tm_gmtoff & tm_zone are outside the posix defined range.
-        // Scala Native strftime() should never write to them.
-        //
-        // Assume no leading or interior padding.
-
-        val tm_gmtoff = (tmBuf + gmtIndex).asInstanceOf[Ptr[CLong]](0)
-        assertEquals("tm_gmtoff", expectedGmtOff, tm_gmtoff)
-
-        val tmZoneIndex = (gmtIndex + sizeof[CLong])
-        val tm_zone = (tmBuf + tmZoneIndex).asInstanceOf[CString]
-        assertNull("tm_zone", null)
-
-        // Major concerning conditions passed. Consistency check the tm proper.
-
-        val expectedSec = 44
-        assertEquals("tm_sec", expectedSec, tmPtr.tm_sec)
-
-        val expectedMin = 47
-        assertEquals("tm_min", expectedMin, tmPtr.tm_min)
-
-        val expectedHour = 14
-        assertEquals("tm_hour", expectedHour, tmPtr.tm_hour)
-
-        val expectedMday = 31
-        assertEquals("tm_mday", expectedMday, tmPtr.tm_mday)
-
-        val expectedMonth = 2
-        assertEquals("tm_mon", expectedMonth, tmPtr.tm_mon)
-
-        val expectedYear = 117
-        assertEquals("tm_year", expectedYear, tmPtr.tm_year)
-
-        val expectedWday = 5
-        assertEquals("tm_wday", expectedWday, tmPtr.tm_wday)
-
-        val expectedYday = 89
-        assertEquals("tm_yday", expectedYday, tmPtr.tm_yday)
-
-        // Per posix specification, contents of tm_isdst are not reliable.
-      }
-    }
-
   @Test def strptimeFor31December2016Time235960(): Unit = if (!isWindows) {
     val tmPtr = stackalloc[tm]()
 
@@ -420,7 +240,7 @@ class TimeTest {
     val expectedSec = 60
     assertEquals("tm_sec", expectedSec, tmPtr.tm_sec)
 
-    // Per posix specification, contents of tm_isdst are not reliable.
+    // Per posix specification, content of field tm_isdst is not reliable.
   }
 
   @Test def strptimeExtraTextAfterDateStringIsOK(): Unit = if (!isWindows) {
@@ -499,7 +319,7 @@ class TimeTest {
      * Normally, the two times would be withing microseconds of each other,
      * well less than a second. Leap seconds, double leap seconds can add
      * a second or more, slow machines, etc.
-     * 5 is a generous guess. Lets see if time proves it a good trade off.
+     * 5 is a generous guess. Let's see if time proves it a good trade off.
      * The basic idea is to detect wildly wrong results from the unit under
      * test, not to stress either race conditions or developers.
      */
@@ -530,7 +350,7 @@ class TimeTest {
       /* Full sleep should have happened.
        * Hard to test/verify. Nanosecond delays,
        * even rounded up to clock granularity, are exceedingly small
-       * compared to background of OS & hardware, especialy VM, noise.
+       * compared to background of OS & hardware, especially VM, noise.
        */
     } else if (result == EINTR) {
       // EINTR means sleep was interrupted, clock_nanosleep() executed.
@@ -570,5 +390,75 @@ class TimeTest {
       s"clock_settime failed with errno: ${posixErrno.errno}",
       posixErrno.errno == (EINVAL) || posixErrno.errno == (EPERM)
     )
+  }
+
+  // Issue 4454, Posix Issue 8 increased size of 'struct tm'
+  @Test def structTmSize(): Unit = if (!isWindows) {
+    def localTime(hours: Int, minutes: Int, seconds: Int): Long = {
+      val out = stackalloc[time.tm]()
+      val timePtr = stackalloc[time.time_t]()
+      !timePtr = time.time(null)
+      val gmTime: Ptr[time.tm] = time.gmtime_r(timePtr, out)
+
+      gmTime.tm_hour = hours
+      gmTime.tm_min = minutes
+      gmTime.tm_sec = seconds
+      gmTime.tm_isdst = -1; // Is DST on? 1 = yes, 0 = no, -1 = unknown
+      time.mktime(gmTime).longValue()
+    }
+
+    /* In Issue 4454, localTime() would crash upon return.
+     *
+     * assertion is to force optimizer to use the return value of localTime().
+     * 1756526400 approximately equals the date 2025-08-30 04:00:00 UTC/GMT.
+     * Arguments supplied to localTime() are after that (by about 90 minutes).
+     * Useful URL: https://www.unixtimestamp.com/
+     */
+
+    val expected = 1756526400L
+    val got = localTime(5, 30, 15)
+    assertTrue(s"expected: ${expected} < got, ${got} seconds", expected < got)
+  }
+
+  // Issue 4454, Posix Issue 8 increased size of 'struct tm'
+  @Test def posixIssue8FieldsArePlausible(): Unit = if (!isWindows) {
+    if (!is32BitPlatform) {
+      // 32 bit platforms probably do not have fields under test.
+      val out = stackalloc[time.tm]()
+      val timePtr = stackalloc[time.time_t]()
+      !timePtr = time.time(null)
+      val localTime: Ptr[time.tm] = time.localtime_r(timePtr, out)
+
+      /* CI can check if values returned by OS are reasonable.
+       *
+       * Developers should manually & visually check for values being
+       * correct for the timezone in which the test is being run.
+       */
+
+      // Theoretical range is +/- 86_400 seconds. Range in practice differs
+
+      val gmtoffValue = localTime.tm_gmtoff
+      val gmtoffLowBound = -43200
+      val gmtoffHighBound = 50400
+      val gmtoffRange = "(${gmtoffLowBound}, ${gmtoffHighBound})"
+
+      val gmtoffMsg =
+        s"local tm_gmtoff expected in range: ${gmtoffRange} got: ${gmtoffValue}"
+
+      if (gmtoffValue < 0)
+        assertTrue(gmtoffMsg, gmtoffValue >= gmtoffLowBound)
+      else
+        assertTrue(gmtoffMsg, gmtoffValue <= gmtoffHighBound)
+
+      // Developers: uncomment to check against value expected for your timezone
+      // fail(s"visual check of tm_gmtoff ${gmtoffValue}")
+
+      val zoneValue = localTime.tm_zone
+
+      assertNotNull("tm_zone", zoneValue) // check null vs. "", expect latter
+
+      // Developers: uncomment to check against value expected for your timezone
+      // fail(s"visual check of tm_zone '${fromCString(zoneValue)}'")
+    }
   }
 }

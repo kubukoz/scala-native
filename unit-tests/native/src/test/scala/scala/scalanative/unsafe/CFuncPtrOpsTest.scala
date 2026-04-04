@@ -1,10 +1,10 @@
 package scala.scalanative
 package unsafe
 
+import org.junit.Assert._
 import org.junit.Test
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
-import org.junit.Assert._
 
 import scalanative.libc._
 
@@ -24,7 +24,7 @@ class CFuncPtrOpsTest {
     type CFuncUnit = CFuncPtr0[Unit]
     type FuncStruct = CStruct2[CFuncUnit, Ptr[CFuncUnit]]
 
-    // In the folloing we just want to check in NullPointerException is not being thrown
+    // In the following we just want to check in NullPointerException is not being thrown
     val funcPtr = stackalloc[CFuncUnit]()
     assertNotNull("Can assign null to Ptr[CFuncPtr]", !funcPtr = null)
 

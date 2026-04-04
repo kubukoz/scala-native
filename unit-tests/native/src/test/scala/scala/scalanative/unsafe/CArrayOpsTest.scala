@@ -1,8 +1,8 @@
 package scala.scalanative
 package unsafe
 
-import org.junit.Test
 import org.junit.Assert._
+import org.junit.Test
 
 import scalanative.unsafe.Nat._
 // Scala 2.13.7 needs explicit import for implicit conversions
@@ -57,7 +57,7 @@ class CArrayOpsTest {
     type Array4Byte = CArray[Byte, _4]
     type Array2D = CArray[Array4Byte, _4]
 
-    // In the folloing we just want to check in NullPointerException is not being thrown
+    // In the following we just want to check in NullPointerException is not being thrown
     val simpleArray = stackalloc[Array4Byte]()
     assertNotNull("Can assign null to Ptr[CArray]", !simpleArray = null)
 

@@ -2,11 +2,14 @@
 package java.nio
 
 // Ported from Scala.js
+// Also has JDK 11 & 16 Additions for Scala Native
 import scala.scalanative.unsafe
 import scala.scalanative.unsafe.UnsafeRichArray
 import scala.scalanative.runtime.{fromRawPtr, toRawPtr}
 import scala.scalanative.runtime.Intrinsics
 import scala.scalanative.annotation.alwaysinline
+
+import java.{util => ju}
 
 object ByteBuffer {
   private final val HashSeed = -547316498 // "java.nio.ByteBuffer".##
@@ -32,15 +35,58 @@ abstract class ByteBuffer private[nio] (
     private[nio] val _offset: Int,
     _address: unsafe.CVoidPtr,
 ) extends Buffer(_capacity, _address)
-    with Comparable[ByteBuffer] 
+    with Comparable[ByteBuffer]
   {
   private[nio] type ElementType = Byte
   private[nio] type BufferType = ByteBuffer
 
   private[nio] var _isBigEndian: Boolean = true
 
-  // TODO: JDK11
-  // def mismatch(that: ByteBuffer): Int  = ???
+  /** @since JDK 11 */
+  def mismatch(that: ByteBuffer): Int  = {
+    /* Circa SN 0.5.8 and well before, all Scala Native nio.Buffers,
+     * both direct and non-direct, have backing arrays.
+     * When a buffer is ReadOnly, that array is not accessible so one must
+     * compare the long, slow way.
+     */
+
+    if (this.hasArray() && that.hasArray()) {
+      ju.Arrays.mismatch(
+        this.array(),
+        this.position(),
+        this.limit(),
+        that.array(),
+        that.position(),
+        that.limit()
+      )
+    } else {
+      val thisStart = this.position()
+      val thisRemaining = this.remaining()
+
+      val thatStart = that.position()
+      val thatRemaining = that.remaining()
+
+      val shortestLength = Math.min(thisRemaining, thatRemaining)
+
+      var mismatchedAt = -1
+
+      try {
+        var j = 0
+        while((j < shortestLength) && (mismatchedAt < 0)) {
+          if (this.get() != that.get())
+            mismatchedAt = j
+          j += 1
+        }
+      } finally {
+        this.position(thisStart)
+        that.position(thatStart)
+      }
+
+      if (mismatchedAt > -1) mismatchedAt
+      else if (thisRemaining == thatRemaining) -1
+      else shortestLength
+    }
+  }
 
   private def genBuffer = GenBuffer[ByteBuffer](this)
 
@@ -48,7 +94,9 @@ abstract class ByteBuffer private[nio] (
   private[nio] def this(_capacity: Int, address: unsafe.CVoidPtr) = this(_capacity, null: Array[Byte], -1, address)
 
   def slice(): ByteBuffer
-  // Since JDK 13
+
+  /** @since JDK 13 */
+
   def slice(index: Int, length: Int): ByteBuffer
 
   def duplicate(): ByteBuffer
@@ -70,14 +118,14 @@ abstract class ByteBuffer private[nio] (
     store(validateIndex(index), elem)
     this
   }
-  
+
   // Since: JDK 13
   def get(index: Int, dst: Array[Byte], offset: Int, length: Int): ByteBuffer = GenBuffer[ByteBuffer](this).generic_get(index, dst, offset, length)
-  def get(index: Int, dst: Array[Byte]): ByteBuffer = get(index, dst, 0, dst.length) 
+  def get(index: Int, dst: Array[Byte]): ByteBuffer = get(index, dst, 0, dst.length)
 
   // Since: JDK13
   def put(index: Int, src: Array[Byte], offset: Int, length: Int): ByteBuffer = GenBuffer[ByteBuffer](this).generic_put(index, src, offset, length)
-  def put(index: Int, src: Array[Byte]): ByteBuffer = put(index, src, 0, src.length)  
+  def put(index: Int, src: Array[Byte]): ByteBuffer = put(index, src, 0, src.length)
 
   @noinline
   def get(dst: Array[Byte], offset: Int, length: Int): ByteBuffer =
@@ -91,7 +139,7 @@ abstract class ByteBuffer private[nio] (
     genBuffer.generic_put(src)
     // Since: JDK16
   def put(index: Int, src: ByteBuffer, offset: Int, length: Int) = GenBuffer[ByteBuffer](this).generic_put(index, src, offset, length)
-    
+
   @noinline
   def put(src: Array[Byte], offset: Int, length: Int): ByteBuffer =
     genBuffer.generic_put(src, offset, length)
@@ -148,8 +196,6 @@ abstract class ByteBuffer private[nio] (
 
   def isDirect(): Boolean
 
-  // Since JDK 15
-  final def isEmpty(): Boolean = remaining() == 0
 
   // toString(): String inherited from Buffer
 
@@ -191,7 +237,7 @@ abstract class ByteBuffer private[nio] (
   final def alignmentOffset(index: Int, unitSize: Int): Int = {
     require(index >= 0, "Index less then zero: " + index)
     require(unitSize >= 1 && (unitSize & (unitSize - 1)) == 0, "Unit size not a power of two: " + unitSize)
-    if(unitSize > 8 && !isDirect()) throw new UnsupportedOperationException("Unit size unsupported for non-direct dufferes: " + unitSize)
+    if(unitSize > 8 && !isDirect()) throw new UnsupportedOperationException("Unit size unsupported for non-direct buffers: " + unitSize)
     ((this.address.toLong + index) & (unitSize -1)).toInt
   }
 
@@ -205,7 +251,7 @@ abstract class ByteBuffer private[nio] (
   def putChar(index: Int, value: Char): ByteBuffer = {
     ensureNotReadOnly()
     storeChar(validateIndex(index, 2), value)
-  }  
+  }
   @alwaysinline private def loadChar(index: Int): Char = {
     val value = Intrinsics.loadChar(Intrinsics.elemRawPtr(_rawAddress, index))
     val maybeReversed = if (isBigEndian) java.lang.Character.reverseBytes(value) else value
@@ -226,7 +272,7 @@ abstract class ByteBuffer private[nio] (
   def putShort(index: Int, value: Short): ByteBuffer = {
     ensureNotReadOnly()
     storeShort(validateIndex(index, 2), value)
-  }  
+  }
   @alwaysinline private def loadShort(index: Int): Short = {
     val value = Intrinsics.loadShort(Intrinsics.elemRawPtr(_rawAddress, index))
     val maybeReversed = if (isBigEndian) java.lang.Short.reverseBytes(value) else value
@@ -247,7 +293,7 @@ abstract class ByteBuffer private[nio] (
   def putInt(index: Int, value: Int): ByteBuffer = {
     ensureNotReadOnly()
     storeInt(validateIndex(index, 4), value)
-  }  
+  }
   @alwaysinline private def loadInt(index: Int): Int = {
     val value = Intrinsics.loadInt(Intrinsics.elemRawPtr(_rawAddress, index))
     val maybeReversed = if (isBigEndian) java.lang.Integer.reverseBytes(value) else value
@@ -268,7 +314,7 @@ abstract class ByteBuffer private[nio] (
   def putLong(index: Int, value: Long): ByteBuffer = {
     ensureNotReadOnly()
     storeLong(validateIndex(index, 8), value)
-  }  
+  }
   @alwaysinline private def loadLong(index: Int): Long = {
     val value = Intrinsics.loadLong(Intrinsics.elemRawPtr(_rawAddress, index))
     val maybeReversed = if (isBigEndian) java.lang.Long.reverseBytes(value) else value
@@ -289,7 +335,7 @@ abstract class ByteBuffer private[nio] (
   def putFloat(index: Int, value: Float): ByteBuffer = {
     ensureNotReadOnly()
     storeFloat(validateIndex(index, 4), value)
-  }  
+  }
   @alwaysinline private def loadFloat(index: Int): Float = {
     val value = Intrinsics.loadInt(Intrinsics.elemRawPtr(_rawAddress, index))
     val maybeReversed = if (isBigEndian) java.lang.Integer.reverseBytes(value) else value
@@ -311,7 +357,7 @@ abstract class ByteBuffer private[nio] (
   def putDouble(index: Int, value: Double): ByteBuffer = {
     ensureNotReadOnly()
     storeDouble(validateIndex(index, 8), value)
-  }  
+  }
   @alwaysinline private def loadDouble(index: Int): Double = {
     val value = Intrinsics.loadLong(Intrinsics.elemRawPtr(_rawAddress, index))
     val maybeReversed = if (isBigEndian) java.lang.Long.reverseBytes(value) else value
@@ -378,7 +424,7 @@ abstract class CharBuffer private[nio] (
     private[nio] val _offset: Int,
     _address: unsafe.CVoidPtr,
 ) extends Buffer(_capacity, _address)
-    with Comparable[CharBuffer] 
+    with Comparable[CharBuffer]
     with CharSequence
     with Appendable
     with Readable
@@ -387,8 +433,51 @@ abstract class CharBuffer private[nio] (
   private[nio] type BufferType = CharBuffer
 
 
-  // TODO: JDK11
-  // def mismatch(that: CharBuffer): Int  = ???
+  /** @since JDK 11 */
+  def mismatch(that: CharBuffer): Int  = {
+    /* Circa SN 0.5.8 and well before, all Scala Native nio.Buffers,
+     * both direct and non-direct, have backing arrays.
+     * When a buffer is ReadOnly, that array is not accessible so one must
+     * compare the long, slow way.
+     */
+
+    if (this.hasArray() && that.hasArray()) {
+      ju.Arrays.mismatch(
+        this.array(),
+        this.position(),
+        this.limit(),
+        that.array(),
+        that.position(),
+        that.limit()
+      )
+    } else {
+      val thisStart = this.position()
+      val thisRemaining = this.remaining()
+
+      val thatStart = that.position()
+      val thatRemaining = that.remaining()
+
+      val shortestLength = Math.min(thisRemaining, thatRemaining)
+
+      var mismatchedAt = -1
+
+      try {
+        var j = 0
+        while((j < shortestLength) && (mismatchedAt < 0)) {
+          if (this.get() != that.get())
+            mismatchedAt = j
+          j += 1
+        }
+      } finally {
+        this.position(thisStart)
+        that.position(thatStart)
+      }
+
+      if (mismatchedAt > -1) mismatchedAt
+      else if (thisRemaining == thatRemaining) -1
+      else shortestLength
+    }
+  }
 
   private def genBuffer = GenBuffer[CharBuffer](this)
 
@@ -396,7 +485,9 @@ abstract class CharBuffer private[nio] (
   private[nio] def this(_capacity: Int, address: unsafe.CVoidPtr) = this(_capacity, null: Array[Char], -1, address)
 
   def slice(): CharBuffer
-  // Since JDK 13
+
+  /** @since JDK 13 */
+
   def slice(index: Int, length: Int): CharBuffer
 
   def duplicate(): CharBuffer
@@ -418,14 +509,14 @@ abstract class CharBuffer private[nio] (
     store(validateIndex(index), elem)
     this
   }
-  
+
   // Since: JDK 13
   def get(index: Int, dst: Array[Char], offset: Int, length: Int): CharBuffer = GenBuffer[CharBuffer](this).generic_get(index, dst, offset, length)
-  def get(index: Int, dst: Array[Char]): CharBuffer = get(index, dst, 0, dst.length) 
+  def get(index: Int, dst: Array[Char]): CharBuffer = get(index, dst, 0, dst.length)
 
   // Since: JDK13
   def put(index: Int, src: Array[Char], offset: Int, length: Int): CharBuffer = GenBuffer[CharBuffer](this).generic_put(index, src, offset, length)
-  def put(index: Int, src: Array[Char]): CharBuffer = put(index, src, 0, src.length)  
+  def put(index: Int, src: Array[Char]): CharBuffer = put(index, src, 0, src.length)
 
   @noinline
   def get(dst: Array[Char], offset: Int, length: Int): CharBuffer =
@@ -439,7 +530,7 @@ abstract class CharBuffer private[nio] (
     genBuffer.generic_put(src)
     // Since: JDK16
   def put(index: Int, src: CharBuffer, offset: Int, length: Int) = GenBuffer[CharBuffer](this).generic_put(index, src, offset, length)
-    
+
   @noinline
   def put(src: Array[Char], offset: Int, length: Int): CharBuffer =
     genBuffer.generic_put(src, offset, length)
@@ -502,7 +593,7 @@ abstract class CharBuffer private[nio] (
   def isDirect(): Boolean
 
   // Since JDK 15
-  final def isEmpty(): Boolean = remaining() == 0
+  override final def isEmpty(): Boolean = remaining() == 0
 
   // toString(): String inherited from Buffer
 
@@ -613,14 +704,57 @@ abstract class ShortBuffer private[nio] (
     private[nio] val _offset: Int,
     _address: unsafe.CVoidPtr,
 ) extends Buffer(_capacity, _address)
-    with Comparable[ShortBuffer] 
+    with Comparable[ShortBuffer]
   {
   private[nio] type ElementType = Short
   private[nio] type BufferType = ShortBuffer
 
 
-  // TODO: JDK11
-  // def mismatch(that: ShortBuffer): Int  = ???
+  /** @since JDK 11 */
+  def mismatch(that: ShortBuffer): Int  = {
+    /* Circa SN 0.5.8 and well before, all Scala Native nio.Buffers,
+     * both direct and non-direct, have backing arrays.
+     * When a buffer is ReadOnly, that array is not accessible so one must
+     * compare the long, slow way.
+     */
+
+    if (this.hasArray() && that.hasArray()) {
+      ju.Arrays.mismatch(
+        this.array(),
+        this.position(),
+        this.limit(),
+        that.array(),
+        that.position(),
+        that.limit()
+      )
+    } else {
+      val thisStart = this.position()
+      val thisRemaining = this.remaining()
+
+      val thatStart = that.position()
+      val thatRemaining = that.remaining()
+
+      val shortestLength = Math.min(thisRemaining, thatRemaining)
+
+      var mismatchedAt = -1
+
+      try {
+        var j = 0
+        while((j < shortestLength) && (mismatchedAt < 0)) {
+          if (this.get() != that.get())
+            mismatchedAt = j
+          j += 1
+        }
+      } finally {
+        this.position(thisStart)
+        that.position(thatStart)
+      }
+
+      if (mismatchedAt > -1) mismatchedAt
+      else if (thisRemaining == thatRemaining) -1
+      else shortestLength
+    }
+  }
 
   private def genBuffer = GenBuffer[ShortBuffer](this)
 
@@ -628,7 +762,9 @@ abstract class ShortBuffer private[nio] (
   private[nio] def this(_capacity: Int, address: unsafe.CVoidPtr) = this(_capacity, null: Array[Short], -1, address)
 
   def slice(): ShortBuffer
-  // Since JDK 13
+
+  /** @since JDK 13 */
+
   def slice(index: Int, length: Int): ShortBuffer
 
   def duplicate(): ShortBuffer
@@ -650,14 +786,14 @@ abstract class ShortBuffer private[nio] (
     store(validateIndex(index), elem)
     this
   }
-  
+
   // Since: JDK 13
   def get(index: Int, dst: Array[Short], offset: Int, length: Int): ShortBuffer = GenBuffer[ShortBuffer](this).generic_get(index, dst, offset, length)
-  def get(index: Int, dst: Array[Short]): ShortBuffer = get(index, dst, 0, dst.length) 
+  def get(index: Int, dst: Array[Short]): ShortBuffer = get(index, dst, 0, dst.length)
 
   // Since: JDK13
   def put(index: Int, src: Array[Short], offset: Int, length: Int): ShortBuffer = GenBuffer[ShortBuffer](this).generic_put(index, src, offset, length)
-  def put(index: Int, src: Array[Short]): ShortBuffer = put(index, src, 0, src.length)  
+  def put(index: Int, src: Array[Short]): ShortBuffer = put(index, src, 0, src.length)
 
   @noinline
   def get(dst: Array[Short], offset: Int, length: Int): ShortBuffer =
@@ -671,7 +807,7 @@ abstract class ShortBuffer private[nio] (
     genBuffer.generic_put(src)
     // Since: JDK16
   def put(index: Int, src: ShortBuffer, offset: Int, length: Int) = GenBuffer[ShortBuffer](this).generic_put(index, src, offset, length)
-    
+
   @noinline
   def put(src: Array[Short], offset: Int, length: Int): ShortBuffer =
     genBuffer.generic_put(src, offset, length)
@@ -728,8 +864,6 @@ abstract class ShortBuffer private[nio] (
 
   def isDirect(): Boolean
 
-  // Since JDK 15
-  final def isEmpty(): Boolean = remaining() == 0
 
   // toString(): String inherited from Buffer
 
@@ -797,14 +931,57 @@ abstract class IntBuffer private[nio] (
     private[nio] val _offset: Int,
     _address: unsafe.CVoidPtr,
 ) extends Buffer(_capacity, _address)
-    with Comparable[IntBuffer] 
+    with Comparable[IntBuffer]
   {
   private[nio] type ElementType = Int
   private[nio] type BufferType = IntBuffer
 
 
-  // TODO: JDK11
-  // def mismatch(that: IntBuffer): Int  = ???
+  /** @since JDK 11 */
+  def mismatch(that: IntBuffer): Int  = {
+    /* Circa SN 0.5.8 and well before, all Scala Native nio.Buffers,
+     * both direct and non-direct, have backing arrays.
+     * When a buffer is ReadOnly, that array is not accessible so one must
+     * compare the long, slow way.
+     */
+
+    if (this.hasArray() && that.hasArray()) {
+      ju.Arrays.mismatch(
+        this.array(),
+        this.position(),
+        this.limit(),
+        that.array(),
+        that.position(),
+        that.limit()
+      )
+    } else {
+      val thisStart = this.position()
+      val thisRemaining = this.remaining()
+
+      val thatStart = that.position()
+      val thatRemaining = that.remaining()
+
+      val shortestLength = Math.min(thisRemaining, thatRemaining)
+
+      var mismatchedAt = -1
+
+      try {
+        var j = 0
+        while((j < shortestLength) && (mismatchedAt < 0)) {
+          if (this.get() != that.get())
+            mismatchedAt = j
+          j += 1
+        }
+      } finally {
+        this.position(thisStart)
+        that.position(thatStart)
+      }
+
+      if (mismatchedAt > -1) mismatchedAt
+      else if (thisRemaining == thatRemaining) -1
+      else shortestLength
+    }
+  }
 
   private def genBuffer = GenBuffer[IntBuffer](this)
 
@@ -812,7 +989,9 @@ abstract class IntBuffer private[nio] (
   private[nio] def this(_capacity: Int, address: unsafe.CVoidPtr) = this(_capacity, null: Array[Int], -1, address)
 
   def slice(): IntBuffer
-  // Since JDK 13
+
+  /** @since JDK 13 */
+
   def slice(index: Int, length: Int): IntBuffer
 
   def duplicate(): IntBuffer
@@ -834,14 +1013,14 @@ abstract class IntBuffer private[nio] (
     store(validateIndex(index), elem)
     this
   }
-  
+
   // Since: JDK 13
   def get(index: Int, dst: Array[Int], offset: Int, length: Int): IntBuffer = GenBuffer[IntBuffer](this).generic_get(index, dst, offset, length)
-  def get(index: Int, dst: Array[Int]): IntBuffer = get(index, dst, 0, dst.length) 
+  def get(index: Int, dst: Array[Int]): IntBuffer = get(index, dst, 0, dst.length)
 
   // Since: JDK13
   def put(index: Int, src: Array[Int], offset: Int, length: Int): IntBuffer = GenBuffer[IntBuffer](this).generic_put(index, src, offset, length)
-  def put(index: Int, src: Array[Int]): IntBuffer = put(index, src, 0, src.length)  
+  def put(index: Int, src: Array[Int]): IntBuffer = put(index, src, 0, src.length)
 
   @noinline
   def get(dst: Array[Int], offset: Int, length: Int): IntBuffer =
@@ -855,7 +1034,7 @@ abstract class IntBuffer private[nio] (
     genBuffer.generic_put(src)
     // Since: JDK16
   def put(index: Int, src: IntBuffer, offset: Int, length: Int) = GenBuffer[IntBuffer](this).generic_put(index, src, offset, length)
-    
+
   @noinline
   def put(src: Array[Int], offset: Int, length: Int): IntBuffer =
     genBuffer.generic_put(src, offset, length)
@@ -912,8 +1091,6 @@ abstract class IntBuffer private[nio] (
 
   def isDirect(): Boolean
 
-  // Since JDK 15
-  final def isEmpty(): Boolean = remaining() == 0
 
   // toString(): String inherited from Buffer
 
@@ -981,14 +1158,57 @@ abstract class LongBuffer private[nio] (
     private[nio] val _offset: Int,
     _address: unsafe.CVoidPtr,
 ) extends Buffer(_capacity, _address)
-    with Comparable[LongBuffer] 
+    with Comparable[LongBuffer]
   {
   private[nio] type ElementType = Long
   private[nio] type BufferType = LongBuffer
 
 
-  // TODO: JDK11
-  // def mismatch(that: LongBuffer): Int  = ???
+  /** @since JDK 11 */
+  def mismatch(that: LongBuffer): Int  = {
+    /* Circa SN 0.5.8 and well before, all Scala Native nio.Buffers,
+     * both direct and non-direct, have backing arrays.
+     * When a buffer is ReadOnly, that array is not accessible so one must
+     * compare the long, slow way.
+     */
+
+    if (this.hasArray() && that.hasArray()) {
+      ju.Arrays.mismatch(
+        this.array(),
+        this.position(),
+        this.limit(),
+        that.array(),
+        that.position(),
+        that.limit()
+      )
+    } else {
+      val thisStart = this.position()
+      val thisRemaining = this.remaining()
+
+      val thatStart = that.position()
+      val thatRemaining = that.remaining()
+
+      val shortestLength = Math.min(thisRemaining, thatRemaining)
+
+      var mismatchedAt = -1
+
+      try {
+        var j = 0
+        while((j < shortestLength) && (mismatchedAt < 0)) {
+          if (this.get() != that.get())
+            mismatchedAt = j
+          j += 1
+        }
+      } finally {
+        this.position(thisStart)
+        that.position(thatStart)
+      }
+
+      if (mismatchedAt > -1) mismatchedAt
+      else if (thisRemaining == thatRemaining) -1
+      else shortestLength
+    }
+  }
 
   private def genBuffer = GenBuffer[LongBuffer](this)
 
@@ -996,7 +1216,9 @@ abstract class LongBuffer private[nio] (
   private[nio] def this(_capacity: Int, address: unsafe.CVoidPtr) = this(_capacity, null: Array[Long], -1, address)
 
   def slice(): LongBuffer
-  // Since JDK 13
+
+  /** @since JDK 13 */
+
   def slice(index: Int, length: Int): LongBuffer
 
   def duplicate(): LongBuffer
@@ -1018,14 +1240,14 @@ abstract class LongBuffer private[nio] (
     store(validateIndex(index), elem)
     this
   }
-  
+
   // Since: JDK 13
   def get(index: Int, dst: Array[Long], offset: Int, length: Int): LongBuffer = GenBuffer[LongBuffer](this).generic_get(index, dst, offset, length)
-  def get(index: Int, dst: Array[Long]): LongBuffer = get(index, dst, 0, dst.length) 
+  def get(index: Int, dst: Array[Long]): LongBuffer = get(index, dst, 0, dst.length)
 
   // Since: JDK13
   def put(index: Int, src: Array[Long], offset: Int, length: Int): LongBuffer = GenBuffer[LongBuffer](this).generic_put(index, src, offset, length)
-  def put(index: Int, src: Array[Long]): LongBuffer = put(index, src, 0, src.length)  
+  def put(index: Int, src: Array[Long]): LongBuffer = put(index, src, 0, src.length)
 
   @noinline
   def get(dst: Array[Long], offset: Int, length: Int): LongBuffer =
@@ -1039,7 +1261,7 @@ abstract class LongBuffer private[nio] (
     genBuffer.generic_put(src)
     // Since: JDK16
   def put(index: Int, src: LongBuffer, offset: Int, length: Int) = GenBuffer[LongBuffer](this).generic_put(index, src, offset, length)
-    
+
   @noinline
   def put(src: Array[Long], offset: Int, length: Int): LongBuffer =
     genBuffer.generic_put(src, offset, length)
@@ -1096,8 +1318,6 @@ abstract class LongBuffer private[nio] (
 
   def isDirect(): Boolean
 
-  // Since JDK 15
-  final def isEmpty(): Boolean = remaining() == 0
 
   // toString(): String inherited from Buffer
 
@@ -1165,14 +1385,57 @@ abstract class FloatBuffer private[nio] (
     private[nio] val _offset: Int,
     _address: unsafe.CVoidPtr,
 ) extends Buffer(_capacity, _address)
-    with Comparable[FloatBuffer] 
+    with Comparable[FloatBuffer]
   {
   private[nio] type ElementType = Float
   private[nio] type BufferType = FloatBuffer
 
 
-  // TODO: JDK11
-  // def mismatch(that: FloatBuffer): Int  = ???
+  /** @since JDK 11 */
+  def mismatch(that: FloatBuffer): Int  = {
+    /* Circa SN 0.5.8 and well before, all Scala Native nio.Buffers,
+     * both direct and non-direct, have backing arrays.
+     * When a buffer is ReadOnly, that array is not accessible so one must
+     * compare the long, slow way.
+     */
+
+    if (this.hasArray() && that.hasArray()) {
+      ju.Arrays.mismatch(
+        this.array(),
+        this.position(),
+        this.limit(),
+        that.array(),
+        that.position(),
+        that.limit()
+      )
+    } else {
+      val thisStart = this.position()
+      val thisRemaining = this.remaining()
+
+      val thatStart = that.position()
+      val thatRemaining = that.remaining()
+
+      val shortestLength = Math.min(thisRemaining, thatRemaining)
+
+      var mismatchedAt = -1
+
+      try {
+        var j = 0
+        while((j < shortestLength) && (mismatchedAt < 0)) {
+          if (this.get() != that.get())
+            mismatchedAt = j
+          j += 1
+        }
+      } finally {
+        this.position(thisStart)
+        that.position(thatStart)
+      }
+
+      if (mismatchedAt > -1) mismatchedAt
+      else if (thisRemaining == thatRemaining) -1
+      else shortestLength
+    }
+  }
 
   private def genBuffer = GenBuffer[FloatBuffer](this)
 
@@ -1180,7 +1443,9 @@ abstract class FloatBuffer private[nio] (
   private[nio] def this(_capacity: Int, address: unsafe.CVoidPtr) = this(_capacity, null: Array[Float], -1, address)
 
   def slice(): FloatBuffer
-  // Since JDK 13
+
+  /** @since JDK 13 */
+
   def slice(index: Int, length: Int): FloatBuffer
 
   def duplicate(): FloatBuffer
@@ -1202,14 +1467,14 @@ abstract class FloatBuffer private[nio] (
     store(validateIndex(index), elem)
     this
   }
-  
+
   // Since: JDK 13
   def get(index: Int, dst: Array[Float], offset: Int, length: Int): FloatBuffer = GenBuffer[FloatBuffer](this).generic_get(index, dst, offset, length)
-  def get(index: Int, dst: Array[Float]): FloatBuffer = get(index, dst, 0, dst.length) 
+  def get(index: Int, dst: Array[Float]): FloatBuffer = get(index, dst, 0, dst.length)
 
   // Since: JDK13
   def put(index: Int, src: Array[Float], offset: Int, length: Int): FloatBuffer = GenBuffer[FloatBuffer](this).generic_put(index, src, offset, length)
-  def put(index: Int, src: Array[Float]): FloatBuffer = put(index, src, 0, src.length)  
+  def put(index: Int, src: Array[Float]): FloatBuffer = put(index, src, 0, src.length)
 
   @noinline
   def get(dst: Array[Float], offset: Int, length: Int): FloatBuffer =
@@ -1223,7 +1488,7 @@ abstract class FloatBuffer private[nio] (
     genBuffer.generic_put(src)
     // Since: JDK16
   def put(index: Int, src: FloatBuffer, offset: Int, length: Int) = GenBuffer[FloatBuffer](this).generic_put(index, src, offset, length)
-    
+
   @noinline
   def put(src: Array[Float], offset: Int, length: Int): FloatBuffer =
     genBuffer.generic_put(src, offset, length)
@@ -1280,8 +1545,6 @@ abstract class FloatBuffer private[nio] (
 
   def isDirect(): Boolean
 
-  // Since JDK 15
-  final def isEmpty(): Boolean = remaining() == 0
 
   // toString(): String inherited from Buffer
 
@@ -1349,14 +1612,57 @@ abstract class DoubleBuffer private[nio] (
     private[nio] val _offset: Int,
     _address: unsafe.CVoidPtr,
 ) extends Buffer(_capacity, _address)
-    with Comparable[DoubleBuffer] 
+    with Comparable[DoubleBuffer]
   {
   private[nio] type ElementType = Double
   private[nio] type BufferType = DoubleBuffer
 
 
-  // TODO: JDK11
-  // def mismatch(that: DoubleBuffer): Int  = ???
+  /** @since JDK 11 */
+  def mismatch(that: DoubleBuffer): Int  = {
+    /* Circa SN 0.5.8 and well before, all Scala Native nio.Buffers,
+     * both direct and non-direct, have backing arrays.
+     * When a buffer is ReadOnly, that array is not accessible so one must
+     * compare the long, slow way.
+     */
+
+    if (this.hasArray() && that.hasArray()) {
+      ju.Arrays.mismatch(
+        this.array(),
+        this.position(),
+        this.limit(),
+        that.array(),
+        that.position(),
+        that.limit()
+      )
+    } else {
+      val thisStart = this.position()
+      val thisRemaining = this.remaining()
+
+      val thatStart = that.position()
+      val thatRemaining = that.remaining()
+
+      val shortestLength = Math.min(thisRemaining, thatRemaining)
+
+      var mismatchedAt = -1
+
+      try {
+        var j = 0
+        while((j < shortestLength) && (mismatchedAt < 0)) {
+          if (this.get() != that.get())
+            mismatchedAt = j
+          j += 1
+        }
+      } finally {
+        this.position(thisStart)
+        that.position(thatStart)
+      }
+
+      if (mismatchedAt > -1) mismatchedAt
+      else if (thisRemaining == thatRemaining) -1
+      else shortestLength
+    }
+  }
 
   private def genBuffer = GenBuffer[DoubleBuffer](this)
 
@@ -1364,7 +1670,9 @@ abstract class DoubleBuffer private[nio] (
   private[nio] def this(_capacity: Int, address: unsafe.CVoidPtr) = this(_capacity, null: Array[Double], -1, address)
 
   def slice(): DoubleBuffer
-  // Since JDK 13
+
+  /** @since JDK 13 */
+
   def slice(index: Int, length: Int): DoubleBuffer
 
   def duplicate(): DoubleBuffer
@@ -1386,14 +1694,14 @@ abstract class DoubleBuffer private[nio] (
     store(validateIndex(index), elem)
     this
   }
-  
+
   // Since: JDK 13
   def get(index: Int, dst: Array[Double], offset: Int, length: Int): DoubleBuffer = GenBuffer[DoubleBuffer](this).generic_get(index, dst, offset, length)
-  def get(index: Int, dst: Array[Double]): DoubleBuffer = get(index, dst, 0, dst.length) 
+  def get(index: Int, dst: Array[Double]): DoubleBuffer = get(index, dst, 0, dst.length)
 
   // Since: JDK13
   def put(index: Int, src: Array[Double], offset: Int, length: Int): DoubleBuffer = GenBuffer[DoubleBuffer](this).generic_put(index, src, offset, length)
-  def put(index: Int, src: Array[Double]): DoubleBuffer = put(index, src, 0, src.length)  
+  def put(index: Int, src: Array[Double]): DoubleBuffer = put(index, src, 0, src.length)
 
   @noinline
   def get(dst: Array[Double], offset: Int, length: Int): DoubleBuffer =
@@ -1407,7 +1715,7 @@ abstract class DoubleBuffer private[nio] (
     genBuffer.generic_put(src)
     // Since: JDK16
   def put(index: Int, src: DoubleBuffer, offset: Int, length: Int) = GenBuffer[DoubleBuffer](this).generic_put(index, src, offset, length)
-    
+
   @noinline
   def put(src: Array[Double], offset: Int, length: Int): DoubleBuffer =
     genBuffer.generic_put(src, offset, length)
@@ -1464,8 +1772,6 @@ abstract class DoubleBuffer private[nio] (
 
   def isDirect(): Boolean
 
-  // Since JDK 15
-  final def isEmpty(): Boolean = remaining() == 0
 
   // toString(): String inherited from Buffer
 

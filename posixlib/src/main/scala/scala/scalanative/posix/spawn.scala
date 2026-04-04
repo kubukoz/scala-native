@@ -1,14 +1,13 @@
 package scala.scalanative.posix
 
-import scalanative.unsafe._
-import scalanative.unsafe.Nat._
-
 import scala.scalanative.posix.sys.types
+import scalanative.unsafe.Nat._
+import scalanative.unsafe._
 
 /** POSIX spawn.h for Scala
  *
  *  The Open Group Base Specifications
- *  [[https://pubs.opengroup.org/onlinepubs/9699919799 Issue 7, 2018]] edition.
+ *  [[https://pubs.opengroup.org/onlinepubs/9799919799 Issue 8, 2024]] edition.
  *
  *  A method with a PS comment indicates it is defined in POSIX extension
  *  "Process Scheduling", not base POSIX.
@@ -44,6 +43,7 @@ object spawn {
   type sigset_t = signal.sigset_t
   type sched_param = sched.sched_param
 
+  @blocking
   def posix_spawn(
       pid: Ptr[pid_t],
       path: CString,
@@ -51,6 +51,11 @@ object spawn {
       attrp: Ptr[posix_spawnattr_t],
       argv: Ptr[CString],
       envp: Ptr[CString]
+  ): CInt = extern
+
+  def posix_spawn_file_actions_addchdir(
+      file_actions: Ptr[posix_spawn_file_actions_t],
+      path: CString
   ): CInt = extern
 
   def posix_spawn_file_actions_addclose(
@@ -64,7 +69,12 @@ object spawn {
       newfiledes: CInt
   ): CInt = extern
 
-  def posix_spawn_file_actions_open(
+  def posix_spawn_file_actions_addfchdir(
+      file_actions: Ptr[posix_spawn_file_actions_t],
+      filedes: CInt
+  ): CInt = extern
+
+  def posix_spawn_file_actions_addopen(
       file_actions: Ptr[posix_spawn_file_actions_t],
       filedes: CInt,
       path: CString,
@@ -152,6 +162,7 @@ object spawn {
       sigmask: Ptr[sigset_t]
   ): CInt = extern
 
+  @blocking
   def posix_spawnp(
       pid: Ptr[pid_t],
       file: CString,
@@ -176,6 +187,9 @@ object spawn {
   /** PS - Unsupported (zero) on Apple */
   @name("scalanative_posix_spawn_setscheduler")
   def POSIX_SPAWN_SETSCHEDULER: CInt = extern
+
+  @name("scalanative_posix_spawn_setsid")
+  def POSIX_SPAWN_SETSID: CInt = extern
 
   @name("scalanative_posix_spawn_setsigdef")
   def POSIX_SPAWN_SETSIGDEF: CInt = extern

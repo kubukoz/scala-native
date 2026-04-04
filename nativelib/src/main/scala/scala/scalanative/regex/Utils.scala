@@ -7,8 +7,8 @@ package regex
 
 // Various constants and helper utilities.
 object Utils {
-
-  final val EMPTY_INTS = new Array[Int](0)
+  @deprecated("Use Array.emptyIntArray instead", "0.5.11")
+  final def EMPTY_INTS: Array[Int] = Array.emptyIntArray
 
   // Returns true iff |c| is an ASCII letter or decimal digit.
   def isalnum(c: Int): Boolean =
@@ -163,7 +163,7 @@ object Utils {
     return -1
   }
 
-  // isWordRune reports whether r is consider a ``word character''
+  // isWordRune reports whether r is considered a ``word character''
   // during the evaluation of the \b and \B zero-width assertions.
   // These assertions are ASCII-only: the word characters are [A-Za-z0-9_].
   def isWordRune(r: Int): Boolean =

@@ -1,6 +1,4 @@
-import java.io.File
-import java.io.FileOutputStream
-import java.io.FileInputStream
+import java.io.{File, FileInputStream, FileOutputStream}
 
 enablePlugins(ScalaNativePlugin)
 
@@ -40,7 +38,7 @@ constructorFileCheck := {
   val size = fip.available()
   val readed = new Array[Byte](size)
   fip.read(readed)
-  assert(new String(readed, "UTF-8") equals "Hello World")
+  assert(new String(readed, "UTF-8").equals("Hello World"))
 }
 
 deleteFile := {
@@ -54,5 +52,5 @@ constructorFileAppendTrueCheck := {
   val size = fip.available()
   val readed = new Array[Byte](size)
   fip.read(readed)
-  assert(new String(readed, "UTF-8") equals "test Hello World")
+  assert(new String(readed, "UTF-8").equals("test Hello World"))
 }

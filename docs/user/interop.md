@@ -5,7 +5,7 @@ with foreign native code. This includes C and other languages that can
 expose APIs via C ABI (e.g. C++, D, Rust etc.)
 
 All of the interop APIs discussed here are defined in
-`scala.scalanative.unsafe` package. For brevity, we\'re going to refer
+`scala.scalanative.unsafe` package. For brevity, we're going to refer
 to that namespace as just `unsafe`.
 
 ## Extern objects
@@ -15,7 +15,7 @@ methods are treated as their native C ABI-friendly counterparts. They
 are roughly analogous to header files with top-level function
 declarations in C.
 
-For example, to call C\'s `malloc` one might declare it as following:
+For example, to call C's `malloc` one might declare it as following:
 
 ``` scala
 import scala.scalanative.unsafe._
@@ -28,8 +28,7 @@ object libc {
 
 `extern` on the right hand side of the method definition signifies that
 the body of the method is defined elsewhere in a native library that is
-available on the library path (see [Linking with native
-libraries](#linking-with-native-libraries)). The signature of the
+available on the library path (see [](#linking-with-native-libraries)). The signature of the
 external function must match the signature of the original C function
 (see [Finding the right signature](#finding-the-right-signature)).
 
@@ -38,38 +37,39 @@ external function must match the signature of the original C function
 To find a correct signature for a given C function one must provide an
 equivalent Scala type for each of the arguments:
 
-  C Type                    Scala Type
-  ------------------------- -------------------------------------------------------------------
-  `void`                    `Unit`
-  `bool`                    `unsafe.CBool`
-  `char`                    `unsafe.CChar`
-  `signed char`             `unsafe.CSignedChar`
-  `unsigned char`           `unsafe.CUnsignedChar`[^1]
-  `short`                   `unsafe.CShort`
-  `unsigned short`          `unsafe.CUnsignedShort`[^2]
-  `int`                     `unsafe.CInt`
-  `long int`                `unsafe.CLongInt`
-  `unsigned int`            `unsafe.CUnsignedInt`[^3]
-  `unsigned long int`       `unsafe.CUnsignedLongInt`[^4]
-  `long`                    `unsafe.CLong`
-  `unsigned long`           `unsafe.CUnsignedLong`[^5]
-  `long long`               `unsafe.CLongLong`
-  `unsigned long long`      `unsafe.CUnsignedLongLong`[^6]
-  `size_t`                  `unsafe.CSize`
-  `ssize_t`                 `unsafe.CSSize`
-  `ptrdiff_t`               `unsafe.CPtrDiff`[^7]
-  `wchar_t`                 `unsafe.CWideChar`
-  `char16_t`                `unsafe.CChar16`
-  `char32_t`                `unsafe.CChar32`
-  `float`                   `unsafe.CFloat`
-  `double`                  `unsafe.CDouble`
-  `void*`                   `unsafe.CVoidPtr`[^8]
-  `int*`                    `unsafe.Ptr[unsafe.CInt]`[^9]
-  `char*`                   `unsafe.CString`[^10][^11]
-  `int (*)(int)`            `unsafe.CFuncPtr1[unsafe.CInt, unsafe.CInt]`[^12][^13]
-  `struct { int x, y; }*`   `unsafe.Ptr[unsafe.CStruct2[unsafe.CInt, unsafe.CInt]]`[^14][^15]
-  `struct { int x, y; }`    Not supported
+  |C Type                   |Scala Type                                                         |
+  |-------------------------|-------------------------------------------------------------------|
+  |`void`                   |`Unit`                                                             |
+  |`bool`                   |`unsafe.CBool`                                                     |
+  |`char`                   |`unsafe.CChar`                                                     |
+  |`signed char`            |`unsafe.CSignedChar`                                               |
+  |`unsigned char`          |`unsafe.CUnsignedChar`[^1]                                         |
+  |`short`                  |`unsafe.CShort`                                                    |
+  |`unsigned short`         |`unsafe.CUnsignedShort`[^2]                                        |
+  |`int`                    |`unsafe.CInt`                                                      |
+  |`long int`               |`unsafe.CLongInt`                                                  |
+  |`unsigned int`           |`unsafe.CUnsignedInt`[^3]                                          |
+  |`unsigned long int`      |`unsafe.CUnsignedLongInt`[^4]                                      |
+  |`long`                   |`unsafe.CLong`                                                     |
+  |`unsigned long`          |`unsafe.CUnsignedLong`[^5]                                         |
+  |`long long`              |`unsafe.CLongLong`                                                 |
+  |`unsigned long long`     |`unsafe.CUnsignedLongLong`[^6]                                     |
+  |`size_t`                 |`unsafe.CSize`                                                     |
+  |`ssize_t`                |`unsafe.CSSize`                                                    |
+  |`ptrdiff_t`              |`unsafe.CPtrDiff`[^7]                                              |
+  |`wchar_t`                |`unsafe.CWideChar`                                                 |
+  |`char16_t`               |`unsafe.CChar16`                                                   |
+  |`char32_t`               |`unsafe.CChar32`                                                   |
+  |`float`                  |`unsafe.CFloat`                                                    |
+  |`double`                 |`unsafe.CDouble`                                                   |
+  |`void*`                  |`unsafe.CVoidPtr`[^8]                                              |
+  |`int*`                   |`unsafe.Ptr[unsafe.CInt]`[^9]                                      |
+  |`char*`                  |`unsafe.CString`[^10][^11]                                         |
+  |`int (*)(int)`           |`unsafe.CFuncPtr1[unsafe.CInt, unsafe.CInt]`[^12][^13]             |
+  |`struct { int x, y; }*`  |`unsafe.Ptr[unsafe.CStruct2[unsafe.CInt, unsafe.CInt]]`[^14][^15]  |
+  |`struct { int x, y; }`   |Not supported
 
+(linking_with_native_libraries)=
 ### Linking with native libraries
 
 C compilers typically require to pass an additional `-l mylib` flag to
@@ -114,13 +114,13 @@ more than once.
 
 ### Variadic functions
 
-Scala Native supports native interoperability with C\'s variadic
+Scala Native supports native interoperability with C's variadic
 argument list type (i.e. `va_list`), and partially for `...` varargs.
 For example `vprintf` and `printf` defined in C as:
 
 ``` C
 int vprintf(const char * format, va_list arg);
-int printf(const char * format, ... );  
+int printf(const char * format, ... );
 ```
 
 can be declared in Scala as:
@@ -135,7 +135,7 @@ object mystdio {
 }
 ```
 
-The limitation of `...` interop requires that it\'s
+The limitation of `...` interop requires that its
 arguments needs to passed directly to variadic arguments function or
 arguments need to be inlined. This is required to obtain enough
 information on how arguments show be passed in regards to C ABI. Passing
@@ -148,7 +148,7 @@ For `va_list` interop, one can wrap a function in a nicer API like:
 import scala.scalanative.unsafe._
 
 def myprintf(format: CString, args: CVarArg*): CInt =
-  Zone { 
+  Zone {
     mystdio.vprintf(format, toCVarArgList(args.toSeq))
   }
 ```
@@ -161,6 +161,7 @@ myprintf(c"2 + 3 = %d, 4 + 5 = %d", 2 + 3, 4 + 5)
 printf(c"2 + 3 = %d, 4 + 5 = %d", 2 + 3, 4 + 5)
 ```
 
+(exported_methods)=
 ## Exported methods
 
 When linking Scala Native as library, you can mark functions that should
@@ -176,12 +177,15 @@ name of field.
 `int ScalaNativeInit(void);` function is special exported
 function that needs to be called before invoking any code defined in
 Scala Native. It returns `0` on successful initialization
-and non-zero value in the otherwise. For dynamic libraries a constructor
-would be generated to invoke `ScalaNativeInit`[ function
-automatically upon loading library or startup of the program. If for
-some reason you need to disable automatic initialization of Scala Native
+and a non-zero value otherwise.
+
+For dynamic libraries a constructor
+would be generated to invoke `ScalaNativeInit` function
+automatically upon loading library or startup of the program.
+
+If for some reason you need to disable automatic initialization of Scala Native
 upon loading dynamic library and invoke it manually in user code set
-\`SCALANATIVE_NO_DYLIB_CTOR]{.title-ref} environment variable. You can
+`SCALANATIVE_NO_DYLIB_CTOR` environment variable. You can
 also disable generation of library constructors by defining
 `-DSCALANATIVE_NO_DYLIB_CTOR` in
 NativeConfig::compileOptions of your build.
@@ -231,24 +235,24 @@ int main(int argc, char** argv){
 
 ## Pointer types
 
-Scala Native provides a built-in equivalent of C\'s pointers via
+Scala Native provides a built-in equivalent of C's pointers via
 `unsafe.Ptr[T]` data type. Under the hood pointers are implemented using
 unmanaged machine pointers.
 
 Operations on pointers are closely related to their C counterparts and
 are compiled into equivalent machine code:
 
-  Operation          C syntax               Scala Syntax
-  ------------------ ---------------------- ------------------
-  Load value         `*ptr`                 `!ptr`
-  Store value        `*ptr = value`         `!ptr = value`
-  Pointer to index   `ptr + i`, `&ptr[i]`   `ptr + i`
-  Elements between   `ptr1 - ptr2`          `ptr1 - ptr2`
-  Load at index      `ptr[i]`               `ptr(i)`
-  Store at index     `ptr[i] = value`       `ptr(i) = value`
-  Pointer to field   `&ptr->name`           `ptr.atN`
-  Load a field       `ptr->name`            `ptr._N`
-  Store a field      `ptr->name = value`    `ptr._N = value`
+  |Operation         |C syntax              |Scala Syntax      |
+  |------------------|----------------------|------------------|
+  |Load value        |`*ptr`                |`!ptr`            |
+  |Store value       |`*ptr = value`        |`!ptr = value`    |
+  |Pointer to index  |`ptr + i`, `&ptr[i]`  |`ptr + i`         |
+  |Elements between  |`ptr1 - ptr2`         |`ptr1 - ptr2`     |
+  |Load at index     |`ptr[i]`              |`ptr(i)`          |
+  |Store at index    |`ptr[i] = value`      |`ptr(i) = value`  |
+  |Pointer to field  |`&ptr->name`          |`ptr.atN`         |
+  |Load a field      |`ptr->name`           |`ptr._N`          |
+  |Store a field     |`ptr->name = value`   |`ptr._N = value`  |
 
 Where `N` is the index of the field `name` in the struct. See [Memory
 layout types](#memory-layout-types) for details.
@@ -285,7 +289,7 @@ val func: StringLengthFn = CFuncPtr.fromPtr[StringLengthFn](anyPtr)
 func(c"hello")
 ```
 
-It\'s also possible to create `CFuncPtrN` from Scala
+It's also possible to create `CFuncPtrN` from Scala
 `FunctionN`. You can do this by using implicit method
 conversion method from the corresponding companion object.
 
@@ -337,7 +341,7 @@ unmanaged memory.
     to a single element. Memory is zeroed out by default.
 
     Zone allocation is the preferred way to allocate temporary unmanaged
-    memory. It\'s idiomatic to use implicit zone parameters to abstract
+    memory. It's idiomatic to use implicit zone parameters to abstract
     over code that has to zone allocate.
 
     One typical example of this are C strings that are created from
@@ -365,19 +369,19 @@ unmanaged memory.
     >
     > When using stack allocated memory one has to be careful not to
     > capture this memory beyond the lifetime of the method.
-    > Dereferencing stack allocated memory after the method\'s execution
+    > Dereferencing stack allocated memory after the method's execution
     > has completed is undefined behavior.
 
 3.  **Manual heap allocation.**
 
-    > Scala Native\'s library contains a bindings for a subset of the
+    > Scala Native's library contains a bindings for a subset of the
     > standard libc functionality. This includes the trio of `malloc`,
-    > `realloc` and `free` functions that are defined in `unsafe.stdlib`
+    > `realloc` and `free` functions that are defined in `libc.stdlib`
     > extern object.
     >
-    > Calling those will let you allocate memory using system\'s
+    > Calling those will let you allocate memory using system's
     > standard dynamic memory allocator. Every single manual allocation
-    > must also be freed manually as soon as it\'s not needed any
+    > must also be freed manually as soon as it's not needed any
     > longer.
     >
     > Apart from the standard system allocator one might also bind to
@@ -453,8 +457,8 @@ stdio.printf(msg)
 ```
 
 It does not allow any octal values or escape characters not supported by
-Scala compiler, like `\a` or `\?`, but also unicode escapes. It is
-possible to use C-style hex values up to value 0xFF, eg.
+Scala compiler, like `\a` or `\?`, but also Unicode escapes. It is
+possible to use C-style hex values up to value 0xFF, e.g.
 `c"Hello \x61\x62\x63"`
 
 Additionally, we also expose two helper functions `unsafe.fromCString`
@@ -463,12 +467,70 @@ and `unsafe.toCString` to convert between C-style `CString`
 Java-style `String` (sequence of 2-byte Chars usually
 interpreted as UTF-16).
 
-It\'s worth to remember that `unsafe.toCString` and
-`c\"\...\"` interpreter cannot be used interchangeably as
-they handle literals differently. Helper methods
-`` unsafe.fromCString` and ``unsafe.toCString`` are charset aware. They will always assume `String` is UTF-16, and take a `Charset` parameter to know what encoding to assume for the byte string (`CString`) - if not present it is UTF-8.  If passed a null as an argument, they will return a null of the appropriate type instead of throwing a NullPointerException.   Platform-specific types -----------------------  Scala Native defines the type ``Size`and its unsigned counterpart,`USize`. A size corresponds to`Int`on 32-bit architectures and to`Long`on 64-bit ones.  Size and alignment of types ---------------------------  In order to statically determine the size of a type, you can use the`sizeof`function which is Scala Native's counterpart of the eponymous C operator. It returns the size in bytes:  .. code-block:: scala      println(unsafe.sizeof[Byte])    // 1     println(unsafe.sizeof[CBool])   // 1     println(unsafe.sizeof[CShort])  // 2     println(unsafe.sizeof[CInt])    // 4     println(unsafe.sizeof[CLong])   // 8  It can also be used to obtain the size of a structure:  .. code-block:: scala      type TwoBytes = unsafe.CStruct2[Byte, Byte]     println(unsafe.sizeof[TwoBytes])  // 2  Additionally, you can also use`alignmentof`to find the alignment of a given type:  .. code-block:: scala      println(unsafe.alignmentof[Int])                         // 4     println(unsafe.alignmentof[unsafe.CStruct2[Byte, Long]]) // 8  Unsigned integer types ----------------------  Scala Native provides support for four unsigned integer types:  1.`unsigned.UByte`2.`unsigned.UShort`3.`unsigned.UInt`4.`unsigned.ULong`5.`unsigned.USize`They share the same primitive operations as signed integer types. Primitive operation between two integer values are supported only if they have the same signedness (they must both signed or both unsigned.)  Conversions between signed and unsigned integers must be done explicitly using`byteValue.toUByte`,`shortValue.toUShort`,`intValue.toUInt`,`longValue.toULong`,`sizeValue.toUSize`and conversely`unsignedByteValue.toByte`,`unsignedShortValue.toShort`,`unsignedIntValue.toInt`,`unsignedLongValue.toLong`,`unsignedSizeValue.toSize`.  Universal equality is supported between signed and unsigned integers, for example`-1.toUByte
-== 255`or`65535 ==
--1.toUShort`would yield`true`` ,  However, similar to signed integers on JVM, class equality between different (boxed) integer types is not supported. Usage of `-1.toUByte.equals(255)` would return ``false`, as we're comparing different boxed types (`scala.scalanative.unsigned.UByte`with`java.lang.Integer\`\`)
+It's worth to remember that `unsafe.toCString` and `c"..."` interpreter cannot be used interchangeably as they handle literals differently.
+Helper methods `unsafe.fromCString` and `unsafe.toCString` are charset aware.
+They will always assume `String` is UTF-16, and take a `Charset` parameter to know what encoding to assume for the byte string (`CString`) - if not present it is UTF-8.
+
+If passed a null as an argument, they will return a null of the appropriate
+type instead of throwing a NullPointerException.
+
+
+### Platform-specific types
+
+Scala Native defines the type `Size` and its unsigned counterpart, `USize`.
+A size corresponds to `Int` on 32-bit architectures and to `Long` on 64-bit
+ones.
+
+### Size and alignment of types
+
+In order to statically determine the size of a type, you can use the `sizeof`
+function which is Scala Native's counterpart of the eponymous C operator. It
+returns the size in bytes:
+
+``` scala
+println(unsafe.sizeof[Byte])    // 1
+println(unsafe.sizeof[CBool])   // 1
+println(unsafe.sizeof[CShort])  // 2
+println(unsafe.sizeof[CInt])    // 4
+println(unsafe.sizeof[CLong])   // 8
+```
+
+It can also be used to obtain the size of a structure:
+
+``` scala
+type TwoBytes = unsafe.CStruct2[Byte, Byte]
+println(unsafe.sizeof[TwoBytes])  // 2
+```
+
+Additionally, you can also use `alignmentof` to find the alignment of a given type:
+
+``` scala
+println(unsafe.alignmentof[Int])                         // 4
+println(unsafe.alignmentof[unsafe.CStruct2[Byte, Long]]) // 8
+```
+
+### Unsigned integer types
+
+Scala Native provides support for four unsigned integer types:
+
+1. `unsigned.UByte`
+2. `unsigned.UShort`
+3. `unsigned.UInt`
+4. `unsigned.ULong`
+5. `unsigned.USize`
+
+They share the same primitive operations as signed integer types.
+Primitive operation between two integer values are supported only
+if they have the same signedness (they must both signed or both unsigned.)
+
+Conversions between signed and unsigned integers must be done explicitly
+using `byteValue.toUByte`, `shortValue.toUShort`, `intValue.toUInt`, `longValue.toULong`, `sizeValue.toUSize`
+and conversely `unsignedByteValue.toByte`, `unsignedShortValue.toShort`, `unsignedIntValue.toInt`,
+`unsignedLongValue.toLong`, `unsignedSizeValue.toSize`.
+
+Universal equality is supported between signed and unsigned integers, for example `-1.toUByte == 255` or `65535 == -1.toUShort` would yield `true`,
+However, similar to signed integers on JVM, class equality between different (boxed) integer types is not supported.
+Usage of `-1.toUByte.equals(255)` would return `false`, as we're comparing different boxed types (`scala.scalanative.unsigned.UByte` with `java.lang.Integer`)
 
 Continue to [native](./native.md).
 

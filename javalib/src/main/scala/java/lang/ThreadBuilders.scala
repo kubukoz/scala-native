@@ -1,8 +1,9 @@
 package java.lang
 
+import java.lang.Thread.{Builder, Characteristics}
 import java.util.Objects
 import java.util.concurrent.ThreadFactory
-import java.lang.Thread.{Builder, Characteristics}
+
 import scala.scalanative.libc.stdatomic.AtomicLongLong
 import scala.scalanative.runtime.{Intrinsics, fromRawPtr}
 
@@ -102,9 +103,9 @@ object ThreadBuilders {
       thread
     }
 
-    override def start(task: Runnable): Thread = {
+    override def startInternal(task: Runnable): Thread = {
       val thread = unstarted(task)
-      thread.start()
+      thread.startInternal()
       thread
     }
 
@@ -131,9 +132,9 @@ object ThreadBuilders {
       thread
     }
 
-    override def start(task: Runnable): Thread = {
+    override def startInternal(task: Runnable): Thread = {
       val thread = unstarted(task)
-      thread.start()
+      thread.startInternal()
       thread
     }
 

@@ -1,17 +1,15 @@
 package org.scalanative.testsuite.posixlib
 
-import org.junit.Test
 import org.junit.Assert._
 import org.junit.Assume._
-import org.junit.BeforeClass
+import org.junit.{BeforeClass, Test}
 
-import scala.scalanative.unsafe._
-import scala.scalanative.unsigned._
-
-import scala.scalanative.posix.stdlib
+import org.scalanative.testsuite.utils.Platform
 
 import scala.scalanative.meta.LinktimeInfo
-import org.scalanative.testsuite.utils.Platform
+import scala.scalanative.posix.stdlib
+import scala.scalanative.unsafe._
+import scala.scalanative.unsigned._
 
 object StdlibTest {
 
@@ -29,7 +27,7 @@ class StdlibTest {
    * declarations. That is, the ones which keep me awake at night, wondering
    * if they will blow up on the first person who goes to use them.
    *
-   * Also gives end users a working example of how to setup and use these
+   * Also gives end users a working example of how to set up and use these
    * methods.
    */
 

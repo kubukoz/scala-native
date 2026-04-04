@@ -3,17 +3,11 @@ package scala.scalanative.nio.fs.windows
 import java.io.File
 import java.net.URI
 import java.nio.file.{
-  FileSystem,
-  Files,
-  LinkOption,
-  NoSuchFileException,
-  Path,
-  ProviderMismatchException,
-  WatchEvent,
-  WatchKey,
-  WatchService
+  FileSystem, Files, LinkOption, NoSuchFileException, Path,
+  ProviderMismatchException, WatchEvent, WatchKey, WatchService
 }
 import java.util.Iterator
+
 import scalanative.annotation.alwaysinline
 
 class WindowsPath private[windows] (
@@ -44,11 +38,11 @@ class WindowsPath private[windows] (
       case (PathType.DriveRelative, Some(root)) => root
       case _                                    => ""
     }
-    drivePrefix + segments.mkString(seperator)
+    drivePrefix + segments.mkString(separator)
   }
 
   @alwaysinline
-  final private def seperator: String = fs.getSeparator()
+  private final def separator: String = fs.getSeparator()
 
   override def getFileSystem(): FileSystem = fs
 
@@ -146,7 +140,7 @@ class WindowsPath private[windows] (
         case winPath: WindowsPath =>
           new WindowsPath(pathType, root, segments ++ winPath.segments)
         case _ =>
-          WindowsPathParser(path.toString + seperator + other.toString)
+          WindowsPathParser(path.toString + separator + other.toString)
       }
   }
 
@@ -166,7 +160,7 @@ class WindowsPath private[windows] (
     val otherType = other match {
       case null           => throw new NullPointerException()
       case p: WindowsPath => p.pathType
-      case _ =>
+      case _              =>
         throw new IllegalArgumentException("'other' is different Path class")
     }
     if (pathType != otherType) {
@@ -285,6 +279,7 @@ private[windows] object WindowsPath {
         case (acc, "..") =>
           if (acc.isEmpty && path.isAbsolute()) Nil
           else if (acc.isEmpty) List("..")
+          else if (acc.last == "..") acc :+ ".."
           else acc.tail
         case (acc, ".") => acc
         case (acc, "")  => acc
@@ -292,8 +287,8 @@ private[windows] object WindowsPath {
       }
       .reverse
 
-    path.root.fold(components.mkString(path.seperator)) {
-      components.mkString(_, path.seperator, "")
+    path.root.fold(components.mkString(path.separator)) {
+      components.mkString(_, path.separator, "")
     }
   }
 

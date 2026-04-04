@@ -7,6 +7,7 @@
 #include "BlockAllocator.h"
 #include <stdio.h>
 #include "shared/ThreadUtil.h"
+#include "shared/Log.h"
 #include <errno.h>
 #include <stdlib.h>
 #include "WeakReferences.h"
@@ -14,7 +15,8 @@
 #ifndef _WIN32
 #include <unistd.h>
 #endif
-#include "immix_commix/utils/Time.h"
+#include "shared/Time.h"
+#include "shared/jmx.h"
 
 /*
 If in OSX, sem_open cannot create a semaphore whose name is longer than
@@ -58,16 +60,14 @@ void Phase_Init(Heap *heap, uint32_t initialBlockCount) {
     // We open the semaphores and try to check the call succeeded,
     // if not, we exit the process
     if (!semaphore_open(&heap->gcThreads.startWorkers, startWorkersName, 0U)) {
-        fprintf(stderr,
-                "Opening worker semaphore failed in commix Phase_Init: %d\n",
-                errno);
+        GC_LOG_ERROR("Opening worker semaphore failed in commix Phase_Init: %d",
+                     errno);
         exit(errno);
     }
 
     if (!semaphore_open(&heap->gcThreads.startMaster, startMasterName, 0U)) {
-        fprintf(stderr,
-                "Opening master semaphore failed in commix Phase_Init: %d\n",
-                errno);
+        GC_LOG_ERROR("Opening master semaphore failed in commix Phase_Init: %d",
+                     errno);
         exit(errno);
     }
     // clean up when process closes
@@ -78,13 +78,11 @@ void Phase_Init(Heap *heap, uint32_t initialBlockCount) {
     // semaphores.
 #ifndef _WIN32
     if (sem_unlink(startWorkersName) != 0) {
-        fprintf(stderr,
-                "Unlinking worker semaphore failed in commix Phase_Init\n");
+        GC_LOG_ERROR("Unlinking worker semaphore failed in commix Phase_Init");
         exit(errno);
     }
     if (sem_unlink(startMasterName) != 0) {
-        fprintf(stderr,
-                "Unlinking master semaphore failed in commix Phase_Init\n");
+        GC_LOG_ERROR("Unlinking master semaphore failed in commix Phase_Init");
         exit(errno);
     }
 #endif
@@ -180,6 +178,9 @@ void Phase_SweepDone(Heap *heap, Stats *stats) {
         Stats_RecordTime(stats, end_ns);
         Stats_RecordEvent(stats, event_collection,
                           heap->stats->collection_start_ns, end_ns);
+
+        jmx_stats_record_collection(heap->gcCollectionStart_ns,
+                                    Time_current_nanos());
 
         heap->sweep.postSweepDone = true;
         atomic_thread_fence(memory_order_release);

@@ -2,9 +2,12 @@ package scala.scalanative
 package nir
 
 import java.nio.charset.StandardCharsets
+
 import scala.collection.mutable
+
 import scala.scalanative.util.ShowBuilder.InMemoryShowBuilder
 import scalanative.util.{ShowBuilder, unreachable}
+
 import nir.Defn.Define.DebugInfo
 
 object Show {
@@ -104,6 +107,8 @@ object Show {
         str("link(\"")
         str(escapeQuotes(name))
         str("\")")
+      case Attr.LinkCppRuntime =>
+        str("linkCppRuntime")
       case Attr.Define(name) =>
         str("define(\"")
         str(escapeQuotes(name))
@@ -114,7 +119,7 @@ object Show {
         str("volatile")
       case Attr.Final =>
         str("final")
-      case Attr.SafePublish => str("safe-publish")
+      case Attr.SafePublish      => str("safe-publish")
       case Attr.LinktimeResolved =>
         str("linktime")
       case Attr.Alignment(size, group) =>
@@ -515,6 +520,9 @@ object Show {
       case Val.Long(value) =>
         str("long ")
         str(value)
+      case value: Val.Int128 =>
+        str("int128 ")
+        str(value.bigIntValue)
       case Val.Float(value) =>
         str("float ")
         str(value)
@@ -648,6 +656,7 @@ object Show {
       case Type.Byte   => str("byte")
       case Type.Short  => str("short")
       case Type.Int    => str("int")
+      case Type.Int128 => str("int128")
       case Type.Long   => str("long")
       case Type.Float  => str("float")
       case Type.Double => str("double")
@@ -668,11 +677,11 @@ object Show {
         rep(tys, sep = ", ")(onType)
         str("}")
 
-      case Type.Null    => str("null")
-      case Type.Nothing => str("nothing")
-      case Type.Virtual => str("virtual")
-      case Type.Var(ty) => str("var["); onType(ty); str("]")
-      case Type.Unit    => str("unit")
+      case Type.Null                => str("null")
+      case Type.Nothing             => str("nothing")
+      case Type.Virtual             => str("virtual")
+      case Type.Var(ty)             => str("var["); onType(ty); str("]")
+      case Type.Unit                => str("unit")
       case Type.Array(ty, nullable) =>
         if (!nullable) {
           str("?")

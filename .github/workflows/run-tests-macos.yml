@@ -13,34 +13,30 @@ concurrency:
 jobs:
   test-runtime:
     name: Test runtime
-    if: "github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || ((github.event_name == 'schedule' || github.event_name == 'workflow_call') && github.repository == 'scala-native/scala-native')"
-    runs-on: macos-12
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || ((github.event_name == 'schedule' || github.event_name == 'workflow_call') && github.repository == 'scala-native/scala-native')
+    runs-on: macos-15
     env:
       ENABLE_EXPERIMENTAL_COMPILER: true
     strategy:
       fail-fast: false
       matrix:
-        scala: [3]
-        gc: [none, boehm, immix, commix]
-        include:
-          - scala: 3-next
-            gc: immix
-          - scala: 2.13
-            gc: immix
-          - scala: 2.12
-            gc: immix
-
+        scala: [3, 2.13, 2.12]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/macos-setup-env
         id: setup
         with:
           scala-version: ${{matrix.scala}}
-          gc: ${{ matrix.gc }}
-
-      - name: Test runtime
-        env: 
-          SCALANATIVE_GC: ${{ matrix.gc }}
+      
+      - name: Prepare for GC tests
+        run: brew install bdw-gc
+      - name: Test GC compilation
+        timeout-minutes: 45
+        run: sbt "test-gc ${{ matrix.scala }}"
+    
+      - name: Run tests
+        timeout-minutes: 45
+        env:
           SCALANATIVE_TEST_PREFETCH_DEBUG_INFO: 1
         run: sbt "test-runtime ${{matrix.scala}}"
 
@@ -53,21 +49,23 @@ jobs:
 
   test-runtime-ext:
     name: Test runtime extension
-    if: "(github.event_name == 'schedule' || github.event_name == 'workflow_call')  && github.repository == 'scala-native/scala-native'"
-    runs-on: macos-12
+    if: ((github.event_name == 'schedule' || github.event_name == 'workflow_call')  && github.repository == 'scala-native/scala-native') || (github.event_name == 'pull_request' && !contains(github.event.pull_request.body, '[skip ci]') && contains(github.event.pull_request.body, '[test-extended]'))
+    runs-on: macos-15
     needs: [test-runtime]
     env:
       ENABLE_EXPERIMENTAL_COMPILER: true
     strategy:
       fail-fast: false
       matrix:
-        scala: [3, 3-next, 2.13]
+        scala: [2.13, 3]
         build-mode: [debug, release-fast]
         lto: [none, thin]
         gc: [boehm, immix, commix]
         exclude:
           # Covered in basic test-runtime
           - scala: 3
+            build-mode: debug
+          - lto: thin
             build-mode: debug
         include:
           - scala: 3
@@ -84,11 +82,12 @@ jobs:
           #   lto: full
           #   gc: commix
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/macos-setup-env
         with:
           scala-version: ${{matrix.scala}}
           gc: ${{ matrix.gc }}
+          llvm-version: 19
 
       - name: Prepare setConfig command
         # Linking on MacOS in GithubActions fails when using default linker (ld), use lld instead
@@ -108,10 +107,10 @@ jobs:
           SCALANATIVE_OPTIMIZE: true
           SCALANATIVE_TEST_PREFETCH_DEBUG_INFO: 1
           TEST_COMMAND: >
-            set sandbox.forBinaryVersion("${{env.binary-version}}")/${{env.set-native-config}};
-            set tests.forBinaryVersion("${{env.binary-version}}")/${{env.set-native-config}};
-            set junitTestOutputsNative.forBinaryVersion("${{env.binary-version}}")/${{env.set-native-config}};
-            set scalaPartestJunitTests.forBinaryVersion("${{env.binary-version}}")/${{env.set-native-config}};
+            set sandbox.forBinaryVersion("${{ matrix.scala }}")/${{env.set-native-config}};
+            set tests.forBinaryVersion("${{ matrix.scala }}")/${{env.set-native-config}};
+            set junitTestOutputsNative.forBinaryVersion("${{ matrix.scala }}")/${{env.set-native-config}};
+            set scalaPartestJunitTests.forBinaryVersion("${{ matrix.scala }}")/${{env.set-native-config}};
 
             show tests${{env.project-version}}/nativeConfig;
 
@@ -122,44 +121,45 @@ jobs:
             junitTestOutputsNative${{env.project-version}}/test;
             scalaPartestJunitTests${{env.project-version}}/test
         run: |
-          export LLVM_BIN="$(brew --prefix llvm@15)/bin"
+          export LLVM_BIN="$(brew --prefix llvm)/bin"
           $LLVM_BIN/clang --version
           sbt -J-Xmx5G "${TEST_COMMAND}"
 
   run-scripted-tests:
     name: Scripted tests
-    if: "github.event_name == 'pull_request' || ((github.event_name == 'schedule' || github.event_name == 'workflow_call') && github.repository == 'scala-native/scala-native')"
-    runs-on: macos-12
-    strategy:
-      fail-fast: false
-      matrix:
-        scala: [2.12, 3]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/macos-setup-env
-        with:
-          scala-version: ${{matrix.scala}}
-
-      - name: Test scripted
-        run: |
-          export LLVM_BIN=$(brew --prefix llvm@15)/bin
-          sbt "test-scripted ${{matrix.scala}}"
-
-  test-llvm-versions:
-    if: "(github.event_name == 'schedule' || github.event_name == 'workflow_call')  && github.repository == 'scala-native/scala-native'"
-    runs-on: macos-12
+    if: github.event_name == 'pull_request' || ((github.event_name == 'schedule' || github.event_name == 'workflow_call') && github.repository == 'scala-native/scala-native')
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
         scala: [3]
-        llvm: [14, 16, latest] # Last 3 stable versions. 15 is tested by default,  latest version == 17
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/macos-setup-env
+        with:
+          scala-version: ${{matrix.scala}}
+          llvm-version: latest
+
+      - name: Test scripted
+        run: |
+          export LLVM_BIN=$(brew --prefix llvm)/bin
+          $LLVM_BIN/clang --version
+          sbt "test-scripted ${{matrix.scala}}"
+
+  test-llvm-versions:
+    if: ((github.event_name == 'schedule' || github.event_name == 'workflow_call')  && github.repository == 'scala-native/scala-native') || (github.event_name == 'pull_request' && !contains(github.event.pull_request.body, '[skip ci]') && contains(github.event.pull_request.body, '[test-extended]'))
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        scala: [3]
+        llvm: [14, 15, 16, 17, 18, 19, 20, latest] # Latest version == 21
+    steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/macos-setup-env
         with:
           scala-version: ${{matrix.scala}}
           llvm-version: ${{ matrix.llvm }}
-          java-version: 8
 
       - name: Run tests
         timeout-minutes: 45

@@ -1,46 +1,121 @@
-# Runtime Settings
+# Runtime / Garbage Collector Settings
 
-Scala Native comes with some ability to change the runtime
-characteristics.
+Scala Native comes with some ability to change the runtime characteristics.
 
 ## Garbage Collector (GC) Settings
 
-Scala Native supports the [Boehm-Demers-Weiser Garbage
-Collector](https://www.hboehm.info/gc/). The environment variables
-defined in Boehm are planned to be shared by all the Garbage Collectors
-supported in Scala Native so they are consistent. The variables
-supported are listed below for each GC.
+Scala Native supports the [Boehm-Demers-Weiser Garbage Collector](https://www.hboehm.info/gc/). The environment variables defined in Boehm are shared as much as possible by all the Garbage Collectors supported in Scala Native so they are consistent and easier to use. Refer to the Boehm section below for the list. The variables supported are listed below for each GC.
 
 ## All Garbage Collectors
 
-The following environment variables will be used for all GCs. They can
-go from 1 MB to the system memory maximum or up to about 512 GB. The
-size is in bytes, kilobytes(k or K), megabytes(m or M), or gigabytes(g
-or G). Examples: 1024k, 1M, or 1G etc.
+The following **environment** variables will be used for all GCs. They can go from 1 MB to the system memory maximum or up to about 512 GB or less than 4 GB for 32 bit systems. The size can be specified in bytes, kilobytes(k or K), megabytes(m or M), or gigabytes(g or G).
 
--   GC_INITIAL_HEAP_SIZE changes the minimum heap size.
--   GC_MAXIMUM_HEAP_SIZE changes the maximum heap size.
+*Examples: 1048576, 1024k, 1M, or 1G etc.*
 
-The plan is to add more GC settings in the future using the Boehm
+- GC_INITIAL_HEAP_SIZE changes the minimum heap size.
+- GC_MAXIMUM_HEAP_SIZE changes the maximum heap size.
+- GC_LOG_FILE redirects GC log output to a file instead of stderr. If not set or empty, logs are written to stderr. If set to a file path, logs are appended to that file. This variable name matches the one defined in [Boehm GC](https://github.com/ivmai/bdwgc/blob/master/docs/environment.md) to provide a consistent API across all supported garbage collectors.
+
+The GC_INITIAL_HEAP_SIZE and GC_MAXIMUM_HEAP_SIZE are ignored by None GC when multi-threading is enabled and GC_THREAD_HEAP_BLOCK_SIZE is used instead. See the None GC section below for details.
+
+## Compile Time Memory Settings
+
+The GC_INITIAL_HEAP_SIZE, GC_MAXIMUM_HEAP_SIZE and for None GC the GC_THREAD_HEAP_BLOCK_SIZE can be set at **compile time** by using **defines** in the build. Refer to the None GC section below for details about GC_THREAD_HEAP_BLOCK_SIZE.
+
+The following examples shows how to set compile time memory values which is useful for the developer to provide a good user experience. A key feature is that the values can be overridden with environment variables by the user if supported on the platform. We also support the define DEBUG_PRINT to see the values passed to the GC as shown below in the first example build setup.
+
+*Note: Currently, Boehm only supports values in bytes for **defines** as shown in the third example.*
+
+``` scala
+import scala.scalanative.build._
+
+// Compile time GC defines (default Immix GC)
+nativeConfig ~= { c =>
+  c.withCompileOptions(
+    _ ++ Seq(
+      "-DGC_INITIAL_HEAP_SIZE=5m",
+      "-DGC_MAXIMUM_HEAP_SIZE=5m",
+      "-DDEBUG_PRINT"
+    )
+  )
+}
+
+// None GC with Multi-threading
+nativeConfig ~= { c =>
+  c.withCompileOptions(
+    _ ++ Seq(
+      "-DGC_THREAD_HEAP_BLOCK_SIZE=32m"
+    )
+  ).withGC(GC.none)
+    .withMultithreading(true)
+}
+
+// Boehm GC (use number of bytes) - 5m shown
+nativeConfig ~= { c =>
+  c.withCompileOptions(
+    _ ++ Seq(
+      "-DGC_INITIAL_HEAP_SIZE=5242880",
+      "-DGC_MAXIMUM_HEAP_SIZE=5242880"
+    )
+  ).withGC(GC.boehm)
+}
+```
+
+More GC settings may be added in the future using the Boehm
 setting names where applicable.
 
 ## Boehm GC
 
-The Boehm GC uses the two variables shown above. The following is
+The Boehm GC uses the three variables shown above. The following is
 available for Boehm and Commix.
 
 -   GC_NPROCS
 
 The following document shows all the variables available for Boehm:
-[README](https://github.com/ivmai/bdwgc/blob/master/docs/README.environment).
+[environment.md](https://github.com/ivmai/bdwgc/blob/master/docs/environment.md).
 
 ## None GC
 
-The None GC uses the two variables shown above.
+The None GC uses the three variables shown above **or** the following one when multi-threading is selected (instead of GC_INITIAL_HEAP_SIZE and GC_MAXIMUM_HEAP_SIZE).
+
+-   GC_THREAD_HEAP_BLOCK_SIZE (defaults to 64 MB)
+
+ When using this pseudo-GC implementation, GC_THREAD_HEAP_BLOCK_SIZE env variable can be set to control the granuality of allocated heap memory blocks for each of the threads. This env variable is ignored in single-threaded execution.
+
+## Immix and Commix GC Shared Settings
+
+The following environment variables are shared between Immix and Commix GCs.
+
+### GC Synchronization Timeout
+
+When multithreading is enabled, the GC needs to stop all threads before collecting garbage. If a thread is stuck, e.g. due to undefined behaviour, or executing foreign blocking code without the `@blocking` annotation, the GC may wait indefinitely. These settings control timeout behavior:
+
+-   SCALANATIVE_GC_SYNC_TIMEOUT_MS (default is 60000, i.e. 60 seconds)
+    
+    Timeout in milliseconds for waiting for threads to reach a safepoint. If threads don't reach safepoint within this time, the GC will abort the process with diagnostic information. Set to 0 to disable timeout (wait indefinitely).
+
+-   SCALANATIVE_GC_SYNC_WARNING_INTERVAL_MS (default is 10000, i.e. 10 seconds)
+    
+    Interval in milliseconds for printing warnings while waiting for threads. When threads take longer than expected to reach safepoint, warnings will be printed at this interval with information about which threads are stuck.
+
+### GC Logging
+
+-   SCALANATIVE_GC_LOG_LEVEL (default is "warn")
+    
+    Controls the verbosity of GC log messages. Valid values are:
+    - `debug` - Show all messages (internal operations, allocation tracking)
+    - `info` - Show info, warnings and errors (parsed options, stats)
+    - `warn` - Show warnings and errors (default)
+    - `error` - Show only errors
+    - `none` - Disable all GC logging
+
+-   GC_LOG_FILE - see description in `All Garbage Collectors` section above. Recommended when using `SCALANATIVE_GC_LOG_LEVEL=debug`.
+
+Log messages include timestamps in `[HH:MM:SS.mmm]` format with millisecond precision.
 
 ## Immix GC
 
-The Immix GC uses the two variables shown above as well as the following
+The Immix GC uses the three variables shown above as well as the following
 variable.
 
 -   GC_STATS_FILE (set to the file name)
@@ -63,17 +138,30 @@ defines -DGC_ENABLE_STATS for Commix.
 
 ## Examples
 
-If you are developing in the Scala Native sandbox, the following are
-examples showing some error conditions using Immix, the default GC.
-Adjust the path to your executable as needed:
+If you are developing in the Scala Native *sandbox*, the following are
+examples showing some error conditions using Immix, the default GC. These errors will also occur if using **defines** as described above or mixing **defines** with environment variables. Adjust the path to your executable as needed (Scala 2.13 shown).
 
+*Example 1:*
 ``` shell
-$ export GC_INITIAL_HEAP_SIZE=64k; export GC_MAXIMUM_HEAP_SIZE=512k; sandbox/.2.13/target/scala-2.13/sandbox
+export GC_INITIAL_HEAP_SIZE=64k
+export GC_MAXIMUM_HEAP_SIZE=512k
+./sandbox/.2.13/target/scala-2.13/sandbox
+```
+*Note: Error shown.*
+```
 GC_MAXIMUM_HEAP_SIZE too small to initialize heap.
 Minimum required: 1m
+```
 
-$ export GC_INITIAL_HEAP_SIZE=2m; export GC_MAXIMUM_HEAP_SIZE=1m; sandbox/.2.13/target/scala-2.13/sandbox
+*Example 2:*
+```shell
+export GC_INITIAL_HEAP_SIZE=2m
+export GC_MAXIMUM_HEAP_SIZE=1m;
+./sandbox/.2.13/target/scala-2.13/sandbox
+```
+*Note: Error shown.*
+```
 GC_MAXIMUM_HEAP_SIZE should be at least GC_INITIAL_HEAP_SIZE
 ```
 
-Continue to [lib](../lib/communitylib.md)
+Continue to [release types](./release-types.md).

@@ -2,14 +2,14 @@
 
 package org.scalanative.testsuite.javalib.net
 
-import org.scalanative.testsuite.utils.Platform._
-import org.scalanative.testsuite.utils.AssertThrows.assertThrows
-
-import org.junit.Test
-import org.junit.Assert._
-
-import java.net.URLDecoder
 import java.io.UnsupportedEncodingException
+import java.net.URLDecoder
+
+import org.junit.Assert._
+import org.junit.Test
+
+import org.scalanative.testsuite.utils.AssertThrows.assertThrows
+import org.scalanative.testsuite.utils.Platform._
 
 class URLDecoderTest {
 
@@ -65,6 +65,11 @@ class URLDecoderTest {
 
     // consecutive characters
     test("a%20%20c", "a  c")
+
+    test(
+      "weird%3D%26key=strange%25value&arrow=%E2%87%94",
+      "weird=&key=strange%value&arrow=⇔"
+    )
 
     // illegal codepoints
     illegalArgumentOrReplacement("a%b%c")

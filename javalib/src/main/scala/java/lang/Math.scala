@@ -1,8 +1,8 @@
 package java.lang
 
-import scalanative.runtime.LLVMIntrinsics._
-import scalanative.libc.{math => cmath}
 import scalanative.annotation.alwaysinline
+import scalanative.libc.{math => cmath}
+import scalanative.runtime.LLVMIntrinsics._
 
 private[lang] object MathRand {
   val rand = new java.util.Random
@@ -11,6 +11,7 @@ private[lang] object MathRand {
 object Math {
   final val E = 2.718281828459045
   final val PI = 3.141592653589793
+  final val TAU = 6.283185307179586
 
   @alwaysinline def abs(a: scala.Double): scala.Double =
     `llvm.fabs.f64`(a)
@@ -21,8 +22,24 @@ object Math {
   @alwaysinline def abs(a: scala.Int): scala.Int =
     if (a < 0) -a else a
 
+  /** @since JDK 15 */
+  @inline def absExact(a: scala.Int): scala.Int =
+    if (a != Integer.MIN_VALUE) abs(a)
+    else
+      throw new ArithmeticException(
+        "Overflow to represent absolute value of Integer.MIN_VALUE"
+      )
+
   @alwaysinline def abs(a: scala.Long): scala.Long =
     if (a < 0) -a else a
+
+  /** @since JDK 15 */
+  @inline def absExact(a: scala.Long): scala.Long =
+    if (a != Long.MIN_VALUE) abs(a)
+    else
+      throw new ArithmeticException(
+        "Overflow to represent absolute value of Long.MIN_VALUE"
+      )
 
   @alwaysinline def acos(a: scala.Double): scala.Double =
     cmath.acos(a)
@@ -53,6 +70,69 @@ object Math {
 
   @alwaysinline def ceil(a: scala.Double): scala.Double =
     `llvm.ceil.f64`(a)
+
+  def clamp(
+      value: scala.Double,
+      min: scala.Double,
+      max: scala.Double
+  ): scala.Double = {
+    // JVM checks arguments before checking value.isNaN()
+
+    if (min.isNaN())
+      throw new IllegalArgumentException("min is NaN")
+
+    if (max.isNaN())
+      throw new IllegalArgumentException("max is NaN")
+
+    if (min.compareTo(max) == 1)
+      throw new IllegalArgumentException(s"${min} > ${max}")
+
+    Math.min(Math.max(value, min), max)
+  }
+
+  def clamp(
+      value: scala.Float,
+      min: scala.Float,
+      max: scala.Float
+  ): scala.Float = {
+    // JVM checks arguments before checking value.isNaN().
+
+    if (min.isNaN())
+      throw new IllegalArgumentException("min is NaN")
+
+    if (max.isNaN())
+      throw new IllegalArgumentException("max is NaN")
+
+    if (min.compareTo(max) == 1)
+      throw new IllegalArgumentException(s"${min} > ${max}")
+
+    Math.min(Math.max(value, min), max)
+  }
+
+  def clamp(
+      value: scala.Long,
+      min: scala.Int,
+      max: scala.Int
+  ): scala.Int = {
+    if (min.compareTo(max) == 1)
+      throw new IllegalArgumentException(s"${min} > ${max}")
+
+    /* The toInt call is safe. 'min' and 'max' arguments are Ints, so computed
+     * result is known to be in range [Integer.MIN_Value, Integer.MAX_VALUE].
+     */
+    Math.min(Math.max(value, min), max).toInt
+  }
+
+  def clamp(
+      value: scala.Long,
+      min: scala.Long,
+      max: scala.Long
+  ): scala.Long = {
+    if (min.compareTo(max) == 1)
+      throw new IllegalArgumentException(s"${min} > ${max}")
+
+    Math.min(Math.max(value, min), max)
+  }
 
   @alwaysinline
   def copySign(magnitude: scala.Double, sign: scala.Double): scala.Double =
@@ -110,8 +190,8 @@ object Math {
     else rem + b
   }
 
-  @alwaysinline def floorMod(a: scala.Long, b: scala.Int): scala.Long =
-    floorMod(a, b.toLong)
+  @alwaysinline def floorMod(a: scala.Long, b: scala.Int): scala.Int =
+    floorMod(a, b.toLong).toInt
 
   @alwaysinline def fma(
       a: scala.Float,
@@ -128,13 +208,16 @@ object Math {
   @alwaysinline def getExponent(a: scala.Float): scala.Int =
     cmath.ilogbf(a)
 
-  @alwaysinline def getExponent(a: scala.Double): scala.Long =
+  @alwaysinline def getExponent(a: scala.Double): scala.Int =
     cmath.ilogb(a)
 
   @alwaysinline def hypot(a: scala.Double, b: scala.Double): scala.Double =
     cmath.hypot(a, b)
 
-  @alwaysinline def IEEEremainder(f1: scala.Double, f2: scala.Double): Double =
+  @alwaysinline def IEEEremainder(
+      f1: scala.Double,
+      f2: scala.Double
+  ): scala.Double =
     cmath.remainder(f1, f2)
 
   @alwaysinline def incrementExact(a: scala.Int): scala.Int =
@@ -152,11 +235,32 @@ object Math {
   @alwaysinline def log1p(a: scala.Double): scala.Double =
     cmath.log1p(a)
 
-  @alwaysinline def max(a: scala.Double, b: scala.Double): scala.Double =
-    if (a.isNaN() || b.isNaN()) Double.NaN else `llvm.maxnum.f64`(a, b)
+  // See Issue #3984 re: simplification via LLVM 'maximum' intrinsic.
+  @inline def max(a: scala.Double, b: scala.Double): scala.Double = {
+    if (a.isNaN() || b.isNaN()) Double.NaN
+    else {
+      val mx = `llvm.maxnum.f64`(a, b)
+      if ((a != b) || (mx != 0.0)) mx
+      else {
+        // At this point: a == b == mn == -0.0 == +0.0. Sign bit discriminates.
+        if (Double.doubleToRawLongBits(a) == 0L) a // off: mx is +0.0D
+        else b
+      }
+    }
+  }
 
-  @alwaysinline def max(a: scala.Float, b: scala.Float): scala.Float =
-    if (a.isNaN() || b.isNaN()) Float.NaN else `llvm.maxnum.f32`(a, b)
+  @inline def max(a: scala.Float, b: scala.Float): scala.Float = {
+    if (a.isNaN() || b.isNaN()) Float.NaN
+    else {
+      val mx = `llvm.maxnum.f32`(a, b)
+      if ((a != b) || (mx != 0.0f)) mx
+      else {
+        // At this point: a == b == mn == -0.0 == +0.0. Sign bit discriminates.
+        if (Float.floatToRawIntBits(a) == 0) a // off: mx is +0.0F
+        else b
+      }
+    }
+  }
 
   @alwaysinline def max(a: scala.Int, b: scala.Int): scala.Int =
     if (a > b) a else b
@@ -164,11 +268,32 @@ object Math {
   @alwaysinline def max(a: scala.Long, b: scala.Long): scala.Long =
     if (a > b) a else b
 
-  @alwaysinline def min(a: scala.Double, b: scala.Double): scala.Double =
-    if (a.isNaN() || b.isNaN()) Double.NaN else `llvm.minnum.f64`(a, b)
+  // See Issue #3984 re: simplification via LLVM 'minimum' intrinsic.
+  @inline def min(a: scala.Double, b: scala.Double): scala.Double = {
+    if (a.isNaN() || b.isNaN()) Double.NaN
+    else {
+      val mn = `llvm.minnum.f64`(a, b)
+      if ((a != b) || (mn != 0.0)) mn
+      else {
+        // At this point: a == b == mn == -0.0 == +0.0. Sign bit discriminates.
+        if (Double.doubleToRawLongBits(a) != 0L) a // on: mn is -0.0D
+        else b
+      }
+    }
+  }
 
-  @alwaysinline def min(a: scala.Float, b: scala.Float): scala.Float =
-    if (a.isNaN() || b.isNaN()) Float.NaN else `llvm.minnum.f32`(a, b)
+  @inline def min(a: scala.Float, b: scala.Float): scala.Float = {
+    if (a.isNaN() || b.isNaN()) Float.NaN
+    else {
+      val mn = `llvm.minnum.f32`(a, b)
+      if ((a != b) || (mn != 0.0f)) mn
+      else {
+        // At this point: a == b == mn == -0.0 == +0.0. Sign bit discriminates.
+        if (Float.floatToRawIntBits(a) != 0) a // on: mn is -0.0F
+        else b
+      }
+    }
+  }
 
   @alwaysinline def min(a: scala.Int, b: scala.Int): scala.Int =
     if (a < b) a else b
@@ -182,35 +307,20 @@ object Math {
     else overflow.value
   }
 
-  @inline def multiplyExact(a: scala.Long, b: scala.Long): scala.Long = {
+  @alwaysinline def multiplyExact(a: scala.Long, b: scala.Int): scala.Long =
+    multiplyExact(a, b.toLong)
+
+  @alwaysinline def multiplyExact(a: scala.Long, b: scala.Long): scala.Long = {
     val overflow = `llvm.smul.with.overflow.i64`(a, b)
     if (overflow.flag) throw new ArithmeticException("Long overflow")
     else overflow.value
   }
 
-  @alwaysinline def multiplyHigh(a: scala.Long, b: scala.Long): scala.Long = {
-    /* Algorithm from Hacker's Delight, "8–2. Multiply high signed."
-     * Here, `a` is replaced with `u`, and `b` with `v`, and reassignment of
-     * variables with suffix `p`. Unsigned ints correspond to shifting with
-     * `>>>` and performing the `& 0xffffffffL` operations.
-     */
-    val u0 = a & 0xffffffffL
-    val u1 = a >> 32
-    val v0 = b & 0xffffffffL
-    val v1 = b >> 32
-    val w0 = u0 * v0
-    val t = u1 * v0 + (w0 >>> 32)
-    val w1 = t & 0xffffffffL
-    val w2 = t >> 32
-    val w1p = u0 * v1 + w1
-    u1 * v1 + w2 + (w1p >> 32)
-  }
-
-  @alwaysinline def multiplyExact(a: scala.Long, b: scala.Int): scala.Long =
-    multiplyExact(a, b.toLong)
-
   @alwaysinline def multiplyFull(a: scala.Int, b: scala.Int): scala.Long =
     a.toLong * b.toLong
+
+  @alwaysinline def multiplyHigh(x: scala.Long, y: scala.Long): scala.Long =
+    scalanative.runtime.Intrinsics.multiplyHigh(x, y)
 
   @alwaysinline def negateExact(a: scala.Int): scala.Int =
     subtractExact(0, a)
@@ -272,6 +382,71 @@ object Math {
 
   @alwaysinline def pow(a: scala.Double, b: scala.Double): scala.Double =
     `llvm.pow.f64`(a, b)
+
+  /* powExact Family Algorithm Note:
+   *
+   *   The algorithm used in powExact() and unsignedPowExact() variants
+   *   is the "Exponentiation_by_squaring" basic iterative algorithm
+   *   as described at URL:
+   *     https://en.wikipedia.org/wiki/Exponentiation_by_squaring
+   *
+   *   One web reference mentions the algorithm as extensively discussed in
+   *   Donald Knuth's "The Art of Computer Programming".
+   *
+   *   The algorithm is O(log n), where n is the exponent. It is better
+   *   than the O(n) naive algorithm but probably leaves room for improvement
+   *   by future math keen developers.
+   */
+
+  /** Since: Java 25 */
+  def powExact(a: scala.Int, b: scala.Int): scala.Int = {
+    if (b < 0)
+      throw new ArithmeticException("negative exponent")
+
+    if (b == 0) 1
+    else {
+      // See "powExact Family Algorithm Note" above powExact(int, int) method.
+      var x = a
+      var y = 1
+      var n = b
+
+      while (n > 1) {
+        if ((n & 1) == 1) {
+          y = Math.multiplyExact(x, y)
+          n -= 1
+        }
+        x = Math.multiplyExact(x, x)
+        n >>>= 1
+      }
+
+      x * y
+    }
+  }
+
+  /** Since: Java 25 */
+  def powExact(a: scala.Long, b: Int): scala.Long = {
+    if (b < 0)
+      throw new ArithmeticException("negative exponent")
+
+    if (b == 0) 1
+    else {
+      // See "powExact Family Algorithm Note" above powExact(int, int) method.
+      var x = a
+      var y = 1L
+      var n = b
+
+      while (n > 1) {
+        if ((n & 1) == 1) {
+          y = Math.multiplyExact(x, y)
+          n -= 1
+        }
+        x = Math.multiplyExact(x, x)
+        n >>>= 1
+      }
+
+      x * y
+    }
+  }
 
   @alwaysinline def random(): scala.Double =
     MathRand.rand.nextDouble()
@@ -386,6 +561,86 @@ object Math {
     } else {
       val d = abs(a)
       cmath.nextafter(d, scala.Double.MaxValue) - d
+    }
+  }
+
+  /** Since: Java 25 */
+  @inline def unsignedMultiplyExact(a: scala.Int, b: scala.Int): scala.Int = {
+    val overflow = `llvm.umul.with.overflow.i32`(a, b)
+    if (overflow.flag) throw new ArithmeticException("Integer overflow")
+    else overflow.value
+  }
+
+  /** Since: Java 25 */
+  @alwaysinline def unsignedMultiplyExact(
+      a: scala.Long,
+      b: scala.Int
+  ): scala.Long =
+    unsignedMultiplyExact(a, b & 0xffffffffL) // b as Long, no sign extension
+
+  /** Since: Java 25 */
+  @alwaysinline def unsignedMultiplyExact(
+      a: scala.Long,
+      b: scala.Long
+  ): scala.Long = {
+    val overflow = `llvm.umul.with.overflow.i64`(a, b)
+    if (overflow.flag) throw new ArithmeticException("Long overflow")
+    else overflow.value
+  }
+
+  /** Since: Java 18 */
+  @alwaysinline def unsignedMultiplyHigh(
+      x: scala.Long,
+      y: scala.Long
+  ): scala.Long = scalanative.runtime.Intrinsics.unsignedMultiplyHigh(x, y)
+
+  /** Since: Java 25 */
+  def unsignedPowExact(a: scala.Int, b: scala.Int): scala.Int = {
+    if (b < 0)
+      throw new ArithmeticException("negative exponent")
+
+    if (b == 0) 1
+    else {
+      // See "powExact Family Algorithm Note" above powExact(int, int) method.
+      var x = a
+      var y = 1
+      var n = b
+
+      while (n > 1) {
+        if ((n & 1) == 1) {
+          y = Math.unsignedMultiplyExact(x, y)
+          n -= 1
+        }
+        x = Math.unsignedMultiplyExact(x, x)
+        n >>>= 1
+      }
+
+      x * y
+    }
+  }
+
+  /** Since: Java 25 */
+  def unsignedPowExact(a: scala.Long, b: Int): scala.Long = {
+    if (b < 0)
+      throw new ArithmeticException("negative exponent")
+
+    if (b == 0) 1
+    else {
+      // See "powExact Family Algorithm Note" above powExact(int, int) method.
+      var x = a
+      var y = 1L
+      var n = b
+
+      while (n > 1) {
+        if ((n & 1) == 1) {
+          y = Math.unsignedMultiplyExact(x, y)
+          n -= 1
+        }
+        x = Math.unsignedMultiplyExact(x, x)
+        n >>>= 1
+      }
+
+      x * y
     }
   }
 }

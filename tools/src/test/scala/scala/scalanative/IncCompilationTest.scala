@@ -1,15 +1,17 @@
 package scala.scalanative
 
-import org.junit.Test
-import org.junit.Assert._
-
 import java.io.{File, PrintWriter}
 import java.nio.file.{Files, Path, Paths}
-import scala.scalanative.build.{Config, NativeConfig, _}
-import scala.scalanative.util.Scope
+
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{Await, duration}
+
+import org.junit.Assert._
+import org.junit.Test
+
+import scala.scalanative.build._
 import scala.scalanative.buildinfo.ScalaNativeBuildInfo
+import scala.scalanative.util.Scope
 
 // The test is used for incremental compilation
 
@@ -19,25 +21,26 @@ class IncCompilationTest extends codegen.CodeGenSpec {
 
   @Test def generateIRForSingleType(): Unit = {
     Scope { implicit in =>
-      val source = """
-        |object A {
-        |  def print(x: String): Unit = {
-        |    println(x)
-        |  }
-        |  def print(x: Int): Unit = {
-        |    println(x)
-        |  }
-        |  def returnInt(): Int = {
-        |    val a = 2
-        |    val b = "helloworld"
-        |    val c = a + b.length
-        |    c
-        |  }
-        |  def main(args: Array[String]): Unit = {
-        |    val b = returnInt()
-        |    print(b)
-        |  }
-        |}""".stripMargin
+      val source =
+        """|
+           |object A {
+           |  def print(x: String): Unit = {
+           |    println(x)
+           |  }
+           |  def print(x: Int): Unit = {
+           |    println(x)
+           |  }
+           |  def returnInt(): Int = {
+           |    val a = 2
+           |    val b = "helloworld"
+           |    val c = a + b.length
+           |    c
+           |  }
+           |  def main(args: Array[String]): Unit = {
+           |    val b = returnInt()
+           |    print(b)
+           |  }
+           |}""".stripMargin
       val entry = "A"
       val changedTop = Set[String]("A", "A$")
       val outDir = Files.createTempDirectory("native-test-out")
@@ -52,31 +55,33 @@ class IncCompilationTest extends codegen.CodeGenSpec {
   @Test def generateIRForMultipleTypes(): Unit = {
     Scope { implicit in =>
       val sources = Map(
-        "A.scala" -> """
-            |object A {
-            |  def print(x: String): Unit = {
-            |    println(x)
-            |  }
-            |  def print(x: Int): Unit = {
-            |    println(x)
-            |  }
-            |  def getB(): B = {
-            |    val b = new B
-            |    b.bb = 1
-            |    b
-            |  }
-            |  def main(args: Array[String]): Unit = {
-            |    val b = getB()
-            |    println(b.add())
-            |    println(b.sub())
-            |  }
-            |}""".stripMargin,
-        "B.scala" -> """
-          |class B {
-          |  var bb = 2
-          |  def add(): Int = 3
-          |  def sub(): Int = 4
-          |}""".stripMargin
+        "A.scala" ->
+          """|
+             |object A {
+             |  def print(x: String): Unit = {
+             |    println(x)
+             |  }
+             |  def print(x: Int): Unit = {
+             |    println(x)
+             |  }
+             |  def getB(): B = {
+             |    val b = new B
+             |    b.bb = 1
+             |    b
+             |  }
+             |  def main(args: Array[String]): Unit = {
+             |    val b = getB()
+             |    println(b.add())
+             |    println(b.sub())
+             |  }
+             |}""".stripMargin,
+        "B.scala" ->
+          """|
+             |class B {
+             |  var bb = 2
+             |  def add(): Int = 3
+             |  def sub(): Int = 4
+             |}""".stripMargin
       )
       val entry = "A"
       val changedTop = Set[String]("A", "A$")

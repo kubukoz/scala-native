@@ -6,7 +6,6 @@ package java.util
 import java.io.Serializable
 import java.lang.Long.bitCount
 import java.nio.{ByteBuffer, LongBuffer}
-
 import java.util
 import java.util.Spliterators.AbstractIntSpliterator
 import java.util.function.IntConsumer
@@ -687,12 +686,12 @@ class BitSet private (private var bits: Array[Long])
     StreamSupport.intStream(spliter, parallel = false)
   }
 
-  final private def ensureLength(len: Int): Unit = {
+  private final def ensureLength(len: Int): Unit = {
     if (len > bits.length)
       bits = Arrays.copyOf(bits, Math.max(len, bits.length * 2))
   }
 
-  final private def getActualArrayLength(): Int = {
+  private final def getActualArrayLength(): Int = {
     var idx = bits.length - 1
     while (idx >= 0 && bits(idx) == 0)
       idx -= 1

@@ -3,12 +3,13 @@ package scala.scalanative.testinterface.common
 // Ported from Scala.js
 
 import java.util.concurrent.atomic.AtomicLong
+
 import scala.concurrent._
-import scala.scalanative.testinterface.common.Serializer.{
-  deserialize,
-  serialize
-}
 import scala.util.{Failure, Success, Try}
+
+import scala.scalanative.testinterface.common.Serializer.{
+  deserialize, serialize
+}
 
 /** Core RPC dispatcher.
  *
@@ -26,7 +27,8 @@ private[testinterface] abstract class RPCCore()(implicit ec: ExecutionContext) {
   import RPCCore._
 
   /** Pending calls. */
-  private val pending = new java.util.HashMap[Long, PendingCall]
+  private val pending =
+    new java.util.concurrent.ConcurrentHashMap[Long, PendingCall]
 
   /** Reason why we are closing this RPCCore. If non-null, we are closing. */
   @volatile
@@ -36,10 +38,11 @@ private[testinterface] abstract class RPCCore()(implicit ec: ExecutionContext) {
   private val nextID = new AtomicLong(0L)
 
   /** Currently registered endpoints. */
-  private val endpoints = new java.util.HashMap[OpCode, BoundEndpoint]
+  private val endpoints =
+    new java.util.concurrent.ConcurrentHashMap[OpCode, BoundEndpoint]
 
   /** Subclass should call this whenever a new message arrives */
-  final protected def handleMessage(msg: String): Unit = {
+  protected final def handleMessage(msg: String): Unit = {
     Serializer.withInputStream(msg) { in =>
       val opCode = in.readByte()
 

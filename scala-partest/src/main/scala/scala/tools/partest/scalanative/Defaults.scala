@@ -1,16 +1,16 @@
 package scala.tools.partest.scalanative
 
 import java.nio.file.{Files, Path, Paths}
+
 import scala.scalanative.build._
 import scala.scalanative.nir.Attr.Link
-import scala.scalanative.build.Platform
 
 object Defaults {
   // List of all libraries that need to be linked when precompiling libraries
   val links: Seq[Link] = {
     if (Platform.isWindows) Seq("zlib")
     else Seq("z", "pthread")
-  }.map(Link)
+  }.map(Link(_))
 
   def workDir(): Path = Files.createTempDirectory("partest-")
 

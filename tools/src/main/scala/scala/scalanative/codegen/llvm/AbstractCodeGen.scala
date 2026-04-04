@@ -3,29 +3,30 @@ package llvm
 
 import java.nio.file.{Path, Paths}
 import java.{lang => jl}
+
 import scala.collection.mutable
+import scala.language.implicitConversions
+import scala.util.control.NonFatal
+
 import scala.scalanative.build.Discover
+import scala.scalanative.codegen.llvm.Metadata.conversions._
 import scala.scalanative.codegen.llvm.compat.os.OsCompat
+import scala.scalanative.codegen.{Metadata => CodeGenMetadata}
 import scala.scalanative.io.VirtualDirectory
 import scala.scalanative.nir.ControlFlow.{Block, Graph => CFG}
 import scala.scalanative.nir.Defn.Define.DebugInfo
 import scala.scalanative.util.ShowBuilder.FileShowBuilder
-import scala.scalanative.util.{ShowBuilder, unreachable, unsupported}
+import scala.scalanative.util.{ScopedVar, ShowBuilder, unreachable, unsupported}
 import scala.scalanative.{build, linker, nir}
-import scala.util.control.NonFatal
-import scala.scalanative.codegen.{Metadata => CodeGenMetadata}
 
-import scala.language.implicitConversions
-import scala.scalanative.codegen.llvm.Metadata.conversions._
-import scala.scalanative.util.ScopedVar
+import MetadataCodeGen.DefnScopes
 
 private[codegen] abstract class AbstractCodeGen(
     env: Map[nir.Global, nir.Defn],
     defns: Seq[nir.Defn]
 )(implicit val meta: CodeGenMetadata)
     extends MetadataCodeGen {
-  import meta.platform
-  import meta.config
+  import meta.{config, platform}
   import platform._
 
   val pointerType = if (useOpaquePointers) "ptr" else "i8*"
@@ -38,9 +39,18 @@ private[codegen] abstract class AbstractCodeGen(
   private val generated = mutable.Set.empty[String]
   private val externSigMembers = mutable.Map.empty[nir.Sig, nir.Global.Member]
 
+  private def isGnu: Boolean = {
+    meta.buildConfig.compilerConfig.configuredOrDetectedTriple.env
+      .startsWith("gnu")
+  }
+
   final val os: OsCompat = {
     import scala.scalanative.codegen.llvm.compat.os._
-    if (meta.platform.targetsWindows) new WindowsCompat(this)
+    if (meta.platform.targetsWindows)
+      if (isGnu)
+        new WindowsGnuCompat(this)
+      else
+        new WindowsCompat(this)
     else new UnixCompat(this)
   }
 
@@ -96,11 +106,11 @@ private[codegen] abstract class AbstractCodeGen(
         implicit val rootPos = defn.pos
         defn match {
           case defn @ nir.Defn.Var(attrs, _, _, _) =>
-            defn.copy(attrs.copy(isExtern = true))
+            defn.copy(attrs.withIsExtern(true))
           case defn @ nir.Defn.Const(attrs, _, ty, _) =>
-            defn.copy(attrs.copy(isExtern = true))
+            defn.copy(attrs.withIsExtern(true))
           case defn @ nir.Defn.Declare(attrs, _, _) =>
-            defn.copy(attrs.copy(isExtern = true))
+            defn.copy(attrs.withIsExtern(true))
           case defn @ nir.Defn.Define(attrs, name, ty, _, _) =>
             nir.Defn.Declare(attrs, name, ty)
           case _ =>
@@ -274,9 +284,9 @@ private[codegen] abstract class AbstractCodeGen(
     }
 
     defn match {
-      case _: nir.Defn.Declare => ()
+      case _: nir.Defn.Declare   => ()
       case defn: nir.Defn.Define =>
-        implicit lazy val defnScopes: DefnScopes = new DefnScopes(defn)
+        implicit lazy val defnScopes: DefnScopes = new DefnScopes(defn, this)
         insts.foreach {
           case nir.Inst.Let(n, nir.Op.Copy(v), _) => copies(n) = v
           case _                                  => ()
@@ -400,7 +410,7 @@ private[codegen] abstract class AbstractCodeGen(
     if (!block.isEntry) {
       params.foreach {
         case (nir.Val.Local(_, nir.Type.Unit), n) => () // skip
-        case (nir.Val.Local(id, ty), n) =>
+        case (nir.Val.Local(id, ty), n)           =>
           newline()
           str("%")
           genLocal(id)
@@ -466,11 +476,11 @@ private[codegen] abstract class AbstractCodeGen(
       sb: ShowBuilder,
       debugInfo: DebugInfo,
       metaCtx: MetadataCodeGen.Context,
-      defnScoeps: this.DefnScopes
+      defnScoeps: MetadataCodeGen.DefnScopes
   ): Unit = {
     block.insts.foreach {
       case inst @ nir.Inst.Let(_, _, unwind: nir.Next.Unwind) =>
-        import inst.pos
+        import inst.{pos, scopeId}
         os.genLandingPad(unwind)
       case _ => ()
     }
@@ -486,11 +496,11 @@ private[codegen] abstract class AbstractCodeGen(
         str(pointerType)
       case nir.Type.Bool          => str("i1")
       case i: nir.Type.FixedSizeI => str("i"); str(i.width)
-      case nir.Type.Size =>
+      case nir.Type.Size          =>
         str("i")
         str(platform.sizeOfPtrBits)
-      case nir.Type.Float  => str("float")
-      case nir.Type.Double => str("double")
+      case nir.Type.Float             => str("float")
+      case nir.Type.Double            => str("double")
       case nir.Type.ArrayValue(ty, n) =>
         str("[")
         str(n)
@@ -506,8 +516,7 @@ private[codegen] abstract class AbstractCodeGen(
         str(" (")
         rep(args, sep = ", ")(genType)
         str(")")
-      case ty =>
-        unsupported(ty)
+      case nir.Type.Virtual | nir.Type.Var(_) => unsupported(ty)
     }
   }
 
@@ -549,16 +558,17 @@ private[codegen] abstract class AbstractCodeGen(
       case nir.Val.Unit     => str("void")
       case nir.Val.Zero(ty) => str("zeroinitializer")
       case nir.Val.Byte(v)  => str(v)
-      case nir.Val.Size(v) =>
+      case nir.Val.Size(v)  =>
         if (!platform.is32Bit) str(v)
         else if (v.toInt == v) str(v.toInt)
         else unsupported("Emitting size values that exceed the platform bounds")
-      case nir.Val.Char(v)   => str(v.toInt)
-      case nir.Val.Short(v)  => str(v)
-      case nir.Val.Int(v)    => str(v)
-      case nir.Val.Long(v)   => str(v)
-      case nir.Val.Float(v)  => genFloatHex(v)
-      case nir.Val.Double(v) => genDoubleHex(v)
+      case nir.Val.Char(v)         => str(v.toInt)
+      case nir.Val.Short(v)        => str(v)
+      case nir.Val.Int(v)          => str(v)
+      case nir.Val.Long(v)         => str(v)
+      case v: nir.Val.Int128       => str(v.bigIntValue)
+      case nir.Val.Float(v)        => genFloatHex(v)
+      case nir.Val.Double(v)       => genDoubleHex(v)
       case nir.Val.StructValue(vs) =>
         str("{ ")
         rep(vs, sep = ", ")(genVal)
@@ -584,7 +594,8 @@ private[codegen] abstract class AbstractCodeGen(
           genGlobal(n)
           str(" to i8*)")
         }
-      case _ =>
+      case _: nir.Val.Global | _: nir.Val.Const | _: nir.Val.String |
+          _: nir.Val.Virtual | _: nir.Val.ClassOf =>
         unsupported(v)
     }
   }
@@ -596,9 +607,9 @@ private[codegen] abstract class AbstractCodeGen(
 
     str("c\"")
     bytes.foreach {
-      case '\\' => str("\\\\")
+      case '\\'                                   => str("\\\\")
       case c if c < 0x20 || c == '"' || c >= 0x7f =>
-        val hex = Integer.toHexString(c)
+        val hex = Integer.toHexString(c & 0xff)
         str {
           if (hex.length < 2) "\\0" + hex
           else "\\" + hex
@@ -994,7 +1005,7 @@ private[codegen] abstract class AbstractCodeGen(
 
     val nir.Op.Call(ty, pointee, args) = call
     pointee match {
-      // Lower emits a alloc function with exact result type of the class instead of a raw pointer
+      // Lower emits an alloc function with exact result type of the class instead of a raw pointer
       // It's probablatic to emit when not using opaque pointers. Retry with simplified signature
       case Lower.alloc | Lower.largeAlloc
           if !useOpaquePointers && ty != Lower.allocSig =>
@@ -1013,12 +1024,14 @@ private[codegen] abstract class AbstractCodeGen(
           Lower.GCYieldPointTrapName.sig.unmangled: @unchecked
         touch(Lower.GCYieldPointTrapName)
         str {
-          if (useOpaquePointers) s"""
-          |  %_${trap.id} = load ptr, ptr @${safepointTrapField}
-          |  %_${fresh().id} = load volatile ptr, ptr %_${trap.id}""".stripMargin
-          else s"""
-          |  %_${trap.id} = load i8**, i8*** bitcast(i8** @$safepointTrapField to i8***)
-          |  %_${fresh().id} = load volatile i8*, i8** %_${trap.id}""".stripMargin
+          if (useOpaquePointers)
+            s"""|
+                |  %_${trap.id} = load ptr, ptr @${safepointTrapField}
+                |  %_${fresh().id} = load volatile ptr, ptr %_${trap.id}""".stripMargin
+          else
+            s"""|
+                |  %_${trap.id} = load i8**, i8*** bitcast(i8** @$safepointTrapField to i8***)
+                |  %_${fresh().id} = load volatile i8*, i8** %_${trap.id}""".stripMargin
         }
 
       case nir.Val.Global(pointee: nir.Global.Member, _)

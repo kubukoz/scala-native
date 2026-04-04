@@ -2,26 +2,17 @@ package scala.scalanative
 package codegen
 
 import scala.collection.mutable
-import scala.scalanative.linker.{
-  Class,
-  Field,
-  ScopeInfo,
-  Unavailable,
-  ReachabilityAnalysis
-}
+
 import scala.scalanative.build.Logger
+import scala.scalanative.linker.{
+  Class, Field, ReachabilityAnalysis, ScopeInfo, Unavailable
+}
 
 // scalafmt: { maxColumn = 120}
 private[codegen] object Generate {
   private implicit val pos: nir.SourcePosition = nir.SourcePosition.NoPosition
   private implicit val scopeId: nir.ScopeId = nir.ScopeId.TopLevel
   import Impl._
-
-  val ClassHasTraitName = nir.Global.Member(rttiModule, nir.Sig.Extern("__check_class_has_trait"))
-  val ClassHasTraitSig = nir.Type.Function(Seq(nir.Type.Int, nir.Type.Int), nir.Type.Bool)
-
-  val TraitHasTraitName = nir.Global.Member(rttiModule, nir.Sig.Extern("__check_trait_has_trait"))
-  val TraitHasTraitSig = nir.Type.Function(Seq(nir.Type.Int, nir.Type.Int), nir.Type.Bool)
 
   def apply(entry: Option[nir.Global.Top], defns: Seq[nir.Defn])(implicit
       meta: Metadata
@@ -40,10 +31,7 @@ private[codegen] object Generate {
       genInjects()
       entry.fold(genLibraryInit())(genMain(_))
       genClassMetadata()
-      genClassHasTrait()
       genTraitMetadata()
-      genTraitHasTrait()
-      genTraitDispatchTables()
       genModuleAccessors()
       genModuleArray()
       genModuleArraySize()
@@ -55,12 +43,7 @@ private[codegen] object Generate {
     }
 
     def genDefnsExcludingGenerated(): Unit = {
-      defns.foreach { defn =>
-        if (defn.name != ClassHasTraitName
-            && defn.name != TraitHasTraitName) {
-          buf += defn
-        }
-      }
+      buf ++= defns
     }
 
     def genInjects(): Unit = {
@@ -76,118 +59,6 @@ private[codegen] object Generate {
       }
     }
 
-    def genClassHasTrait(): Unit = {
-      genHasTrait(
-        ClassHasTraitName,
-        ClassHasTraitSig,
-        meta.hasTraitTables.classHasTraitTy,
-        meta.hasTraitTables.classHasTraitVal
-      )
-    }
-
-    def genTraitHasTrait(): Unit = {
-      genHasTrait(
-        TraitHasTraitName,
-        TraitHasTraitSig,
-        meta.hasTraitTables.traitHasTraitTy,
-        meta.hasTraitTables.traitHasTraitVal
-      )
-    }
-
-    // BitMatrix get adapted from the java.util.BitSet implementation.
-    // Equivalent to the following Scala code:
-    // def get_[class,trait]_has_trait(firstid: Int, secondid: Int): Boolean = {
-    //   val bitIndex = firstid * meta.traits.length + secondid
-    //   (table(bitIndex >> AddressBitsPerWord) & (1 << (bitIndex & RightBits))) != 0
-    // }
-    private def genHasTrait(
-        name: nir.Global.Member,
-        sig: nir.Type.Function,
-        tableTy: nir.Type,
-        tableVal: nir.Val
-    ): Unit = {
-      implicit val fresh = nir.Fresh()
-      val firstid, secondid = nir.Val.Local(fresh(), nir.Type.Int)
-      val row = nir.Val.Local(fresh(), nir.Type.Int)
-      val columns = nir.Val.Int(meta.traits.length)
-      val bitIndex = nir.Val.Local(fresh(), nir.Type.Int)
-      val arrayPos = nir.Val.Local(fresh(), nir.Type.Int)
-      val intptr = nir.Val.Local(fresh(), nir.Type.Ptr)
-      val int = nir.Val.Local(fresh(), nir.Type.Int)
-      val toShift = nir.Val.Local(fresh(), nir.Type.Int)
-      val mask = nir.Val.Local(fresh(), nir.Type.Int)
-      val and = nir.Val.Local(fresh(), nir.Type.Int)
-      val result = nir.Val.Local(fresh(), nir.Type.Bool)
-
-      def let(local: nir.Val.Local, op: nir.Op) = nir.Inst.Let(local.id, op, nir.Next.None)
-
-      buf += nir.Defn.Define(
-        nir.Attrs(inlineHint = nir.Attr.AlwaysInline),
-        name,
-        sig,
-        Seq(
-          nir.Inst.Label(fresh(), Seq(firstid, secondid)),
-          let(row, nir.Op.Bin(nir.Bin.Imul, nir.Type.Int, firstid, columns)),
-          let(bitIndex, nir.Op.Bin(nir.Bin.Iadd, nir.Type.Int, row, secondid)),
-          let(
-            arrayPos,
-            nir.Op.Bin(
-              nir.Bin.Ashr,
-              nir.Type.Int,
-              bitIndex,
-              nir.Val.Int(BitMatrix.AddressBitsPerWord)
-            )
-          ),
-          let(
-            intptr,
-            nir.Op.Elem(
-              tableTy,
-              tableVal,
-              Seq(nir.Val.Int(0), arrayPos)
-            )
-          ),
-          let(int, nir.Op.Load(nir.Type.Int, intptr)),
-          let(
-            toShift,
-            nir.Op.Bin(
-              nir.Bin.And,
-              nir.Type.Int,
-              bitIndex,
-              nir.Val.Int(BitMatrix.RightBits)
-            )
-          ),
-          let(
-            mask,
-            nir.Op.Bin(
-              nir.Bin.Shl,
-              nir.Type.Int,
-              nir.Val.Int(1),
-              toShift
-            )
-          ),
-          let(
-            and,
-            nir.Op.Bin(
-              nir.Bin.And,
-              nir.Type.Int,
-              int,
-              mask
-            )
-          ),
-          let(
-            result,
-            nir.Op.Comp(
-              nir.Comp.Ine,
-              nir.Type.Int,
-              and,
-              nir.Val.Int(0)
-            )
-          ),
-          nir.Inst.Ret(result)
-        )
-      )
-    }
-
     def genTraitMetadata(): Unit = {
       meta.traits.foreach { trt =>
         val rtti = meta.rtti(trt)
@@ -201,11 +72,11 @@ private[codegen] object Generate {
     private def withExceptionHandler(
         body: (() => nir.Next.Unwind) => Seq[nir.Inst]
     )(implicit fresh: nir.Fresh): Seq[nir.Inst] = {
-      val exc = nir.Val.Local(fresh(), Throwable)
+      val exc = nir.Val.Local(fresh(), nir.Rt.Throwable)
       val handler, thread, ueh, uehHandler = fresh()
 
       def unwind(): nir.Next.Unwind = {
-        val exc = nir.Val.Local(fresh(), nir.Rt.Object)
+        val exc = nir.Val.Local(fresh(), nir.Rt.Throwable)
         nir.Next.Unwind(exc, nir.Next.Label(handler, Seq(exc)))
       }
       body(unwind) ++ Seq(
@@ -270,7 +141,7 @@ private[codegen] object Generate {
       implicit val fresh: nir.Fresh = nir.Fresh()
 
       buf += nir.Defn.Define(
-        nir.Attrs(isExtern = true),
+        nir.Attrs.None.withIsExtern(true),
         LibraryInitName,
         LibraryInitSig,
         withExceptionHandler { unwindProvider =>
@@ -326,7 +197,7 @@ private[codegen] object Generate {
         nir.Type.Ptr
       )
       val LoadModuleDecl = nir.Defn.Declare(
-        nir.Attrs(isExtern = true),
+        nir.Attrs.None.withIsExtern(true),
         extern("__scalanative_loadModule"),
         LoadModuleSig
       )
@@ -447,7 +318,7 @@ private[codegen] object Generate {
             // Generate definition of module load function such as "module$G4load"
             // The callers will be generated while lowering "Op.Module", see "codegen/Lower.scala".
             val loadDefn = nir.Defn.Define(
-              nir.Attrs(inlineHint =
+              nir.Attrs.None.withInlineHint(
                 if (useSynchronizedAccessors) nir.Attr.MayInline
                 else nir.Attr.NoInline
               ),
@@ -592,12 +463,6 @@ private[codegen] object Generate {
       buf += nir.Defn.Const(nir.Attrs.None, arrayIdsMaxName, nir.Type.Int, nir.Val.Int(max))
     }
 
-    def genTraitDispatchTables(): Unit = {
-      buf += meta.dispatchTable.dispatchDefn
-      buf += meta.hasTraitTables.classHasTraitDefn
-      buf += meta.hasTraitTables.traitHasTraitDefn
-    }
-
     private def validateMainEntry(entry: nir.Global.Top): Unit = {
       def fail(reason: String): Nothing =
         util.unsupported(s"Entry ${entry.id} $reason")
@@ -636,9 +501,6 @@ private[codegen] object Generate {
     val MainName = extern("main")
     val MainSig = nir.Type.Function(Seq(nir.Type.Int, nir.Type.Ptr), nir.Type.Int)
 
-    val ThrowableName = nir.Global.Top("java.lang.Throwable")
-    val Throwable = nir.Type.Ref(ThrowableName)
-
     val JavaThread = nir.Global.Top("java.lang.Thread")
     val JavaThreadRef = nir.Type.Ref(JavaThread)
 
@@ -656,9 +518,12 @@ private[codegen] object Generate {
     )
 
     val RuntimeExecuteUEHSig =
-      nir.Type.Function(Seq(Runtime, JavaThreadUEHRef, JavaThreadRef, Throwable), nir.Type.Unit)
+      nir.Type.Function(Seq(Runtime, JavaThreadUEHRef, JavaThreadRef, nir.Rt.Throwable), nir.Type.Unit)
     val RuntimeExecuteUEH = Runtime.name.member(
-      nir.Sig.Method("executeUncaughtExceptionHandler", Seq(JavaThreadUEHRef, JavaThreadRef, Throwable, nir.Type.Unit))
+      nir.Sig.Method(
+        "executeUncaughtExceptionHandler",
+        Seq(JavaThreadUEHRef, JavaThreadRef, nir.Rt.Throwable, nir.Type.Unit)
+      )
     )
 
     val InitSig = nir.Type.Function(Seq.empty, nir.Type.Unit)

@@ -1,14 +1,16 @@
 package scala.scalanative
 
-import org.junit.Test
+import scala.language.experimental.captureChecking
+import scala.util.{Failure, Success, Try}
+
 import org.junit.Assert._
+import org.junit.Test
+
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
 
-import scala.util.{Try,Success,Failure}
-import scala.language.experimental.captureChecking
-import scala.scalanative.runtime.SafeZoneAllocator.allocate
 import scala.scalanative.memory.SafeZone
 import scala.scalanative.memory.SafeZone._
+import scala.scalanative.runtime.SafeZoneAllocator.allocate
 
 /* Test safe zone operations which are private to package `scala.scalanative`. */
 class SafeZoneTest {
@@ -19,15 +21,18 @@ class SafeZoneTest {
     }
   }
 
-  @Test def `report error when trying to allocate an instances in a closed safe zone`(): Unit = {
+  @Test def `report error when trying to allocate an instances in a closed safe zone`()
+      : Unit = {
     case class A()
-    assertThrows(classOf[IllegalStateException], 
-      SafeZone { sz ?=> 
+    assertThrows(
+      classOf[IllegalStateException],
+      SafeZone { sz ?=>
         sz.close()
         Try[A^{sz}].apply(allocate(sz, new A())) match {
-          case Success(_) => fail("Should not allocate instances in a closed safe zone.")
+          case Success(_) =>
+            fail("Should not allocate instances in a closed safe zone.")
           case Failure(e: IllegalStateException) => ()
-          case Failure(_) => fail("Unexpected error.")
+          case Failure(_)                        => fail("Unexpected error.")
         }
       }
     )

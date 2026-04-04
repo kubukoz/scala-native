@@ -8,10 +8,8 @@
 package scala.scalanative
 package regex
 
-import java.util.ArrayList
-import java.util.HashMap
-
 import java.util.regex.PatternSyntaxException
+import java.util.{ArrayList, HashMap}
 
 import scala.annotation.switch
 
@@ -1169,7 +1167,7 @@ class Parser(wholeRegexp: String, _flags: Int) {
   }
 
   // parseUnicodeClass() parses a leading Unicode character class like \p{Han}
-  // from the beginning of t.  If one is present, it appends the characters to
+  // from the beginning of t.  If one is present, it appends the characters
   // to |cc|, advances |t| and returns true.
   //
   // Returns false if such a pattern is not present or UNICODE_GROUPS

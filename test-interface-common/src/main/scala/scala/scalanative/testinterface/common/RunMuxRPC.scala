@@ -2,10 +2,9 @@ package scala.scalanative.testinterface.common
 
 // Ported from Scala.js
 
-import scala.language.higherKinds
-
 import scala.collection.mutable
 import scala.concurrent.Future
+import scala.language.higherKinds
 import scala.util.Try
 
 /** Helper above an [[RPCCore]] that allows to multiplex between runs.
@@ -22,8 +21,8 @@ private[testinterface] final class RunMuxRPC(rpc: RPCCore) {
 
   /** Multiplexer map.
    *
-   *  Access to the outer map needs to synchronized. Access to the inner map
-   *  only needs to be synchronize for writing.
+   *  Access to the outer map needs to be synchronized. Access to the inner map
+   *  only needs to be synchronized for writing.
    */
   private val mux =
     mutable.Map.empty[RPCCore.OpCode, java.util.HashMap[RunID, _]]

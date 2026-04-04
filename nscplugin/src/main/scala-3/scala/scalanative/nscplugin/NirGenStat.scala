@@ -1,29 +1,27 @@
 package scala.scalanative
 package nscplugin
 
-import scala.language.implicitConversions
-
+import dotty.tools.FatalError
 import dotty.tools.dotc.ast.tpd
 import dotty.tools.dotc.ast.tpd._
-import dotty.tools.dotc.core
-import core.Contexts._
-import core.Symbols._
-import core.Constants._
-import core.StdNames._
-import core.Flags._
-import core.Phases._
-import scala.scalanative.nscplugin.CompilerCompat.SymUtilsCompat._
-
+import dotty.tools.dotc.core.Annotations.Annotation
+import dotty.tools.dotc.core.NameKinds
+import dotty.tools.dotc.{core, report}
 import scala.collection.mutable
+import scala.language.implicitConversions
+
 import scala.scalanative.nir.Defn.Define.DebugInfo
 import scala.scalanative.nir.Defn.Define.DebugInfo._
-import scala.scalanative.util.ScopedVar
+import scala.scalanative.nscplugin.CompilerCompat.SymUtilsCompat._
 import scala.scalanative.util.ScopedVar.{scoped, toValue}
-import scala.scalanative.util.unsupported
-import dotty.tools.FatalError
-import dotty.tools.dotc.report
-import dotty.tools.dotc.core.NameKinds
-import dotty.tools.dotc.core.Annotations.Annotation
+import scala.scalanative.util.{ScopedVar, unsupported}
+
+import core.Constants._
+import core.Contexts._
+import core.Flags._
+import core.Phases._
+import core.StdNames._
+import core.Symbols._
 
 trait NirGenStat(using Context) {
   self: NirCodeGen =>
@@ -79,6 +77,8 @@ trait NirGenStat(using Context) {
         val Apply(_, Seq(Literal(Constant(name: String)))) =
           ann.tree: @unchecked
         nir.Attr.Link(name)
+      case ann if ann.symbol == defnNir.LinkCppRuntimeClass =>
+        nir.Attr.LinkCppRuntime
       case ann if ann.symbol == defnNir.DefineClass =>
         val Apply(_, Seq(Literal(Constant(name: String)))) =
           ann.tree: @unchecked
@@ -192,17 +192,16 @@ trait NirGenStat(using Context) {
       // That what JVM backend does
       // https://github.com/lampepfl/dotty/blob/786ad3ff248cca39e2da80c3a15b27b38eec2ff6/compiler/src/dotty/tools/backend/jvm/BTypesFromSymbols.scala#L340-L347
       val isFinal = !f.is(Mutable)
-      val attrs = nir.Attrs(
-        isExtern = isExtern,
-        isVolatile = f.isVolatile,
-        isFinal = isFinal,
-        isSafePublish = isFinal && {
+      val attrs = nir.Attrs.None
+        .withIsExtern(isExtern)
+        .withIsVolatile(f.isVolatile)
+        .withIsFinal(isFinal)
+        .withIsSafePublish(isFinal && {
           settings.forceStrictFinalFields ||
           f.hasAnnotation(defnNir.SafePublishClass) ||
           f.owner.hasAnnotation(defnNir.SafePublishClass)
-        },
-        align = getAlignmentAttr(f).orElse(classAlignment)
-      )
+        })
+        .withAlign(getAlignmentAttr(f).orElse(classAlignment))
       val ty = genType(f.info.resultType)
       val fieldName @ nir.Global.Member(owner, sig) = genFieldName(
         f
@@ -214,7 +213,7 @@ trait NirGenStat(using Context) {
         // this is its API for other units. This is necessary for singleton
         // enum values, which are backed by static fields.
         generatedDefns += new nir.Defn.Define(
-          attrs = nir.Attrs(inlineHint = nir.Attr.InlineHint),
+          attrs = nir.Attrs.None.withInlineHint(nir.Attr.InlineHint),
           name = genStaticMemberName(f, classSym),
           ty = nir.Type.Function(Nil, ty),
           insts = withFreshExprBuffer { buf ?=>
@@ -275,8 +274,9 @@ trait NirGenStat(using Context) {
       val owner = curClassSym.get
 
       val isExtern = sym.isExtern
+      val isIntrinsic = dd.rhs.symbol == defnNir.IntrinsicMarker
 
-      val attrs = genMethodAttrs(sym, isExtern)
+      val attrs = genMethodAttrs(sym, isExtern, isIntrinsic)
       val name = genMethodName(sym)
       val sig = genMethodSig(sym)
 
@@ -304,10 +304,9 @@ trait NirGenStat(using Context) {
             val env = curMethodEnv.get
             val methodAttrs =
               if (env.isUsingLinktimeResolvedValue || env.isUsingIntrinsics)
-                attrs.copy(
-                  isLinktimeResolved = env.isUsingLinktimeResolvedValue,
-                  isUsingIntrinsics = env.isUsingIntrinsics
-                )
+                attrs
+                  .withIsLinktimeResolved(env.isUsingLinktimeResolvedValue)
+                  .withIsUsingIntrinsics(env.isUsingIntrinsics)
               else attrs
             val defn = nir.Defn.Define(
               methodAttrs,
@@ -327,7 +326,8 @@ trait NirGenStat(using Context) {
 
   private def genMethodAttrs(
       sym: Symbol,
-      isExtern: Boolean
+      isExtern: Boolean,
+      isIntrinsic: Boolean
   ): nir.Attrs = {
     val attrs = Seq.newBuilder[nir.Attr]
 
@@ -339,7 +339,7 @@ trait NirGenStat(using Context) {
     def requireLiteralStringAnnotation(annotation: Annotation): Option[String] =
       annotation.tree match {
         case Apply(_, Seq(Literal(Constant(name: String)))) => Some(name)
-        case tree =>
+        case tree                                           =>
           report.error(
             s"Invalid usage of ${annotation.symbol.show}, expected literal constant string argument, got ${tree}",
             tree.srcPos
@@ -354,14 +354,20 @@ trait NirGenStat(using Context) {
         case defnNir.NoOptimizeClass   => attrs += nir.Attr.NoOpt
         case defnNir.NoSpecializeClass => attrs += nir.Attr.NoSpecialize
         case defnNir.StubClass         => attrs += nir.Attr.Stub
-        case defnNir.LinkClass =>
+        case defnNir.LinkClass         =>
           requireLiteralStringAnnotation(ann)
             .foreach(attrs += nir.Attr.Link(_))
-        case defnNir.DefineClass =>
+        case defnNir.LinkCppRuntimeClass => attrs += nir.Attr.LinkCppRuntime
+        case defnNir.DefineClass         =>
           requireLiteralStringAnnotation(ann)
             .foreach(attrs += nir.Attr.Define(_))
         case _ => ()
       }
+    }
+    if isIntrinsic then {
+      // Overrides previouslly set
+      attrs += nir.Attr.NoOpt
+      attrs += nir.Attr.NoInline
     }
     nir.Attrs.fromSeq(attrs.result())
   }
@@ -393,8 +399,11 @@ trait NirGenStat(using Context) {
     }
     val thisParam = Option.unless(isStatic) {
       nir.Val.Local(
-        fresh.namedId("this"),
-        genType(curClassSym.get)
+        fresh.namedId("this"), {
+          val clsSymbol = curClassSym.get
+          if clsSymbol.isStruct then genType(clsSymbol.info)
+          else genRefType(clsSymbol.info)
+        }
       )
     }
     val params = thisParam.toList ::: argParams
@@ -408,7 +417,8 @@ trait NirGenStat(using Context) {
         .foreach { sym =>
           val ty = genType(sym.info)
           val name = genLocalName(sym)
-          val slot = buf.let(fresh.namedId(name), nir.Op.Var(ty), unwind(fresh))
+          val slot =
+            buf.let(fresh.namedId(name), nir.Op.Var(ty), unwind(using fresh))
           curMethodEnv.enter(sym, slot)
         }
     }
@@ -574,7 +584,9 @@ trait NirGenStat(using Context) {
     }
 
     new nir.Defn.Define(
-      nir.Attrs(inlineHint = nir.Attr.AlwaysInline, isLinktimeResolved = true),
+      nir.Attrs.None
+        .withInlineHint(nir.Attr.AlwaysInline)
+        .withIsLinktimeResolved(true),
       methodName,
       nir.Type.Function(Seq.empty, retty),
       buf.toSeq
@@ -745,8 +757,8 @@ trait NirGenStat(using Context) {
    *        to true, or
    *      - the symbol was originally at the package level
    *
-   *  Other than the the fact that we also consider interfaces, this performs
-   *  the same tests as the JVM back-end.
+   *  Other than the fact that we also consider interfaces, this performs the
+   *  same tests as the JVM back-end.
    */
   private def isCandidateForForwarders(sym: Symbol): Boolean = {
     !ctx.settings.XnoForwarders.value && sym.isStatic && {
@@ -832,7 +844,7 @@ trait NirGenStat(using Context) {
       }
 
       new nir.Defn.Define(
-        attrs = nir.Attrs(inlineHint = nir.Attr.InlineHint),
+        attrs = nir.Attrs.None.withInlineHint(nir.Attr.InlineHint),
         name = forwarderName,
         ty = forwarderType,
         insts = withFreshExprBuffer { buf ?=>

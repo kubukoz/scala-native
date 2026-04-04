@@ -3,8 +3,9 @@ package junit
 
 // Ported from Scala.js
 
-import org.junit._
 import sbt.testing._
+
+import org.junit._
 
 private[junit] final class Reporter(
     eventHandler: EventHandler,
@@ -45,7 +46,7 @@ private[junit] final class Reporter(
 
   def reportIgnored(method: Option[String]): Unit = {
     logTestInfo(_.info, method, "ignored")
-    emitEvent(method, Status.Ignored)
+    emitEvent(method, Status.Ignored, 0, None)
   }
 
   def reportTestStarted(method: String): Unit =
@@ -67,7 +68,7 @@ private[junit] final class Reporter(
     )
 
     if (succeeded)
-      emitEvent(Some(method), Status.Success)
+      emitEvent(Some(method), Status.Success, timeInSeconds, None)
   }
 
   def reportErrors(
@@ -83,7 +84,7 @@ private[junit] final class Reporter(
 
     if (errors.nonEmpty) {
       emit(errors.head)
-      emitEvent(method, Status.Failure)
+      emitEvent(method, Status.Failure, timeInSeconds, Some(errors.head))
       errors.tail.foreach(emit)
     }
   }
@@ -100,7 +101,7 @@ private[junit] final class Reporter(
       e,
       timeInSeconds
     )
-    emitEvent(method, Status.Skipped)
+    emitEvent(method, Status.Skipped, timeInSeconds, Some(e))
   }
 
   private def logTestInfo(
@@ -153,12 +154,23 @@ private[junit] final class Reporter(
     prefix + Ansi.c(name, color)
   }
 
-  private def emitEvent(method: Option[String], status: Status): Unit = {
+  private def emitEvent(
+      method: Option[String],
+      status: Status,
+      timeInSeconds: Double,
+      throwable: Option[Throwable]
+  ): Unit = {
     val testName = method.fold(taskDef.fullyQualifiedName())(method =>
       taskDef.fullyQualifiedName() + "." + settings.decodeName(method)
     )
     val selector = new TestSelector(testName)
-    eventHandler.handle(new JUnitEvent(taskDef, status, selector))
+    val optionalThrowable: OptionalThrowable = new OptionalThrowable(
+      throwable.orNull
+    )
+    val duration: Long = (timeInSeconds * 1000).toLong
+    eventHandler.handle(
+      new JUnitEvent(taskDef, status, selector, optionalThrowable, duration)
+    )
   }
 
   def log(level: Reporter.Level, s: String): Unit = {
@@ -173,9 +185,11 @@ private[junit] final class Reporter(
   private def logTrace(t: Throwable): Unit = {
     val trace = t.getStackTrace
       .dropWhile { p =>
-        p.getClassName() != null && {
-          p.getClassName().startsWith("java.lang.StackTrace") ||
-          p.getClassName().startsWith("java.lang.Throwable")
+        val clsName = p.getClassName()
+        clsName != null && {
+          clsName.startsWith("java.lang.Throwable") ||
+          clsName.startsWith("scala.scalanative.runtime.StackTrace") ||
+          clsName.startsWith("scala.scalanative.runtime.Throwable")
         }
       }
     val testFileName = {
@@ -197,48 +211,36 @@ private[junit] final class Reporter(
       t: Throwable,
       testFileName: String
   ): Unit = {
-    val m0 = m
-    var m2 = m
-    var top = 0
-    var i = top
-    while (i <= m2) {
-      if (trace(i).toString.startsWith("org.junit.") ||
-          trace(i).toString.startsWith("org.hamcrest.")) {
-        if (i == top) {
-          top += 1
-        } else {
-          m2 = i - 1
-          var break = false
-          while (m2 > top && !break) {
-            val s = trace(m2).toString
-            if (!s.startsWith("java.lang.reflect.") &&
-                !s.startsWith("sun.reflect.")) {
-              break = true
-            } else {
-              m2 -= 1
-            }
-          }
-          i = m2 // break
-        }
-      }
-      i += 1
+    def isJunit(i: Int): Boolean = {
+      val cls = trace(i).getClassName
+      cls.startsWith("org.junit.") || cls.startsWith("org.hamcrest.")
     }
 
-    for (i <- top to m2) {
-      log(
-        _.error,
-        "    at " +
-          stackTraceElementToString(trace(i), testFileName)
-      )
+    def isReflect(i: Int): Boolean = {
+      val cls = trace(i).getClassName
+      cls.startsWith("java.lang.reflect.") || cls.startsWith("sun.reflect.")
     }
-    if (m0 != m2) {
+
+    var head = 0
+    while (head <= m && isJunit(head)) head += 1
+
+    var last = head
+    while (last < m && !isJunit(last + 1)) last += 1
+
+    while (last > head && isReflect(last)) last -= 1
+
+    for (i <- head to last) {
+      val msg = "    at " + stackTraceElementToString(trace(i), testFileName)
+      log(_.error, msg)
+    }
+    if (m > last) {
       // skip junit-related frames
       log(_.error, "    ...")
     } else if (framesInCommon != 0) {
       // skip frames that were in the previous trace too
       log(_.error, "    ... " + framesInCommon + " more")
     }
-    logStackTraceAsCause(trace, t.getCause, testFileName)
+    logStackTraceAsCause(trace, t.getCause(), testFileName)
   }
 
   private def logStackTraceAsCause(

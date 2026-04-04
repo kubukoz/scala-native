@@ -1,15 +1,17 @@
 // Ported from Scala.js commit: a6c1451 dated: 2021-10-16
+//
+// 'equalsOnlyOtherSets' Test added for Scala Native.
 
 package org.scalanative.testsuite.javalib.util
 
-import org.junit.Test
-import org.junit.Assert._
-
-import org.scalanative.testsuite.utils.AssertThrows.assertThrows
-
-import java.{util => ju, lang => jl}
+import java.{lang => jl, util => ju}
 
 import scala.reflect.ClassTag
+
+import org.junit.Assert._
+import org.junit.Test
+
+import org.scalanative.testsuite.utils.AssertThrows.assertThrows
 
 import Utils._
 
@@ -187,6 +189,42 @@ trait SetTest extends CollectionTest {
     assertEquals(3, hs.size)
 
     assertIteratorSameElementsAsSet(l: _*)(hs.iterator())
+  }
+
+  @Test def equalsOnlyOtherSets(): Unit = {
+    val hsUut = factory.empty[String] // Unit under test
+    val hsMatch = factory.empty[String]
+    val hsNoMatch = factory.empty[String]
+
+    val l = {
+      if (factory.allowsNullElement)
+        List("ONE", "TWO", null)
+      else
+        List("ONE", "TWO", "THREE")
+    }
+
+    val coll = TrivialImmutableCollection(l: _*)
+    assertTrue(hsUut.addAll(coll))
+    assertEquals(3, hsUut.size)
+
+    assertTrue(hsMatch.addAll(coll))
+    assertEquals(hsUut.size, hsMatch.size)
+
+    assertTrue(hsNoMatch.addAll(coll))
+    assertTrue(hsNoMatch.add("MISMATCH"))
+    assertEquals(hsUut.size + 1, hsNoMatch.size)
+
+    assertTrue("should match other content-equal set", hsUut.equals(hsMatch))
+
+    assertFalse(
+      "should not match other content-not-equal set",
+      hsUut.equals(hsNoMatch)
+    )
+
+    assertFalse(
+      "should not match other content-equal not-Set Collection",
+      hsUut.equals(coll)
+    )
   }
 }
 

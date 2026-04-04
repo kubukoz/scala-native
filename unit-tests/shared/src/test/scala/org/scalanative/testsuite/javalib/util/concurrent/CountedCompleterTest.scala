@@ -5,16 +5,17 @@
  */
 package org.scalanative.testsuite.javalib.util.concurrent
 
-import org.junit.Assert._
-import org.junit.{Test, Ignore}
-import JSR166Test._
-
-import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util
 import java.util._
+import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent._
 import java.util.concurrent.atomic._
 import java.util.function._
+
+import org.junit.Assert._
+import org.junit.{Ignore, Test}
+
+import JSR166Test._
 
 object CountedCompleterTest {
   // Runs with "mainPool" use > 1 thread. singletonPool tests use 1
@@ -505,7 +506,7 @@ class CountedCompleterTest extends JSR166Test {
   ) extends CheckedCC(parent, 1) {
     @volatile var rnumber = 0
 
-    override final protected def realCompute(): Unit = {
+    override protected final def realCompute(): Unit = {
       var f = this
       var n = number
       while (n >= 2) {
@@ -543,7 +544,7 @@ class CountedCompleterTest extends JSR166Test {
   abstract class FailingCCF(parent: CountedCompleter[Any], var number: Int)
       extends CheckedCC(parent, 1) {
     val rnumber = 0
-    override final protected def realCompute(): Unit = {
+    override protected final def realCompute(): Unit = {
       var f = this
       var n = number
       while ({ n >= 2 }) {

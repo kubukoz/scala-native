@@ -6,12 +6,14 @@
 
 package java.util.concurrent
 
-import java.util.concurrent.TimeUnit._
 import java.util
 import java.util._
+import java.util.concurrent.TimeUnit._
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks._
+
 import scala.annotation.tailrec
+
 import scala.scalanative.annotation.safePublish
 
 object ScheduledThreadPoolExecutor {
@@ -38,7 +40,7 @@ object ScheduledThreadPoolExecutor {
       new Array[RunnableScheduledFuture[AnyRef]](
         DelayedWorkQueue.INITIAL_CAPACITY
       )
-    final private val lock = new ReentrantLock
+    private final val lock = new ReentrantLock
     private var _size = 0
 
     /** Thread designated to wait for the task at the head of the queue. This
@@ -56,7 +58,7 @@ object ScheduledThreadPoolExecutor {
      */
     private var leader: Thread = null
 
-    final private val available = lock.newCondition()
+    private final val available = lock.newCondition()
 
     private def siftUp(_k: Int, key: RunnableScheduledFuture[AnyRef]): Unit = {
       var k = _k
@@ -111,7 +113,7 @@ object ScheduledThreadPoolExecutor {
     }
 
     private def indexOf(x: Any): Int = x match {
-      case null => -1
+      case null                                                  => -1
       case t: ScheduledThreadPoolExecutor#ScheduledFutureTask[_] =>
         val i = t.heapIndex
         // Sanity check; x could conceivably be a

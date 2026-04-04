@@ -1,12 +1,12 @@
 name: "MacOs tests env setup"
-description: "Used to setup MacOS tests environemt"
+description: "Used to setup MacOS tests environment"
 inputs:
   scala-version:
     description: "Scala version used in the tests"
     required: true
   java-version:
     description: "Java version to use in tests"
-    default: "8"
+    default: "17"
   llvm-version:
     description: "Custom version of LLVM to use"
   gc: 
@@ -14,23 +14,21 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-java@v4
+    - uses: coursier/cache-action@v6
+    - uses: coursier/setup-action@v1
       with:
-        distribution: "zulu"
-        java-version: ${{inputs.java-version}}
+        jvm: ${{inputs.java-version}}
+        apps: sbt
+
     - name: Calculate binary version
       shell: bash
       run: |
         version=${{ inputs.scala-version }}
         if [[ $version == 2.* ]]; then
-          binaryVersion=${version}
-          echo "binary-version=${binaryVersion}" >> $GITHUB_ENV
-          echo "project-version=${binaryVersion/./_}" >> $GITHUB_ENV
+          echo "project-version=${version/./_}" >> $GITHUB_ENV
         elif [[ $version == "3-next" ]]; then
-          echo "binary-version=3-next" >> $GITHUB_ENV
           echo "project-version=3_next" >> $GITHUB_ENV
         else 
-          echo "binary-version=3" >> $GITHUB_ENV
           echo "project-version=3" >> $GITHUB_ENV
         fi
     
@@ -43,17 +41,9 @@ runs:
       shell: bash
       if: ${{ inputs.llvm-version != '' }}
       run: |
+        brew install lld
         if [[ "${{ inputs.llvm-version }}" == "latest" ]]; then 
           brew install llvm
         else 
           brew install llvm@${{ inputs.llvm-version }}
         fi
-
-    # Loads cache with dependencies created in test-tools job
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cache/coursier
-          ~/.sbt/boot
-        key: ${{ runner.os }}-deps-${{ env.binary-version }}-${{ hashFiles('**/*.sbt') }}-${{ hashFiles('**/build.properties') }}

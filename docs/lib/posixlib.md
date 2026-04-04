@@ -1,8 +1,13 @@
 # C POSIX Library
 
-Scala Native provides bindings for a core subset of the [POSIX
-library](https://pubs.opengroup.org/onlinepubs/9699919799/idx/head.html).
-See indicated source module for limitations, if any, and usage:
+Scala Native provides bindings for a core POSIX subset in accordance with [The Open Group Base Specifications Issue 8 IEEE Std 1003.1™-2024 Edition](https://pubs.opengroup.org/onlinepubs/9799919799/).
+See the `Headers` link for details.
+
+## Supported classes
+
+For a list of currently supported POSIX Library types and methods refer to [scaladoc package](https://javadoc.io/doc/org.scala-native/posixlib_native0.5_3/latest/index.html) or consult the details that follow.
+
+## Supported Headers and Source Location
 
 | C Header | Scala Native Module |
 | -------- | ------------------- |
@@ -107,7 +112,7 @@ See indicated source module for limitations, if any, and usage:
 | [wctype.h](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/wctype.h.html)              | N/A |
 | [wordexp.h](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/wordexp.h.html)            | [scala.scalanative.posix.wordexp](https://github.com/scala-native/scala-native/blob/main/posixlib/src/main/scala/scala/scalanative/posix/wordexp.scala) |
 
-Continue to [communitylib](./communitylib.md){.interpreted-text role="ref"}.
+Continue to [communitylib](./communitylib.md)
 
 [^1]: The argument to inet_ntoa() differs from the POSIX specification
     because Scala Native supports only passing structures by reference.

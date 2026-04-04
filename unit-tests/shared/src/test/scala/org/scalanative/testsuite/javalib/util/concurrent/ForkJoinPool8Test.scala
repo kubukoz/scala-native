@@ -6,12 +6,13 @@
 
 package org.scalanative.testsuite.javalib.util.concurrent
 
-import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util._
+import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent._
 
-import org.junit._
 import org.junit.Assert._
+import org.junit._
+
 import scala.scalanative.junit.utils.AssumesHelper
 
 import JSR166Test._
@@ -171,7 +172,7 @@ class ForkJoinPool8Test extends JSR166Test {
         shouldThrow()
       } catch {
         case success: InterruptedException =>
-        case fail: Throwable =>
+        case fail: Throwable               =>
           threadUnexpectedException(fail)
       }
     }
@@ -180,7 +181,7 @@ class ForkJoinPool8Test extends JSR166Test {
       shouldThrow()
     } catch {
       case success: TimeoutException =>
-      case fail: Throwable =>
+      case fail: Throwable           =>
         threadUnexpectedException(fail)
     }
   }
@@ -216,7 +217,7 @@ class ForkJoinPool8Test extends JSR166Test {
       shouldThrow()
     } catch {
       case success: CancellationException =>
-      case fail: Throwable =>
+      case fail: Throwable                =>
         threadUnexpectedException(fail)
     }
     try {
@@ -224,7 +225,7 @@ class ForkJoinPool8Test extends JSR166Test {
       shouldThrow()
     } catch {
       case success: CancellationException =>
-      case fail: Throwable =>
+      case fail: Throwable                =>
         threadUnexpectedException(fail)
     }
     try {
@@ -232,7 +233,7 @@ class ForkJoinPool8Test extends JSR166Test {
       shouldThrow()
     } catch {
       case success: CancellationException =>
-      case fail: Throwable =>
+      case fail: Throwable                =>
         threadUnexpectedException(fail)
     }
   }

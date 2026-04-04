@@ -3,8 +3,9 @@ package nir
 
 import java.io.OutputStream
 import java.nio._
-import java.nio.file.Path
 import java.nio.channels.WritableByteChannel
+import java.nio.file.Path
+
 import scala.scalanative.io.VirtualDirectory
 
 package object serialization {
@@ -29,4 +30,14 @@ package object serialization {
       ).deserialize()
     }
   }
+
+  abstract class NirDeserializationException(message: String)
+      extends IllegalStateException(message)
+  object UnknownFormat
+      extends NirDeserializationException("Can't read non-NIR file")
+  class IncompatibleVersion(version: Versions.Version, fileName: String)
+      extends NirDeserializationException(
+        s"Can't read binary-incompatible version of NIR from '$fileName': expected (compat=${Versions.compat}, revision=${Versions.revision}), got (compat=${version.compat}, revision=${version.revision})."
+      )
+
 }

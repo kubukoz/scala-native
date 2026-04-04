@@ -62,9 +62,9 @@ also be cross built to support Scala/JVM or Scala.js if the Native
 portions have replacement code on the respective platforms.
 
 The primary purpose of this feature is to allow libraries to support
-Scala Native that need native \"glue\" code to operate. The current C
+Scala Native that need native "glue" code to operate. The current C
 interopt does not allow direct access to macro defined constants and
-functions or allow passing \"struct\"s from the stack to C functions.
+functions or allow passing "struct"s from the stack to C functions.
 Future versions of Scala Native may relax these restrictions making this
 feature obsolete.
 
@@ -81,14 +81,14 @@ so it is transparent to the library user.
 Using a library that contains native code can be used in combination
 with the feature above that allows native code in your application.
 
-## EXPERIMENTAL: Deployment Descriptor for passing settings to the compiler
+## Deployment Descriptor for passing settings to the compiler
 
-These are **experimental** features that were added because they are
+These are features that were added because they are
 used internally by Scala Native to simplify the build and organize the
 native code with their respective projects. These features allow a
 library developer that has native code included with their project to
 have better control over compilation settings used for their project. By
-adding a `scala-native.properties` file in the root of your project\'s
+adding a `scala-native.properties` file in the root of your project's
 `resources/scala-native` directory, settings can be added to the
 properties file that are added to the compile command.
 
@@ -103,34 +103,34 @@ Use the following procedure to use any of the features described below.
 
 ## Optional compilation of code if `@link` is found
 
-Libraries developed with \"glue\" code as described in the previous
+Libraries developed with "glue" code as described in the previous
 section can cause compilation errors when all the following conditions
 occur:
 
 1.  The library and/or header files are not installed
-2.  The dependency is in the library users\' build
-3.  The code that uses the \"glue\" code is not called by the
+2.  The dependency is in the library users' build
+3.  The code that uses the "glue" code is not called by the
     application or library
 
-If the glue \"code\" is being called, then the library and headers need
+If the glue "code" is being called, then the library and headers need
 to be installed to compile your application otherwise errors are
 expected.
 
 Scala Native code can include the annotation `@link("z")` for example
 that says link with the `z` library. The compiler will add a link option
 `-lz` for this library to the linking phase of the build if the code
-with the annotation is used. See `interop`{.interpreted-text
-role="ref"}, `Linking with native libraries` section for
-more information.
+with the annotation is used. See
+{ref}`interop/Linking with native libraries <linking_with_native_libraries>`
+section for more information.
 
 This **experimental** feature has been added so the users of your
 published library can avoid the error described above. Use the following
 procedure to implement this feature.
 
-1\. Add the following content to your new `scala-native.properties` file
-desdribed above. For the purposes of this example assume the library is
-`z`. Note that if your library has more that one library you can add a
-comma delimited list of libraries. If desired, the comments are not
+1. Add the following content to your new `scala-native.properties` file
+described above. For the purposes of this example assume the library is
+`z`. Note that if your library has more than one library you can add a
+comma-delimited list of libraries. If desired, the comments are not
 needed.
 
 ``` properties
@@ -140,7 +140,7 @@ needed.
 nir.link.names = z
 ```
 
-2\. Now in your native \"glue\" code add the following. The macro is
+2. Now in your native "glue" code add the following. The macro is
 named `SCALANATIVE_LINK_` plus the uppercased name of the library.
 
 ``` c
@@ -156,7 +156,7 @@ int scalanative_z_no_flush() { return Z_NO_FLUSH; }
 
 The feature works by querying the NIR code to see if the user code is
 using the `z` library. If used, `-DSCALANATIVE_LINK_Z` is passed to the
-compiler and your \"glue\" code is then compiled. Otherwise, the macro
+compiler and your "glue" code is then compiled. Otherwise, the macro
 keeps the code inside from compiling.
 
 ## Adding defines to your library when code is being compiled
@@ -173,7 +173,7 @@ preprocessor.defines = MY_DEFINE, MY_VALUE=2
 ## Add extra include paths for your library
 
 Currently, the native code compilation provides an include to your
-project\'s `resources/scala-native` directory. This means that code
+project's `resources/scala-native` directory. This means that code
 needs to use relative includes. e.g. `#include "mylib.h"` The build
 scans for all files to compile so only relative paths are needed from
 your base `scala-native` directory
@@ -190,6 +190,30 @@ needed on the Windows platform.
 compile.include.paths = platform/posix/libunwind, gc
 ```
 
+## Add C and C++ compiler specific settings
+
+You may add specific platform independent settings such as compiler standards
+and C++ exception handling settings. Each compilation unit (sub-project) or
+library is compiled using settings provided by the end user and also provided
+in the deployment descriptor included in the project. For example, if you
+include C++ code that uses exceptions and provide that setting, you should
+handle all internal exceptions within the boundaries of that code. The default
+for the Scala Native build is compiling without using C++ exceptions so
+the program could crash if the module is expecting the user to handle C++
+exceptions.
+
+*Clang command-line options tend to allow the last one specified takes effect,
+overriding any previous conflicting options.*
+
+``` properties
+# C options
+compile.c.options = -std=c17
+compile.cpp.options = -std=c++17, -fcxx-exceptions
+```
+
+
+
+
 ## Add unique identity to your library for debugging
 
 Since these features can apply to libraries that are published, those
@@ -203,7 +227,7 @@ project.name = javalib
 ```
 
 The descriptor and its settings are printed when compiling in debug
-mode. Use the following command if using \`sbt\`:
+mode. Use the following command if using `sbt`:
 
 ``` sh
 sbt --debug

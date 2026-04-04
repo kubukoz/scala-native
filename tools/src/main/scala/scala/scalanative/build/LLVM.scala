@@ -3,17 +3,25 @@ package build
 
 import java.io.{File, PrintWriter}
 import java.nio.file.{Files, Path, Paths, StandardCopyOption}
+
+import scala.concurrent._
 import scala.sys.process._
+import scala.util.{Failure, Success}
+
 import scala.scalanative.build.IO.RichPath
 import scala.scalanative.linker.ReachabilityAnalysis
 import scala.scalanative.nir.Attr.Link
 
-import scala.concurrent._
-import scala.util.Failure
-import scala.util.Success
+import _root_.java.io.IOException
 
 /** Internal utilities to interact with LLVM command-line tools. */
 private[scalanative] object LLVM {
+
+  // C++14 or newer standard is needed to compile code using Windows API
+  // shipped with Windows 10 / Server 2016+ (we do not plan supporting older versions)
+  val defaultWinCppStd = "-std=c++14"
+  val defaultCppStd = "-std=c++11"
+  val defaultCStd = "-std=c11"
 
   /** Object file extension: ".o" */
   val oExt = ".o"
@@ -31,15 +39,22 @@ private[scalanative] object LLVM {
    *
    *  @param config
    *    The configuration of the toolchain.
-   *  @param paths
-   *    The directory paths containing native files to compile.
+   *  @param analysis
+   *    The output of the reachability analysis.
+   *  @param path
+   *    The directory path containing native files to compile.
    *  @return
    *    The paths of the `.o` files.
    */
-  def compile(config: Config, path: Path)(implicit
+  def compile(
+      config: Config,
+      analysis: ReachabilityAnalysis.Result,
+      path: Path
+  )(implicit
       ec: ExecutionContext
   ): Future[Path] = {
     implicit val _config: Config = config
+    implicit val _analysis: ReachabilityAnalysis.Result = analysis
 
     val inpath = path.abs
     val outpath = inpath + oExt
@@ -51,6 +66,7 @@ private[scalanative] object LLVM {
 
   private def compileFile(srcPath: Path, objPath: Path)(implicit
       config: Config,
+      analysis: ReachabilityAnalysis.Result,
       ec: ExecutionContext
   ): Future[Path] = Future {
     val inpath = srcPath.abs
@@ -60,14 +76,10 @@ private[scalanative] object LLVM {
     val workDir = config.workDir
 
     val compiler = if (isCpp) config.clangPP.abs else config.clang.abs
-    val stdflag = {
+    val langOptions = {
       if (isLl) llvmIrFeatures
-      else if (isCpp) {
-        // C++14 or newer standard is needed to compile code using Windows API
-        // shipped with Windows 10 / Server 2016+ (we do not plan supporting older versions)
-        if (config.targetsWindows) Seq("-std=c++14")
-        else Seq("-std=c++11")
-      } else Seq("-std=gnu11")
+      else if (isCpp) cppOptions(analysis)
+      else cOptions(analysis)
     }
     val platformFlags = {
       if (config.targetsMsys) msysExtras
@@ -75,23 +87,29 @@ private[scalanative] object LLVM {
     }
 
     val configFlags = {
-      if (config.compilerConfig.multithreadingSupport)
-        Seq("-DSCALANATIVE_MULTITHREADING_ENABLED")
-      else Nil
-    }
-    val exceptionsHandling = {
-      val opt = if (isCpp) List("-fcxx-exceptions") else Nil
-      List("-fexceptions", "-funwind-tables") ::: opt
+      val multithreadingEnabled =
+        if (config.compilerConfig.multithreadingSupport)
+          Seq("-DSCALANATIVE_MULTITHREADING_ENABLED")
+        else Nil
+      val usingCppExceptions =
+        if (config.usingCppExceptions)
+          Seq("-DSCALANATIVE_USING_CPP_EXCEPTIONS")
+        else Nil
+      val allowTargetOverrrides =
+        config.compilerConfig.targetTriple.map(_ => s"-Wno-override-module")
+      multithreadingEnabled ++ usingCppExceptions ++ allowTargetOverrrides
     }
     // Always generate debug metadata on Windows, it's required for stack traces to work
     val debugFlags =
-      if (config.compilerConfig.sourceLevelDebuggingConfig.enabled || config.targetsWindows)
-        Seq("-g")
-      else Nil
+      if (config.targetsWindows) List("-g")
+      else if (config.compilerConfig.sourceLevelDebuggingConfig.enabled) {
+        // newer LLVM uses DWARFv5 by default on Linux. We support only DWARFv4 for now
+        List("-gdwarf-4")
+      } else Nil
 
     val flags: Seq[String] =
       buildTargetCompileOpts ++ flto ++ sanitizer ++ target ++
-        stdflag ++ platformFlags ++ debugFlags ++ exceptionsHandling ++
+        langOptions ++ platformFlags ++ debugFlags ++
         configFlags ++ Seq("-fvisibility=hidden", opt) ++
         Seq("-fomit-frame-pointer") ++
         config.compileOptions
@@ -169,12 +187,32 @@ private[scalanative] object LLVM {
       case Success(_) =>
     }
 
+  /** This function allows a project to have multiple `main` files by copying
+   *  the one selected to the same parent directory as the `workDir` which is by
+   *  default named `native`. Since the directory is named `native`, having a
+   *  project named `native` will by default produce an executable named
+   *  `native` which will throw an exception since the copy command uses
+   *  REPLACE_EXISTING.
+   *
+   *  Having a project or `baseName` named `native` conflicts with the build.
+   */
   private def copyOutput(config: Config, buildPath: Path) = {
     val outPath = config.artifactPath
-    config.compilerConfig.buildTarget match {
-      case BuildTarget.Application =>
-        Files.copy(buildPath, outPath, StandardCopyOption.REPLACE_EXISTING)
-      case _: BuildTarget.Library => outPath
+    try {
+      config.compilerConfig.buildTarget match {
+        case BuildTarget.Application =>
+          Files.copy(buildPath, outPath, StandardCopyOption.REPLACE_EXISTING)
+        case _: BuildTarget.Library => outPath
+      }
+    } catch {
+      case ex: IOException if (outPath.toFile().exists()) =>
+        throw new BuildException(
+          s"""|Executable build module or `baseName` is named 'native'
+              |which conflicts with the compiler `workDir`.
+              |Please rename the build module or
+              |use `withBaseName` to rename the executable.
+              |Cause: ${ex}""".stripMargin
+        )
     }
   }
 
@@ -194,69 +232,105 @@ private[scalanative] object LLVM {
         if (config.targetsWindows) Seq("dbghelp")
         else if (config.targetsOpenBSD || config.targetsNetBSD)
           Seq("pthread")
-        else Seq("pthread", "dl")
+        else Seq("pthread", "dl", "m")
       platformsLinks ++ srclinks ++ gclinks
     }.distinct
     config.logger.info(s"Linking with [${links.mkString(", ")}]")
-    val linkopts = config.linkingOptions ++ links.map("-l" + _)
+    // GNU ld and ld.lld support the --as-needed flag which avoids linking
+    // libraries (defined after the option) you don't use. LLVM intrinsics
+    // call libm which is not added by default. However, the math functions
+    // in libm as often inlined in release mode which makes it useless to
+    // link it. The Mac OS linker doesn't support the flag and libm is not
+    // in a separate library there, so we use it only in other UNIX targets
+    // (also Windows on msys and cgwin)
+    val asNeededLinkerFlags =
+      if (config.targetsWindows || config.targetsMac) Nil
+      else List("-Wl,--as-needed")
+    val linkopts =
+      asNeededLinkerFlags ++ config.linkingOptions ++ links.map("-l" + _)
 
-    val flags = {
-      val debugFlags =
-        if (config.compilerConfig.sourceLevelDebuggingConfig.enabled || config.targetsWindows)
-          Seq("-g")
-        else Nil
+    val debugFlags =
+      if (config.targetsWindows) List("-g")
+      else if (config.compilerConfig.sourceLevelDebuggingConfig.enabled) {
+        List(
+          // newer LLVM uses DWARFv5 by default on Linux. We support only DWARF 4 for now
+          "-gdwarf-4"
+        )
+      } else Nil
 
-      val platformFlags =
-        if (!config.targetsWindows) Nil
-        else {
-          // https://github.com/scala-native/scala-native/issues/2372
-          // When using LTO make sure to use lld linker instead of default one
-          // LLD might find some duplicated symbols defined in both C and C++,
-          // runtime libraries (libUCRT, libCPMT), we ignore this warnings.
-          val ltoSupport = config.compilerConfig.lto match {
-            case LTO.None => Nil
-            case _        => Seq("-fuse-ld=lld", "-Wl,/force:multiple")
-          }
-          ltoSupport
+    val platformFlags =
+      if (!config.targetsWindows) Nil
+      else {
+        // https://github.com/scala-native/scala-native/issues/2372
+        // When using LTO make sure to use lld linker instead of default one
+        // LLD might find some duplicated symbols defined in both C and C++,
+        // runtime libraries (libUCRT, libCPMT), we ignore these warnings.
+        val ltoSupport = config.compilerConfig.lto match {
+          case LTO.None => Nil
+          case _        => Seq("-fuse-ld=lld", "-Wl,/force:multiple")
         }
+        ltoSupport
+      }
 
-      // This is to ensure that the load path of the resulting dynamic library
-      // only contains the library filename, instead of the full path
-      // (i.e. in the target folder of SBT build) - this would make the library
-      // non-portable
-      val linkNameFlags =
-        if (config.compilerConfig.buildTarget == BuildTarget.LibraryDynamic)
-          if (config.targetsLinux)
-            List(s"-Wl,-soname,${config.artifactName}")
-          else if (config.targetsMac)
-            List(s"-Wl,-install_name,${config.artifactName}")
-          else Nil
+    // This is to ensure that the load path of the resulting dynamic library
+    // only contains the library filename, instead of the full path
+    // (i.e. in the target folder of SBT build) - this would make the library
+    // non-portable
+    val linkNameFlags =
+      if (config.compilerConfig.buildTarget == BuildTarget.LibraryDynamic)
+        if (config.targetsLinux)
+          List(s"-Wl,-soname,${config.artifactName}")
+        else if (config.targetsMac)
+          List(s"-Wl,-install_name,${config.artifactName}")
         else Nil
+      else Nil
 
-      val output = Seq("-o", config.buildPath.abs)
+    val output = Seq("-o", config.buildPath.abs)
 
-      buildTargetLinkOpts ++ flto ++ debugFlags ++ platformFlags ++ linkNameFlags ++ output ++ sanitizer ++ target
-    }
-    val paths = objectsPaths.map(_.abs)
     // it's a fix for passing too many file paths to the clang compiler,
     // If too many packages are compiled and the platform is windows, windows
     // terminal doesn't support too many characters, which will cause an error.
-    val llvmLinkInfo = flags ++ paths ++ linkopts
     val configFile = workDir.resolve("llvmLinkInfo").toFile
     locally {
       val pw = new PrintWriter(configFile)
-      try
-        llvmLinkInfo.foreach {
-          // Paths containg whitespaces needs to be escaped, otherwise
-          // config file might be not interpretted correctly by the LLVM
-          // in windows system, the file separator doesn't work very well, so we
-          // replace it to linux file separator
-          str => pw.println(escapeWhitespaces(str.replace("\\", "/")))
-        }
-      finally pw.close()
+      def add(str: String) =
+        // Paths containg whitespaces needs to be escaped, otherwise
+        // config file might be not interpretted correctly by the LLVM
+        // in windows system, the file separator doesn't work very well, so we
+        // replace it to linux file separator
+        pw.println(escapeWhitespaces(str.replace("\\", "/")))
+
+      try {
+        buildTargetLinkOpts.foreach(add)
+        flto.foreach(add)
+        debugFlags.foreach(add)
+        platformFlags.foreach(add)
+        linkNameFlags.foreach(add)
+        output.foreach(add)
+        sanitizer.foreach(add)
+        target.foreach(add)
+
+        val useLdd = config.linkingOptions.contains("-fuse-ld=lld")
+
+        // lld requires that object files are listed in the order
+        // they require each other. We don't do that so we wrap
+        // the files in --start-lib and --end-lib which consider
+        // them like they were in a .a library and links all symbols
+        // regardless of ordering
+        if (useLdd) add("-Wl,--start-lib")
+        objectsPaths.foreach(p => add(p.abs))
+        if (useLdd) add("-Wl,--end-lib")
+
+        linkopts.foreach(add)
+
+      } finally pw.close()
     }
 
-    val command = Seq(config.clangPP.abs, s"@${configFile.getAbsolutePath()}")
+    val compiler =
+      if (isCppRuntimeRequired(config, analysis)) config.clangPP.abs
+      else config.clang.abs
+
+    val command = Seq(compiler, s"@${configFile.getAbsolutePath()}")
     config.logger.running(command)
     Process(command, config.workDir.toFile())
   }
@@ -313,7 +387,7 @@ private[scalanative] object LLVM {
   }
 
   /** Checks the input timestamp to see if the file needs compiling. The call to
-   *  lastModified will return 0 for a non existent output file but that makes
+   *  lastModified will return 0 for a non-existent output file but that makes
    *  the timestamp always less forcing a recompile.
    *
    *  @param in
@@ -340,7 +414,7 @@ private[scalanative] object LLVM {
    *  @param out
    *    the executable
    *  @return
-   *    true if it need linking
+   *    true if it needs linking
    */
   @inline private def needsLinking(in: Seq[Path], out: Path): Boolean = {
     val inmax = in.map(_.toFile().lastModified()).max
@@ -375,6 +449,49 @@ private[scalanative] object LLVM {
       case Mode.ReleaseFull => "-O3"
     }
 
+  private def isStdFlag(option: String): Boolean =
+    option.startsWith("-std=") || option.startsWith("--std=")
+
+  private def cppOptions(
+      analysis: ReachabilityAnalysis.Result
+  )(implicit config: Config): Seq[String] = {
+    val options = config.compilerConfig.cppOptions
+    val defaultStd =
+      if (config.targetsWindows) defaultWinCppStd else defaultCppStd
+    val languageStandard = {
+      val hasStdFlag = options.exists(isStdFlag)
+      if (!hasStdFlag) List(defaultStd)
+      else Nil
+    }
+    // this will change
+    val exceptionsHandling =
+      if (isCppRuntimeRequired(config, analysis)) { // checks for -fcxx-exceptions
+        List("-fexceptions", "-funwind-tables")
+      } else
+        List("-fno-rtti", "-fno-exceptions", "-funwind-tables")
+
+    languageStandard ++ options ++ exceptionsHandling
+  }
+
+  private def cOptions(
+      analysis: ReachabilityAnalysis.Result
+  )(implicit config: Config): Seq[String] = {
+
+    val options = config.compilerConfig.cOptions
+
+    val languageStandard = {
+      val hasStdFlag = options.exists(isStdFlag)
+      if (!hasStdFlag) List(defaultCStd)
+      else Nil
+    }
+    val exceptionHandling =
+      if (isCppRuntimeRequired(config, analysis))
+        List("-fexceptions", "-funwind-tables")
+      else Nil
+
+    languageStandard ++ options ++ exceptionHandling
+  }
+
   private def llvmIrFeatures(implicit config: Config): Seq[String] = {
     implicit def nativeConfig: NativeConfig = config.compilerConfig
     val opaquePointers = Discover.features.opaquePointers.requiredFlag.toList
@@ -395,7 +512,12 @@ private[scalanative] object LLVM {
     }
 
   private def buildTargetLinkOpts(implicit config: Config): Seq[String] = {
-    val optRdynamic = if (config.targetsWindows) Nil else Seq("-rdynamic")
+    val optRdynamic =
+      if (config.targetsWindows) Nil
+      else {
+        if (config.linkingOptions.contains("-static")) Nil
+        else Seq("-rdynamic")
+      }
     config.compilerConfig.buildTarget match {
       case BuildTarget.Application =>
         optRdynamic
@@ -415,6 +537,11 @@ private[scalanative] object LLVM {
     if (str.exists(_.isWhitespace)) s""""$str""""
     else str
   }
+
+  private def isCppRuntimeRequired(
+      config: Config,
+      analysis: ReachabilityAnalysis.Result
+  ) = config.usingCppExceptions || analysis.linkCppRuntime
 
   lazy val msysExtras = Seq(
     "-D_WIN64",

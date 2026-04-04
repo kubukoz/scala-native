@@ -1,9 +1,8 @@
 package java.util.stream
 
-import java.{lang => jl}
-import java.{util => ju}
 import java.util._
 import java.util.function._
+import java.{lang => jl, util => ju}
 
 /* See "Design Note" at top of DoubleStream.scala for jl.Double & scala.Double
  * TL;DR - later is explicitly used where a primitive is desired.
@@ -261,13 +260,17 @@ private[stream] class DoubleStreamImpl(
 
     val seenElements = new ju.HashSet[scala.Double]()
 
-    // Some items may be dropped, so the estimated size is a high bound.
-    val estimatedSize = _spliter.estimateSize()
-
+    /* Create an unsized spliterator with characteristics matching JVM.
+     * One would expect DISTINCT here. JVM does that for streams of Object,
+     * but not for streams of primitives, double, int, long
+     */
     val spl =
       new Spliterators.AbstractDoubleSpliterator(
-        estimatedSize,
-        _spliter.characteristics()
+        Long.MaxValue,
+        Spliterators.maskOff(
+          _spliter.characteristics(),
+          Spliterators.sizedCharacteristicsMask | Spliterator.IMMUTABLE
+        )
       ) {
         def tryAdvance(action: DoubleConsumer): Boolean = {
           var success = false
@@ -296,12 +299,16 @@ private[stream] class DoubleStreamImpl(
   def filter(pred: DoublePredicate): DoubleStream = {
     commenceOperation()
 
-    // Some items may be filtered out, so the estimated size is a high bound.
-    val estimatedSize = _spliter.estimateSize()
-
+    /* Create an unsized spliterator with characteristics matching JVM.
+     * JVM drops some upstream spliterator characteristics. IMMUTABLE
+     * is definitely dropped. Time will tell if others also need to be dropped.
+     */
     val spl = new Spliterators.AbstractDoubleSpliterator(
-      estimatedSize,
-      _spliter.characteristics()
+      Long.MaxValue,
+      Spliterators.maskOff(
+        _spliter.characteristics(),
+        Spliterators.sizedCharacteristicsMask | Spliterator.IMMUTABLE
+      )
     ) {
       def tryAdvance(action: DoubleConsumer): Boolean = {
         var success = false
@@ -605,14 +612,37 @@ private[stream] class DoubleStreamImpl(
 
     commenceOperation() // JVM tests argument before operatedUpon or closed.
 
+    val preSkipSize = _spliter.getExactSizeIfKnown()
+
     var nSkipped = 0L
 
     while ((nSkipped < n)
         && (_spliter
           .tryAdvance((e: scala.Double) => nSkipped += 1L))) { /* skip */ }
 
+    val spl =
+      if (preSkipSize == -1) _spliter // Not SIZED at beginning
+      else {
+        val postSkipSize = _spliter.getExactSizeIfKnown()
+        if (postSkipSize != preSkipSize) {
+          _spliter // save allocation, use tryAdvance's bookkeeping
+        } else {
+          /* Current stream is SIZED and its tryAdvance does not do
+           * bookkeeping. Give downstream an accurate exactSize().
+           */
+
+          new Spliterators.AbstractDoubleSpliterator(
+            preSkipSize - nSkipped,
+            _spliter.characteristics()
+          ) {
+            def tryAdvance(action: DoubleConsumer): Boolean =
+              _spliter.tryAdvance((e: scala.Double) => action.accept(e))
+          }
+        }
+      }
+
     // Follow JVM practice; return new stream, not remainder of "this" stream.
-    new DoubleStreamImpl(_spliter, _parallel, pipeline)
+    new DoubleStreamImpl(spl, _parallel, pipeline)
   }
 
   def sorted(): DoubleStream = {

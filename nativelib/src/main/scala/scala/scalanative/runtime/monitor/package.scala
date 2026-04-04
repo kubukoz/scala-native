@@ -1,8 +1,8 @@
 package scala.scalanative.runtime
 
-import scala.scalanative.runtime.Intrinsics._
 import scala.scalanative.annotation.alwaysinline
 import scala.scalanative.meta.LinktimeInfo.{is32BitPlatform => is32bit}
+import scala.scalanative.runtime.Intrinsics._
 
 package object monitor {
 
@@ -56,7 +56,7 @@ package object monitor {
       @alwaysinline def Inflated = 1
     }
 
-    // Potentially can decreased 60bits if we would need to encode additioanl flags
+    // Potentially can decrease 60bits if we would need to encode additional flags
     @alwaysinline def ObjectMonitorOffset = 1
     @alwaysinline def ObjectMonitorBits = 63
     @alwaysinline def ObjectMonitorMask = -2L

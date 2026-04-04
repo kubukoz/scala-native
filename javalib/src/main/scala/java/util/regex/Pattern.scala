@@ -1,11 +1,11 @@
 package java.util
 package regex
 
-import scalanative.{regex => snRegex}
-
 import java.util.Arrays
 import java.util.function.Predicate
 import java.util.stream.Stream
+
+import scalanative.{regex => snRegex}
 
 // Inspired & informed by:
 // https://github.com/google/re2j/blob/master/java/com/google/re2j/Pattern.java
@@ -66,7 +66,7 @@ object Pattern {
     // left when execution reaches this point.
     //
     // The constants for these three definitely differ between j.u.regex
-    // and snRegex and must be be translated.
+    // and snRegex and must be translated.
 
     val optionTranslations = Array[(Int, Int)](
       (CASE_INSENSITIVE, snRegex.Pattern.CASE_INSENSITIVE),

@@ -1,6 +1,7 @@
 package java.util
 
 import scala.annotation.tailrec
+
 import ScalaOps._
 
 abstract class AbstractSet[E] protected ()
@@ -10,7 +11,7 @@ abstract class AbstractSet[E] protected ()
     if (that.asInstanceOf[AnyRef] eq this) true
     else {
       that match {
-        case that: Collection[_] =>
+        case that: Set[_] =>
           that.size() == this.size() && containsAll(that)
         case _ => false
       }

@@ -8,10 +8,9 @@
 package scala.scalanative
 package regex
 
-import java.util.ArrayList
-import java.util.Arrays
-import java.util.List
+import java.util.{ArrayList, Arrays, List}
 import java.{lang => jl}
+
 import scala.util.control.Breaks._
 
 import Inst.{Op => IOP}
@@ -53,7 +52,7 @@ class Machine(re2: RE2) {
 
   def submatches(): Array[Int] = {
     if (matchcap.length == 0) {
-      return Utils.EMPTY_INTS
+      return Array.emptyIntArray
     }
     val cap = new Array[Int](matchcap.length)
     System.arraycopy(matchcap, 0, cap, 0, matchcap.length)

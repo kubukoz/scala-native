@@ -1,14 +1,14 @@
 package java.lang
 
-import java.util.{ArrayList, List}
-import java.util.Map
-import java.io.{File, IOException}
-import java.util.Arrays
-import ProcessBuilder.Redirect
-// import java.lang.process._
-import scala.scalanative.meta.LinktimeInfo.isWindows
+import java.io.File
+import java.util.{ArrayList, Arrays, List, Map}
+
+import scala.scalanative.meta.LinktimeInfo
 
 final class ProcessBuilder(private var _command: List[String]) {
+
+  import ProcessBuilder.Redirect
+
   def this(command: Array[String]) = {
     this(Arrays.asList(command))
   }
@@ -23,15 +23,26 @@ final class ProcessBuilder(private var _command: List[String]) {
 
   def environment(): Map[String, String] = _environment
 
+  private[lang] def getEnvironmentAsList(): List[String] = {
+    val list = new ArrayList[String]
+    environment().forEach { (k, v) => list.add(s"$k=$v") }
+    list
+  }
+
   def directory(): File = _directory
 
   def directory(dir: File): ProcessBuilder =
     set {
-      _directory = dir match {
-        case null => defaultDirectory
-        case _    => dir
+      if (dir == null) {
+        _directory = ProcessBuilder.cwd
+        _isCwd = true
+      } else {
+        _directory = dir
+        _isCwd = dir.getCanonicalFile() == ProcessBuilder.cwd
       }
     }
+
+  private[java] def isCwd: Boolean = _isCwd
 
   def inheritIO(): ProcessBuilder = {
     redirectInput(Redirect.INHERIT)
@@ -41,7 +52,7 @@ final class ProcessBuilder(private var _command: List[String]) {
 
   def redirectError(destination: Redirect): ProcessBuilder = destination match {
     case null => set { _redirectOutput = Redirect.PIPE }
-    case d =>
+    case d    =>
       d.`type`() match {
         case Redirect.Type.READ =>
           throw new IllegalArgumentException(
@@ -54,7 +65,7 @@ final class ProcessBuilder(private var _command: List[String]) {
 
   def redirectInput(source: Redirect): ProcessBuilder = source match {
     case null => set { _redirectInput = Redirect.PIPE }
-    case s =>
+    case s    =>
       s.`type`() match {
         case Redirect.Type.WRITE | Redirect.Type.APPEND =>
           throw new IllegalArgumentException(s"$s cannot be used for input.")
@@ -66,7 +77,7 @@ final class ProcessBuilder(private var _command: List[String]) {
   def redirectOutput(destination: Redirect): ProcessBuilder =
     destination match {
       case null => set { _redirectOutput = Redirect.PIPE }
-      case s =>
+      case s    =>
         s.`type`() match {
           case Redirect.Type.READ =>
             throw new IllegalArgumentException(
@@ -103,19 +114,15 @@ final class ProcessBuilder(private var _command: List[String]) {
   def start(): Process = {
     if (_command.isEmpty()) throw new IndexOutOfBoundsException()
     if (_command.contains(null)) throw new NullPointerException()
-    if (isWindows) process.WindowsProcess(this)
-    else process.UnixProcess(this)
+    process.GenericProcess(this)
   }
 
   @inline private def set(f: => Unit): ProcessBuilder = {
     f
     this
   }
-  private def defaultDirectory = System.getenv("user.dir") match {
-    case null => new File(".")
-    case f    => new File(f)
-  }
-  private var _directory = defaultDirectory
+  private var _isCwd = true
+  private var _directory = ProcessBuilder.cwd
   private val _environment = {
     val env = System.getenv()
     new java.util.HashMap[String, String](env)
@@ -128,6 +135,13 @@ final class ProcessBuilder(private var _command: List[String]) {
 }
 
 object ProcessBuilder {
+
+  private[java] lazy val cwd =
+    new File(System.getProperty(SystemProperties.CurrentDirectoryKey))
+      .getCanonicalFile()
+
+  val nullFile = new File(if (LinktimeInfo.isWindows) "NUL" else "/dev/null")
+
   abstract class Redirect {
     def file(): File = null
 
@@ -161,6 +175,8 @@ object ProcessBuilder {
 
     val PIPE: Redirect = new RedirectImpl(Type.PIPE, null)
 
+    val DISCARD: Redirect = new RedirectImpl(Type.WRITE, nullFile)
+
     def appendTo(file: File): Redirect = {
       if (file == null) throw new NullPointerException()
       new RedirectImpl(Type.APPEND, file)
@@ -190,7 +206,7 @@ object ProcessBuilder {
         if (name == null) throw new NullPointerException()
         _values.toSeq.find(_.name() == name) match {
           case Some(t) => t
-          case None =>
+          case None    =>
             throw new IllegalArgumentException(
               s"$name is not a valid Type name"
             )

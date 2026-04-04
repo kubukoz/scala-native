@@ -3,6 +3,7 @@
 package scala.tools.partest.scalanative
 
 import java.io.File
+
 import scala.tools.partest.nest.{PathSettings, SuiteRunner}
 import scala.tools.partest.{TestState, timed}
 
@@ -20,10 +21,11 @@ trait ScalaNativeSuiteRunner extends SuiteRunner {
   override def banner: String = {
     import scala.scalanative.nir.Versions.{current => currentVersion}
 
-    super.banner.trim + s"""
-    |Scala Native version is: $currentVersion
-    |${options.show}
-    """.stripMargin
+    super.banner.trim +
+      s"""|
+          |Scala Native version is: $currentVersion
+          |${options.show}
+          |""".stripMargin
   }
 
   override def runTest(testFile: File): TestState = {

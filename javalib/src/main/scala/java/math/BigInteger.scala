@@ -1,3 +1,12 @@
+/* Ported from Scala.js commit:  ??? dated: ???
+ *
+ * Scala Native changes:
+ *
+ * 2025-02-10
+ *    - May be possible earlier changes, check Repository history.
+ *    - Added Java 9 BigInteger.TWO.
+ */
+
 /*
  * Ported by Alistair Johnson from
  * https://github.com/gwtproject/gwt/blob/master/user/super/com/google/gwt/emul/java/math/BigInteger.java
@@ -42,11 +51,16 @@
 package java.math
 
 import java.util.Random
+
 import scala.annotation.tailrec
 
 object BigInteger {
 
   final val ONE = new BigInteger(1, 1)
+
+  /** @since 9
+   */
+  final val TWO = new BigInteger(1, 2)
 
   final val TEN = new BigInteger(1, 10)
 
@@ -67,7 +81,7 @@ object BigInteger {
   private final val SMALL_VALUES = Array(
     ZERO,
     ONE,
-    new BigInteger(1, 2),
+    TWO,
     new BigInteger(1, 3),
     new BigInteger(1, 4),
     new BigInteger(1, 5),
@@ -81,8 +95,7 @@ object BigInteger {
   private final val TWO_POWS =
     Array.tabulate[BigInteger](32)(i => BigInteger.valueOf(1L << i))
 
-  /** The first non zero digit is either -1 if sign is zero, otherwise it is >=
-   *  0.
+  /** The first non zero digit is either -1 if sign is zero, otherwise it is >= 0.
    *
    *  Furthermore, it is a value that is often used and so the value computed
    *  from {@code getFirstNonzeroDigit} is cached to {@code firstNonzeroDigit}

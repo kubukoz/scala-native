@@ -2,9 +2,10 @@ package scala.scalanative
 package interflow
 
 import scala.collection.mutable
-import scala.scalanative.util.unreachable
-import scala.scalanative.nir.Defn.Define.DebugInfo
+
 import scala.scalanative.linker._
+import scala.scalanative.nir.Defn.Define.DebugInfo
+import scala.scalanative.util.unreachable
 
 private[interflow] final class MergeProcessor(
     insts: Array[nir.Inst],
@@ -26,7 +27,7 @@ private[interflow] final class MergeProcessor(
         local -> offset
     }.toMap
   val blocks = mutable.Map.empty[nir.Local, MergeBlock]
-  val todo = mutable.SortedSet.empty[nir.Local](Ordering.by(offsets))
+  val todo = mutable.SortedSet.empty[nir.Local](using Ordering.by(offsets))
 
   object currentSize extends Function0[Int] { // context-cached function
     var lastBlocksHash: Int = _
@@ -103,12 +104,18 @@ private[interflow] final class MergeProcessor(
         val mergeEmitted = mutable.AnyRefMap.empty[nir.Op, nir.Val.Local]
         val newEscapes = mutable.Set.empty[Addr]
 
+        def isSingleValue(values: Seq[nir.Val]): Boolean =
+          if (values.nonEmpty) {
+            val h = values.head
+            values.forall(_ == h)
+          } else false
+
         def mergePhi(
             values: Seq[nir.Val],
             bound: Option[nir.Type],
             localName: Option[String] = None
         ): nir.Val = {
-          if (values.distinct.size == 1) values.head
+          if (isSingleValue(values)) values.head
           else {
             val materialized = states.zip(values).map {
               case (s, v) =>
@@ -157,7 +164,9 @@ private[interflow] final class MergeProcessor(
               )
             }
           }
-          headState.locals.foreach((mergeLocal _).tupled)
+          headState.locals.foreach {
+            case (local, value) => mergeLocal(local, value)
+          }
 
           // 2. Merge heap
           def includeAddr(addr: Addr): Boolean =
@@ -526,8 +535,8 @@ private[interflow] object MergeProcessor {
 
   /* To mitigate risk of duplicated ids each merge block uses a dedicated
    *  namespace. Translation to the new namespace is performed by multiplicating
-   *  id by value of MergeBlockOffset. This adds a restiction for maximal number
-   *  of instructions within a function to no larger then value of MergeBlockOffset.
+   *  id by value of MergeBlockOffset. This adds a restriction for maximal number
+   *  of instructions within a function to no larger than value of MergeBlockOffset.
    */
   private val MergeBlockOffset = 1000000L
 

@@ -6,15 +6,15 @@
 
 package org.scalanative.testsuite.javalib.util.concurrent.atomic
 
-import org.junit.Test
-import org.junit.Assert._
-import org.scalanative.testsuite.javalib.util.concurrent.JSR166Test
-import JSR166Test._
-
-import java.util.concurrent.CyclicBarrier
-import java.util.concurrent.Executors
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.atomic.LongAdder
+import java.util.concurrent.{CyclicBarrier, ExecutorService, Executors}
+
+import org.junit.Assert._
+import org.junit.Test
+
+import org.scalanative.testsuite.javalib.util.concurrent.JSR166Test
+
+import JSR166Test._
 
 class LongAdderTest extends JSR166Test {
   import JSR166Test._
@@ -122,20 +122,22 @@ class LongAdderTest extends JSR166Test {
   /** adds by multiple threads produce correct sum
    */
   @throws[Throwable]
-  def testAddAndSumMT(): Unit = {
+  @Test def testAddAndSumMT(): Unit = {
     val incs = 1000000
     val nthreads = 4
     val pool = Executors.newCachedThreadPool()
-    val a = new LongAdder
-    val barrier = new CyclicBarrier(nthreads + 1)
-    for (i <- 0 until nthreads) {
-      pool.execute(new AdderTask(a, barrier, incs))
+    usingPoolCleaner(pool) { _ =>
+      val a = new LongAdder
+      val barrier = new CyclicBarrier(nthreads + 1)
+      for (i <- 0 until nthreads) {
+        pool.execute(new AdderTask(a, barrier, incs))
+      }
+      barrier.await
+      barrier.await
+      val total = nthreads.toLong * incs
+      val sum = a.sum
+      assertEquals(sum, total)
     }
-    barrier.await
-    barrier.await
-    val total = nthreads.toLong * incs
-    val sum = a.sum
-    assertEquals(sum, total)
     pool.shutdown()
   }
   final class AdderTask(

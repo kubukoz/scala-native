@@ -1,20 +1,14 @@
 package scala.scalanative.nscplugin
 
-import dotty.tools.dotc.plugins.PluginPhase
 import dotty.tools._
-import dotc._
-import dotc.ast.tpd._
-import scala.scalanative.nscplugin.CompilerCompat.SymUtilsCompat.setter
-import core.Contexts._
-import core.Definitions
-import core.Names._
-import core.Symbols._
-import core.Types._
-import core.Flags._
-import core.StdNames._
-import core.Constants.Constant
-import NirGenUtil.ContextCached
+import dotty.tools.dotc._
+import dotty.tools.dotc.ast.tpd._
+import dotty.tools.dotc.plugins.PluginPhase
 import dotty.tools.dotc.transform.SeqLiterals
+
+import scala.scalanative.nscplugin.CompilerCompat.SymUtilsCompat.setter
+
+import NirGenUtil.ContextCached
 
 /** This phase does:
  *    - handle TypeApply -> Apply conversion for intrinsic methods
@@ -24,6 +18,16 @@ object PostInlineNativeInterop {
 }
 
 class PostInlineNativeInterop extends PluginPhase with NativeInteropUtil {
+
+  import core.Constants.Constant
+  import core.Contexts._
+  import core.Definitions
+  import core.Flags._
+  import core.Names._
+  import core.StdNames._
+  import core.Symbols._
+  import core.Types._
+
   override val runsAfter = Set(transform.Inlining.name, PrepNativeInterop.name)
   override val runsBefore = Set(transform.FirstTransform.name)
   val phaseName = PostInlineNativeInterop.name
@@ -49,9 +53,20 @@ class PostInlineNativeInterop extends PluginPhase with NativeInteropUtil {
     // Attach exact type information to the AST to preserve the type information
     // during the type erase phase and refer to it in the NIR generation phase.
     tree match
-      case app @ Apply(TypeApply(fun, tArgs), _)
+      case app @ Apply(TypeApply(fun, tArgs), List(lambda))
           if defnNir.CFuncPtr_fromScalaFunction.contains(fun.symbol) =>
         val tys = tArgs.map(t => dealiasTypeMapper(t.tpe))
+        lambda
+          .foreachSubTree {
+            case tree @ Select(This(_), _)
+                if !tree.symbol.owner.isStaticOwner =>
+              report.error(
+                s"CFuncPtr lambda can only refer to statically reachable symbols, but it's using ${tree.symbol.showLocated}",
+                tree.srcPos
+              )
+            case _ => ()
+          }
+
         app.withAttachment(NirDefinitions.NonErasedTypes, tys)
 
       case Apply(fun, args) if defnNir.CFuncPtr_apply.contains(fun.symbol) =>
@@ -74,7 +89,7 @@ class PostInlineNativeInterop extends PluginPhase with NativeInteropUtil {
         }
         val tpeSym = tpe.typeSymbol
         if (tpe.isAny || tpe.isNothingType || tpe.isNullType ||
-            tpeSym.isAbstractType && !tpeSym.isAllOf(DeferredType | TypeParam))
+            tpeSym.is(DeferredType, butNot = TypeParam))
           report.error(
             s"Stackalloc requires concrete type but ${tpe.show} found",
             tree.srcPos

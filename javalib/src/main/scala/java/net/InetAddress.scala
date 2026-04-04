@@ -6,28 +6,24 @@ package java.net
  *   https://github.com/armanbilge/epollcat (and other repositories).
  */
 
-import scala.scalanative.unsafe._
-import scala.scalanative.unsigned._
+import java.io.IOException
+import java.{util => ju}
 
 import scala.annotation.tailrec
 
-import java.io.IOException
-
-import java.{util => ju}
-
+import scala.scalanative.libc.LibcExt
+import scala.scalanative.meta.LinktimeInfo.{isLinux, isMac}
 import scala.scalanative.posix.arpa.inet._
-import scala.scalanative.posix.errno.errno
-import scala.scalanative.posix.netinet.in._
-import scala.scalanative.posix.netinet.inOps._
 import scala.scalanative.posix.netdb._
 import scala.scalanative.posix.netdbOps._
-import scala.scalanative.posix.string.{memcpy, strerror}
+import scala.scalanative.posix.netinet.in._
+import scala.scalanative.posix.netinet.inOps._
+import scala.scalanative.posix.string.memcpy
 import scala.scalanative.posix.sys.socket._
-import scala.scalanative.posix.sys.socketOps._
-import scala.scalanative.posix.time.{time_t, time, difftime}
+import scala.scalanative.posix.time.{difftime, time, time_t}
 import scala.scalanative.posix.unistd
-
-import scala.scalanative.meta.LinktimeInfo.{isLinux, isMac}
+import scala.scalanative.unsafe._
+import scala.scalanative.unsigned._
 
 /* Design note:
  *    Much of java.net, both in JVM and Scala Native defines or assumes
@@ -59,7 +55,7 @@ class InetAddress protected (ipAddress: Array[Byte], originalHost: String)
        * Scala Native has historically used a looser sense of
        * comparing only address bytes and letting hostname differ.
        *
-       * This is analogous to the difference between a case sensitive and
+       * This is analogous to the difference between a case-sensitive and
        * insensitive test of strings. Each has its use case.
        *
        * Currently the looser comparison of InetAddress instances must be done
@@ -240,7 +236,7 @@ object InetAddress {
 
     if (result == null)
       throw new IOException(
-        s"inet_ntop IPv4 failed,${fromCString(strerror(errno))}"
+        s"inet_ntop IPv4 failed,${LibcExt.strError()}"
       )
 
     fromCString(dst)
@@ -698,7 +694,7 @@ object InetAddress {
      * if the host resolves as numeric.  If the host resolves to non-numeric
      * then the InetAddress is created using that String.
      *
-     * There is not good way to test after a single omnibus lookup to tell
+     * There is no good way to test after a single omnibus lookup to tell
      * if the host resolved as numeric or non-numeric.  inet_pton() for
      * IPv4 addresses requires full dotted decimal: ddd.ddd.ddd.ddd.
      * ScalaJVM parses and passes some more obscure but valid IPv4 addresses.
@@ -726,7 +722,7 @@ object InetAddress {
 
     val ghnStatus = unistd.gethostname(hostName, MAXHOSTNAMELEN);
     if (ghnStatus != 0) {
-      throw new UnknownHostException(fromCString(strerror(errno)))
+      throw new UnknownHostException(LibcExt.strError())
     } else {
       try {
         /* OS library routine should have NUL terminated 'hostName'.
@@ -739,7 +735,7 @@ object InetAddress {
          *   has been found by searching the 4 combinations of the 2x2 matrix:
          *   IPv4/IPv6 by TCP/UDP.
          *
-         *   Java 8 does not throw in this situation, it appears to fallback
+         *   Java 8 does not throw in this situation, it appears to fall back
          *   to creating an InetAddress using the hostname and the IPv4
          *   loopback address 127.0.0.1.  Be robust and do the same here.
          */

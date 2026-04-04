@@ -1,15 +1,10 @@
 package java.util.zip
 
 import java.io.{
-  EOFException,
-  IOException,
-  InputStream,
-  PushbackInputStream,
+  EOFException, IOException, InputStream, PushbackInputStream,
   UTFDataFormatException
 }
-
 import java.nio.charset.{Charset, StandardCharsets}
-
 import java.util.jar.JarEntry
 
 // Ported from Apache Harmony. Updated, especially Charset, for Scala Native.
@@ -105,7 +100,7 @@ class ZipInputStream(_in: InputStream, charset: Charset)
     if (failure != null) {
       failure match {
         case _: IOException | _: RuntimeException => throw failure
-        case e =>
+        case e                                    =>
           val error = new AssertionError()
           error.initCause(failure)
           throw error

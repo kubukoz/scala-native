@@ -6,16 +6,14 @@
 
 package java.util.concurrent.locks
 
-import java.util.ArrayList
-import java.util.Collection
-import java.util.Date
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.ForkJoinPool
-import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.{ForkJoinPool, RejectedExecutionException, TimeUnit}
+import java.util.{ArrayList, Collection, Date}
+
 import scala.annotation.tailrec
-import scala.scalanative.runtime.{fromRawPtr, Intrinsics}
-import scala.scalanative.libc.stdatomic.{AtomicInt, AtomicRef}
+
 import scala.scalanative.libc.stdatomic.memory_order._
+import scala.scalanative.libc.stdatomic.{AtomicInt, AtomicRef}
+import scala.scalanative.runtime.{Intrinsics, fromRawPtr}
 
 @SerialVersionUID(7373984972572414691L)
 object AbstractQueuedSynchronizer { // Node status bits, also used as argument and return values
@@ -23,7 +21,7 @@ object AbstractQueuedSynchronizer { // Node status bits, also used as argument a
   private[locks] val CANCELLED = 0x80000000 // must be negative
   private[locks] val COND = 2 // in a condition wait
 
-  abstract private[locks] class Node {
+  private[locks] abstract class Node {
     var waiter: Thread = _ // visibly nonnull when enqueued
     @volatile var prev: Node = _ // initially attached via casTail
     @volatile var next: Node = _ // visibly nonnull when signallable
@@ -60,11 +58,11 @@ object AbstractQueuedSynchronizer { // Node status bits, also used as argument a
   }
 
   // Concrete classes tagged by type
-  final private[locks] class ExclusiveNode extends Node {}
+  private[locks] final class ExclusiveNode extends Node {}
 
-  final private[locks] class SharedNode extends Node {}
+  private[locks] final class SharedNode extends Node {}
 
-  final private[locks] class ConditionNode
+  private[locks] final class ConditionNode
       extends Node
       with ForkJoinPool.ManagedBlocker {
 
@@ -119,11 +117,11 @@ abstract class AbstractQueuedSynchronizer protected ()
     fromRawPtr(Intrinsics.classFieldRawPtr(this, "state"))
   )
 
-  final protected def getState(): Int = state
+  protected final def getState(): Int = state
 
-  final protected def setState(newState: Int): Unit = state = newState
+  protected final def setState(newState: Int): Unit = state = newState
 
-  final protected def compareAndSetState(c: Int, v: Int): Boolean =
+  protected final def compareAndSetState(c: Int, v: Int): Boolean =
     stateAtomic.compareExchangeStrong(c, v)
 
   private def casTail(c: Node, v: Node) =
@@ -136,7 +134,7 @@ abstract class AbstractQueuedSynchronizer protected ()
       tail = h
   }
 
-  final private[locks] def enqueue(node: Node): Unit = {
+  private[locks] final def enqueue(node: Node): Unit = {
     @tailrec
     def tryEnqueue(): Unit = {
       val t = tail
@@ -157,7 +155,7 @@ abstract class AbstractQueuedSynchronizer protected ()
     if (node != null) tryEnqueue()
   }
 
-  final private[locks] def isEnqueued(
+  private[locks] final def isEnqueued(
       node: Node
   ): Boolean = {
     @tailrec
@@ -169,7 +167,7 @@ abstract class AbstractQueuedSynchronizer protected ()
     checkLoop(tail)
   }
 
-  final private[locks] def acquire(
+  private[locks] final def acquire(
       _node: Node,
       arg: Int,
       shared: Boolean,
@@ -470,7 +468,7 @@ abstract class AbstractQueuedSynchronizer protected ()
     false
   }
 
-  final private[locks] def apparentlyFirstQueuedIsExclusive() = {
+  private[locks] final def apparentlyFirstQueuedIsExclusive() = {
     val h = head
     val s = if (h != null) h.next else null
 
@@ -495,7 +493,7 @@ abstract class AbstractQueuedSynchronizer protected ()
     def loop(p: Node, acc: Int): Int = {
       p match {
         case null => acc
-        case p =>
+        case p    =>
           val n =
             if (p.waiter != null) acc + 1
             else acc
@@ -791,11 +789,11 @@ abstract class AbstractQueuedSynchronizer protected ()
       !cancelled
     }
 
-    final private[locks] def isOwnedBy(sync: AbstractQueuedSynchronizer) = {
+    private[locks] final def isOwnedBy(sync: AbstractQueuedSynchronizer) = {
       sync eq AbstractQueuedSynchronizer.this
     }
 
-    final private[locks] def hasWaiters(): Boolean = {
+    private[locks] final def hasWaiters(): Boolean = {
       if (!isHeldExclusively()) throw new IllegalMonitorStateException
 
       var w = firstWaiter
@@ -806,7 +804,7 @@ abstract class AbstractQueuedSynchronizer protected ()
       false
     }
 
-    final private[locks] def getWaitQueueLength(): Int = {
+    private[locks] final def getWaitQueueLength(): Int = {
       if (!isHeldExclusively())
         throw new IllegalMonitorStateException
 
@@ -819,7 +817,7 @@ abstract class AbstractQueuedSynchronizer protected ()
       n
     }
 
-    final private[locks] def getWaitingThreads(): Collection[Thread] = {
+    private[locks] final def getWaitingThreads(): Collection[Thread] = {
       if (!isHeldExclusively()) throw new IllegalMonitorStateException
       val list = new ArrayList[Thread]
       var w = firstWaiter

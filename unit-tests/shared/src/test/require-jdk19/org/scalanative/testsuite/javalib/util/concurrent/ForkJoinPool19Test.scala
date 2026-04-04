@@ -1,10 +1,10 @@
 package org.scalanative.testsuite.javalib.util.concurrent
 
-import java.util.concurrent._
 import java.util.concurrent.TimeUnit.MILLISECONDS
+import java.util.concurrent._
 
-import org.junit._
 import org.junit.Assert._
+import org.junit._
 
 object ForkJoinPool19Test {
   final class FJException(cause: Throwable) extends RuntimeException(cause) {
@@ -86,7 +86,7 @@ class ForkJoinPool19Test extends JSR166Test {
         shouldThrow()
       } catch {
         case success: InterruptedException =>
-        case fail: Throwable =>
+        case fail: Throwable               =>
           threadUnexpectedException(fail)
       }
       Thread.currentThread.interrupt()
@@ -95,7 +95,7 @@ class ForkJoinPool19Test extends JSR166Test {
         shouldThrow()
       } catch {
         case success: InterruptedException =>
-        case fail: Throwable =>
+        case fail: Throwable               =>
           threadUnexpectedException(fail)
       }
     }
@@ -104,7 +104,7 @@ class ForkJoinPool19Test extends JSR166Test {
       shouldThrow()
     } catch {
       case success: TimeoutException =>
-      case fail: Throwable =>
+      case fail: Throwable           =>
         threadUnexpectedException(fail)
     }
   }
@@ -153,7 +153,7 @@ class ForkJoinPool19Test extends JSR166Test {
       shouldThrow()
     } catch {
       case success: CancellationException =>
-      case fail: Throwable =>
+      case fail: Throwable                =>
         threadUnexpectedException(fail)
     }
     try {

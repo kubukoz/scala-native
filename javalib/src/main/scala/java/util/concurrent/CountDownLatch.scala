@@ -6,7 +6,9 @@
 package java.util.concurrent
 
 import java.util.concurrent.locks.AbstractQueuedSynchronizer
+
 import scala.annotation.tailrec
+
 import scala.scalanative.annotation.safePublish
 
 object CountDownLatch {
@@ -15,7 +17,7 @@ object CountDownLatch {
    *  count.
    */
   @SerialVersionUID(4982264981922014374L)
-  final private class Sync(val count: Int) extends AbstractQueuedSynchronizer {
+  private final class Sync(val count: Int) extends AbstractQueuedSynchronizer {
     setState(count)
 
     private[concurrent] def getCount() = getState()
@@ -28,7 +30,7 @@ object CountDownLatch {
     override protected def tryReleaseShared(releases: Int): Boolean = { // Decrement count; signal when transition to zero
       @tailrec
       def loop(): Boolean = getState() match {
-        case 0 => false
+        case 0     => false
         case state =>
           val nextState = state - 1
           if (compareAndSetState(state, nextState)) {

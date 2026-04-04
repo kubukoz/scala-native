@@ -1,10 +1,13 @@
+// scalafmt: {maxColumn = 160}
 package scala.scalanative
 package codegen
 
 import scala.collection.mutable
-import scalanative.util.{ScopedVar, unsupported}
-import scalanative.linker._
+
 import scalanative.interflow.UseDef.eliminateDeadCode
+import scalanative.linker._
+import scalanative.nir.ControlFlow.{Block, Graph}
+import scalanative.util.{ScopedVar, unsupported}
 
 private[scalanative] object Lower {
 
@@ -13,11 +16,9 @@ private[scalanative] object Lower {
   )(implicit meta: Metadata, logger: build.Logger): Seq[nir.Defn] =
     (new Impl).onDefns(defns)
 
-  private final class Impl(implicit meta: Metadata, logger: build.Logger)
-      extends nir.Transform {
+  private final class Impl(implicit meta: Metadata, logger: build.Logger) extends nir.Transform {
     import meta._
-    import meta.config
-    import meta.layouts.{Rtti, ClassRtti, ArrayHeader}
+    import meta.layouts.{ArrayHeader, ClassRtti, ITable, Rtti}
 
     implicit val analysis: ReachabilityAnalysis.Result = meta.analysis
 
@@ -26,9 +27,10 @@ private[scalanative] object Lower {
     private val zero = nir.Val.Int(0)
     private val one = nir.Val.Int(1)
     val RttiClassIdPath = Seq(zero, nir.Val.Int(Rtti.ClassIdIdx))
-    val RttiTraitIdPath = Seq(zero, nir.Val.Int(Rtti.TraitIdIdx))
     val ClassRttiDynmapPath = Seq(zero, nir.Val.Int(ClassRtti.DynmapIdx))
     val ClassRttiVtablePath = Seq(zero, nir.Val.Int(ClassRtti.VtableIdx))
+    val ClassRttiITableSizePath = Seq(zero, nir.Val.Int(ClassRtti.ITableSizeIdx))
+    val ClassRttiItablesPath = Seq(zero, nir.Val.Int(ClassRtti.ItablesIdx))
     val ArrayHeaderLengthPath = Seq(zero, nir.Val.Int(ArrayHeader.LengthIdx))
 
     // Type of the bare runtime type information struct.
@@ -45,8 +47,40 @@ private[scalanative] object Lower {
 
     private val fresh = new util.ScopedVar[nir.Fresh]
     private val unwindHandler = new util.ScopedVar[Option[nir.Local]]
-    private val currentDefn = new util.ScopedVar[nir.Defn.Define]
-    private val nullGuardedVals = mutable.Set.empty[nir.Val]
+    private val currentDefnGraph = new util.ScopedVar[Graph]
+    private implicit val currentDefn: util.ScopedVar[nir.Defn.Define] = new util.ScopedVar()
+    private implicit val intrinsicMethods: util.ScopedVar[mutable.Map[nir.Local, IntrinsicCall]] = new util.ScopedVar()
+    private val blockInfo = mutable.Map.empty[Block, BlockInfo]
+    private var currentBlock: Block = _
+    private def getCurrentBlockInfo: BlockInfo = {
+      assert(currentBlock != null)
+      blockInfo.getOrElseUpdate(currentBlock, new BlockInfo())
+    }
+    class BlockInfo(
+        val nullGuardedVals: mutable.Set[nir.Val] = mutable.Set.empty
+    )
+    private def findNonRecursive(
+        current: Block,
+        predicate: BlockInfo => Boolean,
+        visited: mutable.Set[Block] = mutable.Set.empty
+    ): Option[BlockInfo] = blockInfo.get(current) match {
+      case Some(info) if predicate(info) => Some(info)
+      case _                             =>
+        if (visited.add(current))
+          current.pred.iterator
+            .map(findNonRecursive(_, predicate, visited))
+            .collectFirst { case Some(found) => found }
+        else None
+    }
+    def isNullGuarded(currentBlock: Block, v: nir.Val): Boolean = {
+      def isHandled(block: BlockInfo): Boolean =
+        block.nullGuardedVals.contains(v)
+      blockInfo.get(currentBlock).exists(isHandled) ||
+        currentBlock.pred.nonEmpty && currentBlock.pred.forall {
+          findNonRecursive(_, isHandled).isDefined
+        }
+    }
+
     private def currentDefnRetType = {
       val nir.Type.Function(_, ret) = currentDefn.get.ty
       ret
@@ -67,7 +101,7 @@ private[scalanative] object Lower {
 
     private def unwind: nir.Next =
       unwindHandler.get.fold[nir.Next](nir.Next.None) { handler =>
-        val exc = nir.Val.Local(fresh(), nir.Rt.Object)
+        val exc = nir.Val.Local(fresh(), nir.Rt.Throwable)
         nir.Next.Unwind(exc, nir.Next.Label(handler, Seq(exc)))
       }
 
@@ -77,11 +111,9 @@ private[scalanative] object Lower {
       defns.foreach {
         case _: nir.Defn.Class | _: nir.Defn.Module | _: nir.Defn.Trait =>
           ()
-        case nir.Defn.Declare(attrs, MethodRef(_: Class | _: Trait, _), _)
-            if !attrs.isExtern =>
+        case nir.Defn.Declare(attrs, MethodRef(_: Class | _: Trait, _), _) if !attrs.isExtern =>
           ()
-        case nir.Defn.Var(attrs, FieldRef(_: Class, _), _, _)
-            if !attrs.isExtern =>
+        case nir.Defn.Var(attrs, FieldRef(_: Class, _), _, _) if !attrs.isExtern =>
           ()
         case defn =>
           buf += onDefn(defn)
@@ -95,10 +127,12 @@ private[scalanative] object Lower {
         val nir.Type.Function(_, ty) = defn.ty
         ScopedVar.scoped(
           fresh := nir.Fresh(defn.insts),
-          currentDefn := defn
+          currentDefn := defn,
+          currentDefnGraph := Graph(defn.insts),
+          intrinsicMethods := mutable.Map.empty
         ) {
           try super.onDefn(defn)
-          finally nullGuardedVals.clear()
+          finally blockInfo.clear()
         }
       case _ =>
         super.onDefn(defn)
@@ -133,25 +167,36 @@ private[scalanative] object Lower {
     }
 
     override def onInsts(insts: Seq[nir.Inst]): Seq[nir.Inst] = {
+      val defn = currentDefn.get
       val buf = new nir.InstructionBuilder()(fresh)
       val handlers = new nir.InstructionBuilder()(fresh)
 
       buf += insts.head
 
-      def newUnwindHandler(
-          next: nir.Next
-      )(implicit pos: nir.SourcePosition): Option[nir.Local] =
+      // Add stack overflow guard test
+      // On Windows we use builtin mechanism for stack overflow detection
+      // On Unix, due to unreliable unwinding from signal handlers, we introduce polling at the begining of possibly recursive methods
+      if (shouldGenerateStackOverflowChecks(defn)) {
+        buf.call(CheckStackOverflowGuardsSig, CheckStackOverflowGuards, Nil, nir.Next.None)(defn.pos, nir.ScopeId.TopLevel)
+      }
+
+      var unwindHandlerCache = mutable.Map.empty[nir.Next, Option[nir.Local]]
+      def getUnwindHandler(next: nir.Next)(implicit pos: nir.SourcePosition): Option[nir.Local] = unwindHandlerCache.getOrElseUpdate(
+        next,
         next match {
-          case nir.Next.None =>
-            None
+          case nir.Next.None              => None
           case nir.Next.Unwind(exc, next) =>
             val handler = fresh()
             handlers.label(handler, Seq(exc))
+            if (platform.useCxxExceptions) {
+              handlers.call(ExceptionOnCatchSig, ExceptionOnCatch, Seq(exc), nir.Next.None)(pos, nir.ScopeId.TopLevel)
+            }
             handlers.jump(next)
             Some(handler)
           case _ =>
             util.unreachable
         }
+      )
 
       insts.foreach {
         case inst @ nir.Inst.Let(n, nir.Op.Var(ty), unwind) =>
@@ -160,6 +205,7 @@ private[scalanative] object Lower {
       }
 
       val nir.Inst.Label(firstLabel, _) = insts.head: @unchecked
+      currentBlock = currentDefnGraph.get.find(firstLabel)
       val labelPositions = insts
         .collect { case nir.Inst.Label(id, _) => id }
         .zipWithIndex
@@ -169,14 +215,14 @@ private[scalanative] object Lower {
       genThisValueNullGuardIfUsed(
         currentDefn.get,
         buf,
-        () => newUnwindHandler(nir.Next.None)(insts.head.pos)
+        () => getUnwindHandler(nir.Next.None)(insts.head.pos)
       )
 
       implicit var lastScopeId: nir.ScopeId = nir.ScopeId.TopLevel
       insts.tail.foreach {
         case inst @ nir.Inst.Let(n, op, unwind) =>
           ScopedVar.scoped(
-            unwindHandler := newUnwindHandler(unwind)(inst.pos)
+            unwindHandler := getUnwindHandler(unwind)(inst.pos)
           ) {
             lastScopeId = inst.scopeId
             genLet(buf, n, op)(inst.pos, lastScopeId)
@@ -184,14 +230,14 @@ private[scalanative] object Lower {
 
         case inst @ nir.Inst.Throw(v, unwind) =>
           ScopedVar.scoped(
-            unwindHandler := newUnwindHandler(unwind)(inst.pos)
+            unwindHandler := getUnwindHandler(unwind)(inst.pos)
           ) {
-            genThrow(buf, v)(inst.pos, lastScopeId)
+            genThrow(buf, v, unwind)(inst.pos, lastScopeId)
           }
 
         case inst @ nir.Inst.Unreachable(unwind) =>
           ScopedVar.scoped(
-            unwindHandler := newUnwindHandler(unwind)(inst.pos)
+            unwindHandler := getUnwindHandler(unwind)(inst.pos)
           ) {
             genUnreachable(buf)(inst.pos)
           }
@@ -217,17 +263,30 @@ private[scalanative] object Lower {
 
         case inst @ nir.Inst.Jump(next) =>
           implicit val pos: nir.SourcePosition = inst.pos
-          // Generate GC yield points before backward jumps, eg. in loops
+          // Generate GC yield points before backward jumps, e.g. in loops
           next match {
-            case nir.Next.Label(target, _)
-                if labelPositions(target) < currentBlockPosition =>
+            case nir.Next.Label(target, _) if labelPositions(target) <= currentBlockPosition =>
               genGCYieldpoint(buf)
             case _ => ()
           }
           buf += nir.Inst.Jump(genNext(buf, next))
 
-        case inst @ nir.Inst.Label(name, _) =>
-          currentBlockPosition = labelPositions(name)
+        case inst @ nir.Inst.Label(id, params) =>
+          currentBlockPosition = labelPositions(id)
+          currentBlock = currentDefnGraph.get.find
+            .get(id)
+            .getOrElse {
+              // Block is not reachable, it's not a part of control flow graph
+              val instIdx = insts.indexOf(inst)
+              val lastInstIdx =
+                insts.indexWhere(_.isInstanceOf[nir.Inst.Cf], from = instIdx)
+              Block(
+                id = id,
+                params = params,
+                insts = insts.slice(instIdx, lastInstIdx + 1),
+                isEntry = false
+              )(inst.pos)
+            }
           buf += inst
 
         case inst =>
@@ -253,7 +312,22 @@ private[scalanative] object Lower {
 
       buf ++= handlers
 
-      eliminateDeadCode(buf.toSeq.map(onInst))
+      val loweredInsts = buf.toSeq.map(onInst)
+      try eliminateDeadCode(loweredInsts)
+      catch {
+        case scala.util.control.NonFatal(error) =>
+          logger.synchronized {
+            logger.error(
+              s"""|Dead code elimnation failed: ${error.getMessage()}
+                  |Original defn: 
+                  |${currentDefn.get.show}
+                  |Lowered instructions: 
+                  |${loweredInsts.zipWithIndex.map { case (inst, idx) => s"${idx.toString().padTo(4, ' ')}| ${inst.show}" }.mkString("\n")}
+                  |""".stripMargin
+            )
+          }
+          throw error
+      }
     }
 
     override def onInst(inst: nir.Inst): nir.Inst = {
@@ -442,11 +516,20 @@ private[scalanative] object Lower {
 
     def genThrow(
         buf: nir.InstructionBuilder,
-        exc: nir.Val
+        exc: nir.Val,
+        unwind: nir.Next
     )(implicit srcPosition: nir.SourcePosition, scopeId: nir.ScopeId) = {
       genGuardNotNull(buf, exc)
-      genOp(buf, fresh(), nir.Op.Call(throwSig, throw_, Seq(exc)))
-      buf.unreachable(nir.Next.None)
+      unwind match {
+        case nir.Next.Unwind(excVal, toLabel) =>
+          // We know exactly where the next exception handler is defined.
+          // Jump to the label and skip unwinding
+          buf.jump(toLabel.id, Seq(exc))
+        case _ =>
+          // Invoke scalanative_throw and let exception handling find the handler
+          genOp(buf, fresh(), nir.Op.Call(throwSig, throw_, Seq(exc)))
+          buf.unreachable(nir.Next.None)
+      }
     }
 
     def genUnreachable(
@@ -490,7 +573,10 @@ private[scalanative] object Lower {
         case op: nir.Op.Conv =>
           genConvOp(buf, n, op)
         case op: nir.Op.Call =>
-          genCallOp(buf, n, op)
+          op match {
+            case IntrinsicCall(kind) => genIntrinsicCallOp(kind, buf, n, op)
+            case _                   => genCallOp(buf, n, op)
+          }
         case op: nir.Op.Comp =>
           genCompOp(buf, n, op)
         case op: nir.Op.Bin =>
@@ -504,13 +590,12 @@ private[scalanative] object Lower {
         case nir.Op.Var(_) =>
           () // Already emmited
         case nir.Op.Varload(nir.Val.Local(slot, nir.Type.Var(ty))) =>
-          buf.let(n, nir.Op.Load(ty, nir.Val.Local(slot, nir.Type.Ptr)), unwind)
+          genLoadOp(buf, n, nir.Op.Load(ty, nir.Val.Local(slot, nir.Type.Ptr)))
         case nir.Op.Varstore(nir.Val.Local(slot, nir.Type.Var(ty)), value) =>
-          buf.let(
+          genStoreOp(
+            buf,
             n,
-            nir.Op
-              .Store(ty, nir.Val.Local(slot, nir.Type.Ptr), genVal(buf, value)),
-            unwind
+            nir.Op.Store(ty, nir.Val.Local(slot, nir.Type.Ptr), genVal(buf, value))
           )
         case op: nir.Op.Arrayalloc =>
           genArrayallocOp(buf, n, op)
@@ -538,7 +623,8 @@ private[scalanative] object Lower {
         case ty: nir.Type.RefKind if !ty.isNullable =>
           ()
 
-        case _ if nullGuardedVals.add(obj) =>
+        case _ if !isNullGuarded(currentBlock, obj) =>
+          getCurrentBlockInfo.nullGuardedVals += obj
           import buf._
           val v = genVal(buf, obj)
 
@@ -600,7 +686,7 @@ private[scalanative] object Lower {
       val nir.Op.Fieldload(ty, obj, name) = op
       val field = name match {
         case FieldRef(_, field) => field
-        case _ =>
+        case _                  =>
           throw new LinkingException(s"Metadata for field '$name' not found")
       }
 
@@ -628,7 +714,7 @@ private[scalanative] object Lower {
       val nir.Op.Fieldstore(ty, obj, name, value) = op
       val field = name match {
         case FieldRef(_, field) => field
-        case _ =>
+        case _                  =>
           throw new LinkingException(s"Metadata for field '$name' not found")
       }
 
@@ -753,6 +839,28 @@ private[scalanative] object Lower {
       buf.let(n, nir.Op.Comp(comp, ty, left, right), unwind)
     }
 
+    private def shouldGenerateStackOverflowChecks(defn: nir.Defn.Define): Boolean = {
+      if (platform.targetsWindows) false
+      else if (!defn.name.sig.isMethod) false
+      else {
+        val owner = defn.name.top
+        val ownerName = defn.name.top.id
+        // Ignore list for methods that are performance critical
+        val shouldSkip =
+          owner == nir.Rt.Object.name ||
+            owner == nir.Rt.String.name ||
+            ownerName.startsWith("scala.scalanative.runtime.package") ||
+            ownerName.startsWith("scala.scalanative.runtime.monitor.") ||
+            ownerName.startsWith("scala.scalanative.unsafe.") ||
+            ownerName.startsWith("java.lang.") && {
+              ownerName == "java.lang.StringBuilder" ||
+              ownerName == "java.lang.AbstractStringBuilder" ||
+              ownerName == "java.lang.System$"
+            }
+        !shouldSkip && meta.analysis.references.isSelfRecursive(defn.name)
+      }
+    }
+
     // Cached function
     private object shouldGenerateGCYieldPoints {
       import scalanative.build.GC._
@@ -796,6 +904,85 @@ private[scalanative] object Lower {
       }
     }
 
+    // Fastpath lookup for itable entry calculated based on input traitId
+    // Returns a pointer to ITableEntry struct - {id: int, methods: void**}
+    def genItableFastLookup(trt: Trait, buf: nir.InstructionBuilder)(rtti: nir.Val, traitId: nir.Val.Int, itableSize: nir.Val)(implicit
+        srcPosition: nir.SourcePosition,
+        scopeId: nir.ScopeId
+    ): nir.Val = {
+      import buf._
+      val itablesPtr = let(nir.Op.Elem(ClassRtti.layout, rtti, ClassRttiItablesPath), unwind)
+      val itables = let(nir.Op.Load(nir.Type.Ptr, itablesPtr), unwind)
+      val itableIdx = let(nir.Op.Bin(nir.Bin.And, nir.Type.Int, traitId, itableSize), unwind)
+      let(nir.Op.Elem(nir.Type.StructValue(nir.Type.Int :: nir.Type.Ptr :: Nil), itables, Seq(itableIdx)), unwind)
+    }
+
+    type ITableLookupGenerator = (
+        nir.InstructionBuilder, // buf
+        nir.Val.Int, // traitId
+        nir.Val, // itableSize
+        nir.Local // toLabel
+    ) => nir.Val.Local
+    def genItableLookup(trt: Trait, buf: nir.InstructionBuilder, mayBeNotFound: Boolean)(resultLabel: Option[nir.Local], rtti: nir.Val, resultType: nir.Type)(
+        genFastPath: ITableLookupGenerator,
+        genSlowPath: ITableLookupGenerator
+    )(implicit
+        srcPosition: nir.SourcePosition,
+        scopeId: nir.ScopeId
+    ): nir.Val.Local = {
+      import buf._
+      val traitId = nir.Val.Int(meta.ids(trt))
+      val itableSizePtr = let(nir.Op.Elem(ClassRtti.layout, rtti, ClassRttiITableSizePath), unwind)
+      val itableSize = let(nir.Op.Load(nir.Type.Int, itableSizePtr), unwind)
+
+      val canEmitOnlyFastPath = meta.canAlwaysUseFastITables || (!mayBeNotFound && meta.rtti(trt).canUseFastITables)
+      if (canEmitOnlyFastPath) genFastPath(buf, traitId, itableSize, resultLabel.getOrElse(fresh()))
+      else {
+        val onFastPath, onSlowPath, merge = fresh()
+        val resultV = nir.Val.Local(resultLabel.getOrElse(fresh()), resultType)
+
+        val useFastPath = let(nir.Op.Comp(nir.Comp.Sge, nir.Type.Int, itableSize, zero), unwind)
+        branch(useFastPath, nir.Next.Label(onFastPath, Nil), nir.Next.Label(onSlowPath, Nil))
+
+        label(onFastPath, Nil)
+        jump(merge, genFastPath(buf, traitId, itableSize, fresh()) :: Nil)
+
+        label(onSlowPath, Nil)
+        jump(merge, genSlowPath(buf, traitId, itableSize, fresh()) :: Nil)
+
+        label(merge, resultV :: Nil)
+        resultV
+      }
+    }
+
+    def genIntrinsicCallOp(
+        kind: IntrinsicCall,
+        buf: nir.InstructionBuilder,
+        n: nir.Local,
+        op: nir.Op.Call
+    )(implicit srcPosition: nir.SourcePosition, scopeId: nir.ScopeId): Unit = kind match {
+      case IntrinsicCall.LoadAllClassess =>
+        val allClasses = nir.Val.ArrayValue(nir.Rt.Class, meta.rtti.values.map(_.const).toSeq)
+        genArrayallocOp(buf, n, nir.Op.Arrayalloc(nir.Rt.Class, init = allClasses, None))
+
+      case IntrinsicCall.MultiplyHigh | IntrinsicCall.UnsignedMultiplyHigh =>
+        val isSigned = kind == IntrinsicCall.MultiplyHigh
+        val i64to128Conv = if (isSigned) nir.Conv.Sext else nir.Conv.Zext
+
+        val (lhs, rhs) = op.args match {
+          case Seq(lhs, rhs)    => (lhs, rhs)
+          case Seq(_, lhs, rhs) => (lhs, rhs)
+          case _                => unsupported(s"Unexpected signature of Intrinsics.(unsigned)multiplyHigh: $op")
+        }
+        val l128 = buf.conv(i64to128Conv, nir.Type.Int128, lhs, nir.Next.None)
+        val r128 = buf.conv(i64to128Conv, nir.Type.Int128, rhs, nir.Next.None)
+        val res128 = buf.bin(nir.Bin.Imul, nir.Type.Int128, l128, r128, nir.Next.None)
+
+        val highBitsShift = if (isSigned) nir.Bin.Ashr else nir.Bin.Lshr
+        val high64 = buf.bin(highBitsShift, nir.Type.Int128, res128, nir.Val.Int(64), nir.Next.None)
+        buf.let(n, nir.Op.Conv(nir.Conv.Trunc, nir.Type.Long, high64), nir.Next.None)
+    }
+
     def genCallOp(
         buf: nir.InstructionBuilder,
         n: nir.Local,
@@ -822,8 +1009,7 @@ private[scalanative] object Lower {
       )
 
       // Extern functions that don't block in strict mode
-      object isWellKnownNonBlockingExternFunction
-          extends Function1[nir.Sig, Boolean] {
+      object isWellKnownNonBlockingExternFunction extends Function1[nir.Sig, Boolean] {
         var nonBlocking = mutable.HashSet.empty[nir.Sig]
         nonBlocking ++= Seq(
           "scalanative_GC_alloc",
@@ -853,20 +1039,18 @@ private[scalanative] object Lower {
         }
       }
       def shouldSwitchThreadState(name: nir.Global.Member) =
-        platform.isMultithreadingEnabled && analysis.infos.get(name).exists {
-          info =>
-            val attrs = info.attrs
-            attrs.isExtern && {
-              config.semanticsConfig.strictExternCallSemantics match {
-                case false => attrs.isBlocking
-                case _     => !isWellKnownNonBlockingExternFunction(name.sig)
-              }
+        platform.isMultithreadingEnabled && analysis.infos.get(name).exists { info =>
+          val attrs = info.attrs
+          attrs.isExtern && {
+            config.semanticsConfig.strictExternCallSemantics match {
+              case false => attrs.isBlocking
+              case _     => !isWellKnownNonBlockingExternFunction(name.sig)
             }
+          }
         }
 
       ptr match {
-        case nir.Val.Global(global: nir.Global.Member, _)
-            if shouldSwitchThreadState(global) =>
+        case nir.Val.Global(global: nir.Global.Member, _) if shouldSwitchThreadState(global) =>
           switchThreadState(managed = false)
           genCall()
           genGCYieldpoint(buf, genUnwind = false)
@@ -880,9 +1064,16 @@ private[scalanative] object Lower {
         buf: nir.InstructionBuilder,
         n: nir.Local,
         op: nir.Op.Method
-    )(implicit srcPosition: nir.SourcePosition, scopeId: nir.ScopeId) = {
+    )(implicit srcPosition: nir.SourcePosition, scopeId: nir.ScopeId): Unit = {
       import buf._
-
+      op match {
+        case IntrinsicCall(intrinsic) =>
+          // Don't emit if that's intrinsic call
+          // Reachable only in non-optimzied builds
+          // Would be handled handling next nir.Op.Call instruction
+          return intrinsicMethods.get.update(n, intrinsic)
+        case _ => ()
+      }
       val nir.Op.Method(v, sig) = op
       val obj = genVal(buf, v)
 
@@ -907,27 +1098,32 @@ private[scalanative] object Lower {
       }
 
       def genTraitVirtualLookup(trt: Trait): Unit = {
-        val sigid = dispatchTable.traitSigIds(sig)
-        val typeptr = let(nir.Op.Load(nir.Type.Ptr, obj), unwind)
-        val idptr =
-          let(nir.Op.Elem(Rtti.layout, typeptr, RttiTraitIdPath), unwind)
-        val id = let(nir.Op.Load(nir.Type.Int, idptr), unwind)
-        val rowptr = let(
-          nir.Op.Elem(
-            nir.Type.Ptr,
-            dispatchTable.dispatchVal,
-            Seq(nir.Val.Int(dispatchTable.dispatchOffset(sigid)))
-          ),
-          unwind
+        val methodIdx = nir.Val.Int(
+          trt.methods
+            .indexOf(sig)
+            .ensuring(_ >= 0, s"Not found ${sig.show} entry in ${trt.name.id} methods")
         )
-        val methptrptr =
-          let(nir.Op.Elem(nir.Type.Ptr, rowptr, Seq(id)), unwind)
-        let(n, nir.Op.Load(nir.Type.Ptr, methptrptr), unwind)
+        val rtti = let(nir.Op.Load(nir.Type.Ptr, obj), unwind)
+        genItableLookup(trt, buf, mayBeNotFound = false)(Some(n), rtti, nir.Type.Ptr)(
+          genFastPath = (buf, traitId, itableSize, resultLabel) => {
+            val itablesPtr = let(nir.Op.Elem(ClassRtti.layout, rtti, ClassRttiItablesPath), unwind)
+            val itables = let(nir.Op.Load(nir.Type.Ptr, itablesPtr), unwind)
+            val itableIdx = let(nir.Op.Bin(nir.Bin.And, nir.Type.Int, traitId, itableSize), unwind)
+            val itablePtr = let(nir.Op.Elem(nir.Type.StructValue(nir.Type.Int :: nir.Type.Ptr :: Nil), itables, Seq(itableIdx, one)), unwind)
+            val itable = let(nir.Op.Load(nir.Type.Ptr, itablePtr), unwind)
+            val methodPtr = let(nir.Op.Elem(nir.Type.Ptr, itable, Seq(methodIdx)), unwind)
+            let(resultLabel, nir.Op.Load(nir.Type.Ptr, methodPtr), unwind)
+          },
+          genSlowPath = (buf, traitId, itableSize, _) => {
+            call(TraitDispatchSlowpathSig, TraitDispatchSlowpath, Seq(rtti, traitId, methodIdx), unwind)
+          }
+        )
       }
 
       def genMethodLookup(scope: ScopeInfo): Unit = {
         scope.targets(sig).toSeq match {
           case Seq() =>
+            // logger.warn(s"Unable to call ${sig.show} on instance of ${scope.name.id} in ${srcPosition.show}. It would result in NullPointerException at runtime")
             let(n, nir.Op.Copy(nir.Val.Null), unwind)
           case Seq(impl) =>
             let(n, nir.Op.Copy(nir.Val.Global(impl, nir.Type.Ptr)), unwind)
@@ -1085,53 +1281,38 @@ private[scalanative] object Lower {
       ty match {
         case ClassRef(cls) if meta.ranges(cls).length == 1 =>
           val typeptr = let(nir.Op.Load(nir.Type.Ptr, obj), unwind)
-          let(
-            nir.Op.Comp(nir.Comp.Ieq, nir.Type.Ptr, typeptr, rtti(cls).const),
-            unwind
-          )
+          let(nir.Op.Comp(nir.Comp.Ieq, nir.Type.Ptr, typeptr, rtti(cls).const), unwind)
 
         case ClassRef(cls) =>
           val range = meta.ranges(cls)
           val typeptr = let(nir.Op.Load(nir.Type.Ptr, obj), unwind)
-          val idptr =
-            let(
-              nir.Op.Elem(Rtti.layout, typeptr, RttiClassIdPath),
-              unwind
-            )
+          val idptr = let(nir.Op.Elem(Rtti.layout, typeptr, RttiClassIdPath), unwind)
           val id = let(nir.Op.Load(nir.Type.Int, idptr), unwind)
-          val ge =
-            let(
-              nir.Op
-                .Comp(nir.Comp.Sle, nir.Type.Int, nir.Val.Int(range.start), id),
-              unwind
-            )
-          val le =
-            let(
-              nir.Op
-                .Comp(nir.Comp.Sle, nir.Type.Int, id, nir.Val.Int(range.end)),
-              unwind
-            )
+          val ge = let(nir.Op.Comp(nir.Comp.Sle, nir.Type.Int, nir.Val.Int(range.start), id), unwind)
+          val le = let(nir.Op.Comp(nir.Comp.Sle, nir.Type.Int, id, nir.Val.Int(range.end)), unwind)
           let(nir.Op.Bin(nir.Bin.And, nir.Type.Bool, ge, le), unwind)
 
         case TraitRef(trt) =>
-          val typeptr = let(nir.Op.Load(nir.Type.Ptr, obj), unwind)
-          val idptr =
-            let(
-              nir.Op.Elem(Rtti.layout, typeptr, RttiClassIdPath),
-              unwind
-            )
-          val id = let(nir.Op.Load(nir.Type.Int, idptr), unwind)
-          let(
-            nir.Op.Call(
-              Generate.ClassHasTraitSig,
-              nir.Val.Global(
-                Generate.ClassHasTraitName,
-                Generate.ClassHasTraitSig
-              ),
-              Seq(id, nir.Val.Int(meta.ids(trt)))
-            ),
-            unwind
+          v.ty match {
+            case ClassRef(cls) =>
+            case _             =>
+          }
+          val traitId = nir.Val.Int(meta.ids(trt))
+          val rtti = let(nir.Op.Load(nir.Type.Ptr, obj), unwind)
+          genItableLookup(trt, buf, mayBeNotFound = true)(None, rtti, nir.Type.Bool)(
+            genFastPath = (buf, traitId, itableSize, _) => {
+              val itablesPtr = let(nir.Op.Elem(ClassRtti.layout, rtti, ClassRttiItablesPath), unwind)
+              val itables = let(nir.Op.Load(nir.Type.Ptr, itablesPtr), unwind)
+              val itableIdx = let(nir.Op.Bin(nir.Bin.And, nir.Type.Int, traitId, itableSize), unwind)
+              val itableIdPtr = let(nir.Op.Elem(nir.Type.StructValue(nir.Type.Int :: nir.Type.Ptr :: Nil), itables, Seq(itableIdx, zero)), unwind)
+              val itableId = let(nir.Op.Load(nir.Type.Int, itableIdPtr), unwind)
+              let(nir.Op.Comp(nir.Comp.Ieq, nir.Type.Int, traitId, itableId), unwind)
+            },
+            genSlowPath = (buf, traitId, itableSize, _) => {
+              call(ClassHasTraitSlowpathSig, ClassHasTraitSlowpath, Seq(rtti, traitId), unwind)
+            }
           )
+
         case _ =>
           util.unsupported(s"is[$ty] $obj")
       }
@@ -1148,8 +1329,7 @@ private[scalanative] object Lower {
         case nir.Op.As(ty: nir.Type.RefKind, v) if v.ty == nir.Type.Null =>
           let(n, nir.Op.Copy(nir.Val.Null), unwind)
 
-        case nir.Op.As(ty: nir.Type.RefKind, obj)
-            if obj.ty.isInstanceOf[nir.Type.RefKind] =>
+        case nir.Op.As(ty: nir.Type.RefKind, obj) if obj.ty.isInstanceOf[nir.Type.RefKind] =>
           val v = genVal(buf, obj)
           val checkIfIsInstanceOfL, castL = fresh()
           val failL = classCastSlowPath.getOrElseUpdate(unwindHandler, fresh())
@@ -1311,8 +1491,7 @@ private[scalanative] object Lower {
               util.unreachable
           }
 
-          val isNaNL, checkLessThanMinL, lessThanMinL, checkLargerThanMaxL,
-              largerThanMaxL, inBoundsL, resultL = fresh()
+          val isNaNL, checkLessThanMinL, lessThanMinL, checkLargerThanMaxL, largerThanMaxL, inBoundsL, resultL = fresh()
 
           val isNaN = comp(nir.Comp.Fne, v.ty, v, v, unwind)
           branch(isNaN, nir.Next(isNaNL), nir.Next(checkLessThanMinL))
@@ -1652,7 +1831,7 @@ private[scalanative] object Lower {
 
       val arrTy = arrayMemoryLayout(ty)
       val elemPtr = buf.elem(arrTy, arr, arrayValuePath(idx), unwind)
-      buf.let(n, nir.Op.Load(ty, elemPtr), unwind)
+      genLoadOp(buf, n, nir.Op.Load(ty, elemPtr, Some(nir.MemoryOrder.Unordered)))
     }
 
     def genArraystoreOp(
@@ -1669,7 +1848,7 @@ private[scalanative] object Lower {
 
       val arrTy = arrayMemoryLayout(ty)
       val elemPtr = buf.elem(arrTy, arr, arrayValuePath(idx), unwind)
-      genStoreOp(buf, n, nir.Op.Store(ty, elemPtr, value))
+      genStoreOp(buf, n, nir.Op.Store(ty, elemPtr, value, Some(nir.MemoryOrder.Unordered)))
     }
 
     def genArraylengthOp(
@@ -1686,7 +1865,7 @@ private[scalanative] object Lower {
       genGuardNotNull(buf, arr)
       val lenPtr =
         buf.elem(ArrayHeader.layout, arr, ArrayHeaderLengthPath, unwind)
-      buf.let(n, nir.Op.Load(nir.Type.Int, lenPtr), unwind)
+      genLoadOp(buf, n, nir.Op.Load(nir.Type.Int, lenPtr, Some(nir.MemoryOrder.Unordered)))
     }
 
     def genStackallocOp(
@@ -1707,7 +1886,7 @@ private[scalanative] object Lower {
           val elemSize = MemoryLayout.sizeOf(ty)
           val size = sizeV match {
             case nir.Val.Size(v) => nir.Val.Size(v * elemSize)
-            case _ =>
+            case _               =>
               val asSize = sizeV.ty match {
                 case i: nir.Type.FixedSizeI =>
                   if (i.width == platform.sizeOfPtrBits) sizeV
@@ -1827,6 +2006,58 @@ private[scalanative] object Lower {
     }
   }
 
+  private sealed trait IntrinsicCall
+  private object IntrinsicCall {
+    object LoadAllClassess extends IntrinsicCall
+    object MultiplyHigh extends IntrinsicCall
+    object UnsignedMultiplyHigh extends IntrinsicCall
+
+    private def resolveIntrinsicCall(owner: nir.Global.Top, sig: nir.Sig)(implicit
+        metadata: Metadata,
+        logger: build.Logger,
+        srcPos: nir.SourcePosition,
+        currentDefn: util.ScopedVar[nir.Defn.Define]
+    ): Option[IntrinsicCall] = {
+      (owner.id, sig.unmangled) match {
+        case ("scala.scalanative.runtime.LinkedClassesRepository$", nir.Sig.Method("loadAll", _, _)) => Some(LoadAllClassess)
+        case ("scala.scalanative.runtime.Intrinsics$", nir.Sig.Method("multiplyHigh", _, _))         => Some(MultiplyHigh)
+        case ("scala.scalanative.runtime.Intrinsics$", nir.Sig.Method("unsignedMultiplyHigh", _, _)) => Some(UnsignedMultiplyHigh)
+
+        case (_, nir.Sig.Method("intrinsic", _, _)) if owner == nir.Rt.Runtime.name =>
+          val symbol @ nir.Global.Member(owner, sig) = currentDefn.get.name
+          // Reflective proxies might make the intrinsic method reachable, but they're unlikely to be called
+          def isMaybeReflectiveProxy = metadata.analysis.dynimpls.contains(symbol)
+          // Ingore intrinsic call form intrinsic methods. It was already handled
+          if (!isMaybeReflectiveProxy && resolveIntrinsicCall(owner, sig).isEmpty) {
+            logger.warn(s"Instrinsic method was not resolved by Scala Native, it would lead to runtime exception. Defined at ${srcPos.show}")
+          }
+          None
+        case _ => None
+      }
+    }
+
+    def unapply(op: nir.Op.Call)(implicit
+        metadata: Metadata,
+        logger: build.Logger,
+        srcPos: nir.SourcePosition,
+        intrinsicMethods: util.ScopedVar[mutable.Map[nir.Local, IntrinsicCall]],
+        currentDefn: util.ScopedVar[nir.Defn.Define]
+    ): Option[IntrinsicCall] = op.ptr match {
+      case nir.Val.Global(nir.Global.Member(owner, sig), _)       => resolveIntrinsicCall(owner, sig)
+      case nir.Val.Local(id, _) if intrinsicMethods.isInitialized => intrinsicMethods.get.get(id)
+      case _                                                      => None
+    }
+
+    // Required only in non-optimized builds
+    def unapply(
+        op: nir.Op.Method
+    )(implicit metadata: Metadata, logger: build.Logger, srcPos: nir.SourcePosition, currentDefn: util.ScopedVar[nir.Defn.Define]): Option[IntrinsicCall] =
+      op.obj.ty match {
+        case owner: nir.Type.RefKind => resolveIntrinsicCall(owner.className, op.sig)
+        case _                       => None
+      }
+  }
+
   // Update java.lang.String::hashCode whenever you change this method.
   def stringHashCode(s: String): Int =
     if (s.length == 0) {
@@ -1927,97 +2158,113 @@ private[scalanative] object Lower {
   val throwSig = nir.Type.Function(Seq(nir.Type.Ptr), nir.Type.Nothing)
   val throw_ = nir.Val.Global(throwName, nir.Type.Ptr)
 
-  val arrayHeapAlloc = nir.Type.typeToArray.map {
-    case (ty, arrname) =>
-      val nir.Global.Top(id) = arrname
-      val arrcls = nir.Type.Ref(arrname)
-      ty -> nir.Global.Member(
-        nir.Global.Top(id + "$"),
-        nir.Sig.Method("alloc", Seq(nir.Type.Int, arrcls))
-      )
-  }.toMap
-  val arrayHeapAllocSig = nir.Type.typeToArray.map {
-    case (ty, arrname) =>
-      val nir.Global.Top(id) = arrname
-      ty -> nir.Type.Function(
-        Seq(nir.Type.Ref(nir.Global.Top(id + "$")), nir.Type.Int),
-        nir.Type.Ref(arrname)
-      )
-  }.toMap
-  val arrayZoneAlloc = nir.Type.typeToArray.map {
-    case (ty, arrname) =>
-      val nir.Global.Top(id) = arrname
-      val arrcls = nir.Type.Ref(arrname)
-      ty -> nir.Global.Member(
-        nir.Global.Top(id + "$"),
-        nir.Sig.Method("alloc", Seq(nir.Type.Int, SafeZone, arrcls))
-      )
-  }.toMap
-  val arrayZoneAllocSig = nir.Type.typeToArray.map {
-    case (ty, arrname) =>
-      val nir.Global.Top(id) = arrname
-      ty -> nir.Type.Function(
-        Seq(nir.Type.Ref(nir.Global.Top(id + "$")), nir.Type.Int, SafeZone),
-        nir.Type.Ref(arrname)
-      )
-  }.toMap
-  val arraySnapshot = nir.Type.typeToArray.map {
-    case (ty, arrname) =>
-      val nir.Global.Top(id) = arrname
-      val arrcls = nir.Type.Ref(arrname)
-      ty -> nir.Global.Member(
-        nir.Global.Top(id + "$"),
-        nir.Sig.Method("snapshot", Seq(nir.Type.Int, nir.Type.Ptr, arrcls))
-      )
-  }.toMap
-  val arraySnapshotSig = nir.Type.typeToArray.map {
-    case (ty, arrname) =>
-      val nir.Global.Top(id) = arrname
-      ty -> nir.Type.Function(
-        Seq(nir.Type.Ref(nir.Global.Top(id + "$")), nir.Type.Int, nir.Type.Ptr),
-        nir.Type.Ref(arrname)
-      )
-  }.toMap
-  val arrayApplyGeneric = nir.Type.typeToArray.map {
-    case (ty, arrname) =>
-      ty -> nir.Global.Member(
-        arrname,
-        nir.Sig.Method("apply", Seq(nir.Type.Int, nir.Rt.Object))
-      )
+  def arrayHeapAllocOf(ty: nir.Type, arrayClassName: nir.Global.Top) = {
+    val arrcls = nir.Type.Ref(arrayClassName)
+    nir.Global.Member(
+      nir.Global.Top(arrayClassName.id + "$"),
+      nir.Sig.Method("alloc", Seq(nir.Type.Int, arrcls))
+    )
   }
-  val arrayApply = nir.Type.typeToArray.map {
-    case (ty, arrname) =>
-      ty -> nir.Global.Member(
-        arrname,
-        nir.Sig.Method("apply", Seq(nir.Type.Int, ty))
-      )
-  }.toMap
+  val arrayHeapAlloc = nir.Type.typeToArray.map { case (ty, arrCls) => ty -> arrayHeapAllocOf(ty, arrCls) }.toMap
+  val allArrayHeapAlloc = arrayHeapAlloc.values ++ Seq(arrayHeapAllocOf(nir.Type.Byte, nir.Rt.BlobArray.name))
+
+  def arrayHeapAllocSigOf(ty: nir.Type, arrayClassName: nir.Global.Top) = {
+    nir.Type.Function(
+      Seq(nir.Type.Ref(nir.Global.Top(arrayClassName.id + "$")), nir.Type.Int),
+      nir.Type.Ref(arrayClassName)
+    )
+  }
+  val arrayHeapAllocSig = nir.Type.typeToArray.map { case (ty, arrname) => ty -> arrayHeapAllocSigOf(ty, arrname) }.toMap
+
+  def arrayZoneAllocOf(ty: nir.Type, arrayClassName: nir.Global.Top) = {
+    val arrcls = nir.Type.Ref(arrayClassName)
+    nir.Global.Member(
+      nir.Global.Top(arrayClassName.id + "$"),
+      nir.Sig.Method("alloc", Seq(nir.Type.Int, SafeZone, arrcls))
+    )
+  }
+  val arrayZoneAlloc = nir.Type.typeToArray.map { case (ty, arrname) => ty -> arrayZoneAllocOf(ty, arrname) }.toMap
+  val allArrayZoneAlloc = arrayZoneAlloc.values ++ Seq(arrayZoneAllocOf(nir.Type.Byte, nir.Rt.BlobArray.name))
+
+  def arrayZoneAllocSigOf(ty: nir.Type, arrayClassName: nir.Global.Top) = {
+    nir.Type.Function(
+      Seq(nir.Type.Ref(nir.Global.Top(arrayClassName.id + "$")), nir.Type.Int, SafeZone),
+      nir.Type.Ref(arrayClassName)
+    )
+  }
+  val arrayZoneAllocSig = nir.Type.typeToArray.map { case (ty, arrname) => ty -> arrayZoneAllocSigOf(ty, arrname) }.toMap
+
+  def arraySnapshotOf(ty: nir.Type, arrayClassName: nir.Global.Top) = {
+    val arrcls = nir.Type.Ref(arrayClassName)
+    nir.Global.Member(
+      nir.Global.Top(arrayClassName.id + "$"),
+      nir.Sig.Method("snapshot", Seq(nir.Type.Int, nir.Type.Ptr, arrcls))
+    )
+  }
+  val arraySnapshot = nir.Type.typeToArray.map { case (ty, arrname) => ty -> arraySnapshotOf(ty, arrname) }.toMap
+  val allArraySnapshot = arraySnapshot.values ++ Seq(arraySnapshotOf(nir.Type.Byte, nir.Rt.BlobArray.name))
+
+  def arraySnapshotSigOf(ty: nir.Type, arrayClassName: nir.Global.Top) = {
+    nir.Type.Function(
+      Seq(nir.Type.Ref(nir.Global.Top(arrayClassName.id + "$")), nir.Type.Int, nir.Type.Ptr),
+      nir.Type.Ref(arrayClassName)
+    )
+  }
+  val arraySnapshotSig = nir.Type.typeToArray.map { case (ty, arrname) => ty -> arraySnapshotSigOf(ty, arrname) }.toMap
+
+  def arrayApplyGenericOf(ty: nir.Type, arrname: nir.Global.Top) = {
+    nir.Global.Member(
+      arrname,
+      nir.Sig.Method("apply", Seq(nir.Type.Int, nir.Rt.Object))
+    )
+  }
+  val arrayApplyGeneric = nir.Type.typeToArray.map { case (ty, arrname) => ty -> arrayApplyGenericOf(ty, arrname) }
+  val allArrayApplyGeneric = arrayApplyGeneric.values ++ Seq(arrayApplyGenericOf(nir.Type.Byte, nir.Rt.BlobArray.name))
+
+  def arrayApplyOf(ty: nir.Type, arrname: nir.Global.Top) = {
+    nir.Global.Member(
+      arrname,
+      nir.Sig.Method("apply", Seq(nir.Type.Int, ty))
+    )
+  }
+  val arrayApply = nir.Type.typeToArray.map { case (ty, arrname) => ty -> arrayApplyOf(ty, arrname) }.toMap
+  val allArrayApply = arrayApply.values ++ Seq(arrayApplyOf(nir.Type.Byte, nir.Rt.BlobArray.name))
+
+  def arrayApplySigOf(ty: nir.Type, arrname: nir.Global.Top) = {
+    nir.Type.Function(Seq(nir.Type.Ref(arrname), nir.Type.Int), ty)
+  }
+
   val arrayApplySig = nir.Type.typeToArray.map {
-    case (ty, arrname) =>
-      ty -> nir.Type.Function(Seq(nir.Type.Ref(arrname), nir.Type.Int), ty)
+    case (ty, arrname) => ty -> arrayApplySigOf(ty, arrname)
   }.toMap
-  val arrayUpdateGeneric = nir.Type.typeToArray.map {
-    case (ty, arrname) =>
-      ty -> nir.Global.Member(
-        arrname,
-        nir.Sig
-          .Method("update", Seq(nir.Type.Int, nir.Rt.Object, nir.Type.Unit))
-      )
+
+  def arrayUpdateGenericOf(ty: nir.Type, arrname: nir.Global.Top) = {
+    nir.Global.Member(
+      arrname,
+      nir.Sig.Method("update", Seq(nir.Type.Int, nir.Rt.Object, nir.Type.Unit))
+    )
   }
-  val arrayUpdate = nir.Type.typeToArray.map {
-    case (ty, arrname) =>
-      ty -> nir.Global.Member(
-        arrname,
-        nir.Sig.Method("update", Seq(nir.Type.Int, ty, nir.Type.Unit))
-      )
-  }.toMap
-  val arrayUpdateSig = nir.Type.typeToArray.map {
-    case (ty, arrname) =>
-      ty -> nir.Type.Function(
-        Seq(nir.Type.Ref(arrname), nir.Type.Int, ty),
-        nir.Type.Unit
-      )
-  }.toMap
+
+  val arrayUpdateGeneric = nir.Type.typeToArray.map { case (ty, arrname) => ty -> arrayUpdateGenericOf(ty, arrname) }
+  val allArrayUpdateGeneric = arrayUpdateGeneric.values ++ Seq(arrayUpdateGenericOf(nir.Type.Byte, nir.Rt.BlobArray.name))
+
+  def arrayUpdateOf(ty: nir.Type, arrname: nir.Global.Top) = {
+    nir.Global.Member(
+      arrname,
+      nir.Sig.Method("update", Seq(nir.Type.Int, ty, nir.Type.Unit))
+    )
+  }
+  val arrayUpdate = nir.Type.typeToArray.map { case (ty, arrname) => ty -> arrayUpdateOf(ty, arrname) }.toMap
+  val allArrayUpdate = arrayUpdate.values ++ Seq(arrayUpdateOf(nir.Type.Byte, nir.Rt.BlobArray.name))
+
+  def arrayUpdateSigOf(ty: nir.Type, arrname: nir.Global.Top) = {
+    nir.Type.Function(
+      Seq(nir.Type.Ref(arrname), nir.Type.Int, ty),
+      nir.Type.Unit
+    )
+  }
+  val arrayUpdateSig = nir.Type.typeToArray.map { case (ty, arrname) => ty -> arrayUpdateSigOf(ty, arrname) }.toMap
+
   val arrayLength =
     nir.Global.Member(
       nir.Global.Top("scala.scalanative.runtime.Array"),
@@ -2101,6 +2348,14 @@ private[scalanative] object Lower {
   val throwNoSuchMethodVal =
     nir.Val.Global(throwNoSuchMethod, nir.Type.Ptr)
 
+  val TraitDispatchSlowpathName = extern("__scalanative_trait_dispatch_slowpath")
+  val TraitDispatchSlowpathSig = nir.Type.Function(Seq(nir.Type.Ptr, nir.Type.Int, nir.Type.Int), nir.Type.Ptr)
+  val TraitDispatchSlowpath = nir.Val.Global(TraitDispatchSlowpathName, nir.Type.Ptr)
+
+  val ClassHasTraitSlowpathName = extern("__scalanative_class_has_trait_slowpath")
+  val ClassHasTraitSlowpathSig = nir.Type.Function(Seq(nir.Type.Ptr, nir.Type.Int), nir.Type.Bool)
+  val ClassHasTraitSlowpath = nir.Val.Global(ClassHasTraitSlowpathName, nir.Type.Ptr)
+
   val GC = nir.Global.Top("scala.scalanative.runtime.GC$")
   val GCYieldName =
     GC.member(nir.Sig.Extern("scalanative_GC_yield"))
@@ -2129,14 +2384,27 @@ private[scalanative] object Lower {
   val RuntimeNull = nir.Type.Ref(nir.Global.Top("scala.runtime.Null$"))
   val RuntimeNothing = nir.Type.Ref(nir.Global.Top("scala.runtime.Nothing$"))
 
+  val ExceptionOnCatchName = extern("scalanative_Exception_onCatch")
+  lazy val ExceptionOnCatch = nir.Val.Global(ExceptionOnCatchName, nir.Type.Ptr)
+  lazy val ExceptionOnCatchSig = nir.Type.Function(nir.Rt.Throwable :: Nil, nir.Type.Unit)
+
+  val CheckStackOverflowGuardsName = extern("scalanative_StackOverflowGuards_check")
+  val CheckStackOverflowGuards = nir.Val.Global(CheckStackOverflowGuardsName, nir.Type.Ptr)
+  val CheckStackOverflowGuardsSig = nir.Type.Function(Nil, nir.Type.Unit)
+
   val injects: Seq[nir.Defn] = {
     implicit val pos = nir.SourcePosition.NoPosition
     val buf = mutable.UnrolledBuffer.empty[nir.Defn]
-    buf += nir.Defn.Declare(nir.Attrs.None, allocSmallName, allocSig)
-    buf += nir.Defn.Declare(nir.Attrs.None, largeAllocName, allocSig)
-    buf += nir.Defn.Declare(nir.Attrs.None, dyndispatchName, dyndispatchSig)
-    buf += nir.Defn.Declare(nir.Attrs.None, throwName, throwSig)
-    buf += nir.Defn.Declare(nir.Attrs(isExtern = true), memsetName, memsetSig)
+    def externDecl(name: nir.Global.Member, signature: nir.Type.Function) = nir.Defn.Declare(nir.Attrs.None.withIsExtern(true), name, signature)
+    buf += externDecl(allocSmallName, allocSig)
+    buf += externDecl(largeAllocName, allocSig)
+    buf += externDecl(dyndispatchName, dyndispatchSig)
+    buf += externDecl(throwName, throwSig)
+    buf += externDecl(memsetName, memsetSig)
+    buf += externDecl(ExceptionOnCatchName, ExceptionOnCatchSig)
+    buf += externDecl(TraitDispatchSlowpathName, TraitDispatchSlowpathSig)
+    buf += externDecl(CheckStackOverflowGuardsName, CheckStackOverflowGuardsSig)
+    buf += externDecl(ClassHasTraitSlowpathName, ClassHasTraitSlowpathSig)
     buf.toSeq
   }
 
@@ -2144,16 +2412,9 @@ private[scalanative] object Lower {
     val buf = mutable.UnrolledBuffer.empty[nir.Global]
     buf ++= nir.Rt.PrimitiveTypes
     buf += nir.Rt.ClassName
-    buf += nir.Rt.ClassIdName
-    buf += nir.Rt.ClassTraitIdName
-    buf += nir.Rt.ClassNameName
-    buf += nir.Rt.ClassSizeName
-    buf += nir.Rt.ClassIdRangeUntilName
+    buf ++= nir.Rt.jlClassFields
     buf += nir.Rt.StringName
-    buf += nir.Rt.StringValueName
-    buf += nir.Rt.StringOffsetName
-    buf += nir.Rt.StringCountName
-    buf += nir.Rt.StringCachedHashCodeName
+    buf ++= nir.Rt.jlStringFields
     buf += CharArrayName
     buf += BoxesRunTime
     buf += RuntimeBoxes
@@ -2161,13 +2422,13 @@ private[scalanative] object Lower {
     buf ++= BoxTo.values
     buf ++= UnboxTo.values
     buf += arrayLength
-    buf ++= arrayHeapAlloc.values
-    buf ++= arrayZoneAlloc.values
-    buf ++= arraySnapshot.values
-    buf ++= arrayApplyGeneric.values
-    buf ++= arrayApply.values
-    buf ++= arrayUpdateGeneric.values
-    buf ++= arrayUpdate.values
+    buf ++= allArrayHeapAlloc
+    buf ++= allArrayZoneAlloc
+    buf ++= allArraySnapshot
+    buf ++= allArrayApplyGeneric
+    buf ++= allArrayApply
+    buf ++= allArrayUpdateGeneric
+    buf ++= allArrayUpdate
     buf += throwDivisionByZero
     buf += throwClassCast
     buf += throwNullPointer

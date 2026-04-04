@@ -4,8 +4,9 @@ package junit
 // Ported from Scala.js
 
 import scala.concurrent.Future
-import scala.scalanative.reflect.annotation._
 import scala.util.Try
+
+import scala.scalanative.reflect.annotation._
 
 /** Scala Native internal JUnit bootstrapper.
  *
@@ -41,7 +42,7 @@ final class TestMetadata(
     val annotation: org.junit.Test
 )
 
-/** Scala Native interal JUnit test class metadata
+/** Scala Native internal JUnit test class metadata
  *
  *  This class is public due to implementation details. Only the junit compiler
  *  plugin may create instances of it.

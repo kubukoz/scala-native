@@ -1,6 +1,7 @@
 package java.nio.file
 
 import java.io.IOException
+
 import attribute.BasicFileAttributes
 
 trait FileVisitor[T] {
@@ -31,6 +32,6 @@ class SimpleFileVisitor[T] protected () extends FileVisitor[T] {
     FileVisitResult.CONTINUE
 
   override def visitFileFailed(file: T, error: IOException): FileVisitResult =
-    FileVisitResult.CONTINUE
+    throw error
 
 }

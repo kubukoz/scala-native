@@ -1,20 +1,21 @@
 package scala.scalanative.build
 
-import java.io.FileReader
+import java.io.{FileReader, Reader}
 import java.nio.file.Path
 import java.util.Properties
 
-import scala.util.Try
-import java.io.Reader
 import scala.annotation.tailrec
+import scala.util.Try
 
 private[build] final case class Descriptor(
     organization: Option[String],
     name: Option[String],
     gcProject: Boolean,
-    links: List[String],
-    defines: List[String],
-    includes: List[String]
+    links: Seq[String],
+    defines: Seq[String],
+    includes: Seq[String],
+    cOptions: Seq[String],
+    cppOptions: Seq[String]
 )
 
 private[build] object Descriptor {
@@ -31,7 +32,9 @@ private[build] object Descriptor {
         props.getProperty("project.gcProject", "false").toBoolean,
         parseStrings("nir.link.names", props),
         parseStrings("preprocessor.defines", props),
-        parseStrings("compile.include.paths", props)
+        parseStrings("compile.include.paths", props),
+        parseStrings("compile.c.options", props),
+        parseStrings("compile.cpp.options", props)
       )
     } finally {
       if (reader != null) {
@@ -44,10 +47,10 @@ private[build] object Descriptor {
     }
   }
 
-  private def parseStrings(prop: String, props: Properties): List[String] =
+  private def parseStrings(prop: String, props: Properties): Seq[String] =
     Option(props.getProperty(prop)) match {
-      case Some(value) => value.split(',').map(_.trim()).toList
-      case None        => List.empty
+      case Some(value) => value.split(',').map(_.trim()).toSeq
+      case None        => Seq.empty
     }
 
 }

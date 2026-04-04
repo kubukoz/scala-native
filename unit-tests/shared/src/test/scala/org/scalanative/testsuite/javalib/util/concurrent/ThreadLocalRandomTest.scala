@@ -8,16 +8,16 @@
 package org.scalanative.testsuite.javalib.util.concurrent
 
 import java.util.concurrent.ThreadLocalRandom
-import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
-
-import JSR166Test._
-import org.scalanative.testsuite.utils.Platform._
-
-import org.junit.{Test, Ignore}
-import org.junit.Assert._
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import scala.math.{max, min}
+
+import org.junit.Assert._
+import org.junit.{Ignore, Test}
+
+import org.scalanative.testsuite.utils.Platform._
+
+import JSR166Test._
 
 object ThreadLocalRandomTest {
   // max numbers of calls to detect getting stuck on one value
@@ -911,16 +911,23 @@ class ThreadLocalRandomTest extends JSR166Test {
     val bound = max(b1, b2)
 
     val next = tlr.nextDouble(least, bound)
-    assertTrue((next >= least) && (next < bound))
+    assertTrue(
+      s"least: ${least} bound: ${bound} next: ${next}",
+      (next >= least) && (next < bound)
+    )
   }
 
   @Test def nextDoubleDoubleDouble(): Unit = {
     implicit val tlr = ThreadLocalRandom.current()
 
-    if (!executingInJVM) {
-      // This test fails with JDK 17 due to failed bounds check
+    // Ported from: Scala.js commit: 7ae4a05 dated 2024-11-16
+    if (!executingInJVMWithJDKIn(17 to 18)) {
+      /* For some reason, JDK 17-18 throw an IllegalArgumentException for
+       * this one. Older and more recent versions of the JDK succeed.
+       */
       checkDoubleBounds(Double.MinValue, Double.MaxValue)
     }
+
     checkDoubleBounds(Double.MinValue, 0L)
     checkDoubleBounds(Double.MaxValue, 0L)
     checkDoubleBounds(0.14303466203185822, 0.7471945354839639)
@@ -1025,14 +1032,17 @@ class ThreadLocalRandomTest extends JSR166Test {
     checkDoubleBounds(0.5533138714786693, 0.5329471271772576)
 
     assertThrows(
+      s"expected IllegalArgumentException: 2.0, 1.0",
       classOf[IllegalArgumentException],
       () => tlr.nextDouble(2.0, 1.0)
     )
     assertThrows(
+      s"expected IllegalArgumentException: 1.0, 1.0",
       classOf[IllegalArgumentException],
       () => tlr.nextDouble(1.0, 1.0)
     )
     assertThrows(
+      s"expected IllegalArgumentException: 0.0, 0.0",
       classOf[IllegalArgumentException],
       () => tlr.nextDouble(0.0, 0.0)
     )

@@ -1,25 +1,23 @@
 package org.scalanative.testsuite.javalib.net
 
 import java.io.IOException
-import java.net.BindException
-import java.net.DatagramPacket
-import java.net.DatagramSocket
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.NetworkInterface
-import java.net.SocketAddress
-import java.net.SocketException
-import java.net.SocketTimeoutException
-import java.net.UnknownHostException
+import java.net.{
+  BindException, DatagramPacket, DatagramSocket, InetAddress, InetSocketAddress,
+  NetworkInterface, SocketAddress, SocketException, SocketTimeoutException,
+  UnknownHostException
+}
 import java.{util => ju}
 
-import org.junit.Test
+import scala.collection.JavaConverters._
+
 import org.junit.Assert._
 import org.junit.Assume._
+import org.junit.Test
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
 import org.scalanative.testsuite.utils.Platform
-import scala.collection.JavaConverters._
+
+import scala.scalanative.junit.utils.AssumesHelper._
 
 class DatagramSocketTest {
 
@@ -394,8 +392,29 @@ class DatagramSocketTest {
   }
 
   @Test def sendReceiveBroadcast(): Unit = {
+    /* Issue 4221
+     *   This Test should be run only in environments where:
+     *   1) It is responsible to broadcast packets to every node on net.
+     *   2) The network configuration, possible firewalls, and routers
+     *      allow broadcasting.
+     *
+     *   This is true in the Scala Native Continuous Integration environment
+     *   but may not be in more general work environments.
+     *
+     *   Network developers will need to bypass this check and run the
+     *   test manually.
+     */
+    assumeTrue(
+      "Advanced and/or CI-only test",
+      ju.Optional
+        .ofNullable(System.getenv("GITHUB_ACTIONS"))
+        .orElse("false")
+        .equalsIgnoreCase("true")
+    )
+
     // NetworkInterface.getNetworkInterfaces is not implemented in Windows
     assumeFalse("Not implemented in Windows", Platform.isWindows)
+    assumeNotRoot()
 
     // we need to find a network interface with broadcast support for this test
     NetworkInterface
@@ -428,10 +447,38 @@ class DatagramSocketTest {
 
           val result =
             new DatagramPacket(Array.ofDim[Byte](bytes.length), bytes.length)
-          ds2.receive(result)
+          try {
+            ds2.receive(result)
 
-          val receivedData = new String(result.getData())
-          assertEquals("Received incorrect data", data, receivedData)
+            val receivedData = new String(result.getData())
+            assertEquals("Received incorrect data", data, receivedData)
+          } catch {
+            /* DatagramSockets use UDP transport, which is "send-and-pray".
+             *
+             * This Test is designed for the Scala Native Continuous
+             * Integration environment, where it passes.
+             *
+             * In other environments a timeout may be due to a number
+             * of causes. Some, not all, possibilities. It might be:
+             *
+             *   - Today is not the day for answered prayers.
+             *
+             *   - Today is just a slow day, packets would have been received
+             *     if the timeout was longer.
+             *
+             *   - This Test is validly detecting lost packets, say send
+             *     and receive addresses not matching up.
+             *
+             *   - A defect in this Test, attempting to send or receive
+             *     on an interface where wither or both are disabled.
+             *
+             *   - A firewall or other intermediate is routing the
+             *     sent packages to a black hole sink, so they never
+             *     arrive.
+             */
+            case ex: SocketTimeoutException =>
+              fail("receive timed out, check network & firewall configuration")
+          }
         } finally {
           ds1.close()
           ds2.close()

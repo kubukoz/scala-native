@@ -5,11 +5,10 @@
  */
 package java.util.concurrent.atomic
 
-import java.util.function.BinaryOperator
-import java.util.function.UnaryOperator
+import java.util.function.{BinaryOperator, UnaryOperator}
 
 object AtomicReferenceFieldUpdater {
-  // Imposible to define currently in Scala Native, requires reflection
+  // Impossible to define currently in Scala Native, requires reflection
   // Don't define it, allow to fail at linktime instead of runtime
   // def newUpdater[U <: AnyRef, W <: AnyRef](
   //     tclass: Class[U],

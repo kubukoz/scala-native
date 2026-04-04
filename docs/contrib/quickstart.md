@@ -8,6 +8,8 @@ Document built:
 -   LLVM/Clang 15 or newer
 -   sbt
 
+See [here for details on the build environment setup](./build-setup.md).
+
 ## Project Structure Overview
 
 See [build](./build.md)
@@ -51,15 +53,13 @@ as expected.
 -   `toolsJVM3/test` - run the unit tests of the tools: ScalaNative
     backend
 
--   `sbtScalaNative/scripted` - run all [scripted
+-   `test-scritped <scala-binary-version>`, eg `test-scripted 2.12` - run all [scripted
     tests](https://www.scala-sbt.org/1.x/docs/Testing-sbt-plugins.html)
-    of the sbt plugin (this takes a while).
+    of the sbt plugin (this takes a while and requires local publish of artifacts).
+    Build against Scala 2.12 uses sbt 1.x, while Scala 3 uses sbt 2.x. Other versions are not supported.
 
--   
-
-    `sbtScalaNative/scripted <test directory to run>` - run specific scripted tests of the sbt plugin. e.g. `sbtScalaNative/scripted run/backtrace`
-
-    :   -   Scripted tests are used when you need to interact with the
+-  `test-scritped <scala-binary-version> <optional-test-filters>` - run specific scripted tests of the sbt plugin. e.g. `test-scripted 3 run/backtrace`:   
+        -   Scripted tests are used when you need to interact with the
             file system, networking, or the build system that cannot be
             done with a unit test.
         -   `set ThisBuild / scriptedBufferLog := false` disables buffer
@@ -99,7 +99,7 @@ You will see, the log message like the following, which means you have
 successfully published locally for the version `0.5.0-SNAPSHOT`.
 
 ``` text
-[info]  published tools_native0.5.0-SNAPSHOT_3 to ... 
+[info]  published tools_native0.5.0-SNAPSHOT_3 to ...
 [info]  published ivy to ...tools_native0.5.0-SNAPSHOT_3/0.5.0-SNAPSHOT/ivys/ivy.xml
 ```
 
@@ -116,7 +116,7 @@ enablePlugins(ScalaNativePlugin)
 
 ## Locally build docs
 
-1.  First time building the docs. This command will setup & build the
+1.  First time building the docs. This command will set up & build the
     docs.
 
 ``` text
@@ -127,7 +127,7 @@ $ bash scripts/makedocs setup
     assuming setup is already done.
 
 ``` text
-$ bash scripts/makedocs 
+$ bash scripts/makedocs
 ```
 
 3.  Navigate to `docs/_build/html` directory and open `index.html` file
@@ -149,12 +149,10 @@ To configure the native build in this project, you can edit
 -   More detailed build setting explanation `build`{.interpreted-text
     role="ref"}
 
--   
 
-    Scala Native Internal
+## Scala Native Internal
 
-    :   -   [compiler](./compiler.md)
-        -   [nir](./nir.md)
-        -   [name_mangling](./name_mangling.md)
-
--   How to setup IDEs [ides](./ides.md)
+-   [compiler](./compiler.md)
+-   [nir](./nir.md)
+-   [name mangling](./mangling.md)
+-   How to set up IDEs [ides](./ides.md)

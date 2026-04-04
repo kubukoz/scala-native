@@ -2,22 +2,15 @@ package scala.scalanative
 package build
 
 import java.io.IOException
+import java.nio.file.attribute.{BasicFileAttributes, DosFileAttributes}
 import java.nio.file.{
-  AccessDeniedException,
-  Files,
-  FileSystems,
-  FileVisitOption,
-  FileVisitResult,
-  Path,
-  Paths,
-  SimpleFileVisitor,
-  StandardCopyOption
+  AccessDeniedException, FileSystems, FileVisitOption, FileVisitResult, Files,
+  Path, Paths, SimpleFileVisitor, StandardCopyOption
 }
-import java.nio.file.attribute.BasicFileAttributes
+import java.security.{DigestInputStream, MessageDigest}
 import java.util.EnumSet
 import java.util.zip.{ZipEntry, ZipInputStream}
-import java.security.{DigestInputStream, MessageDigest}
-import java.nio.file.attribute.DosFileAttributes
+
 import scala.util.control.NonFatal
 
 /** Internal I/O utilities. */
@@ -34,8 +27,24 @@ private[scalanative] object IO {
 
   /** Write bytes to given file. */
   def write(file: Path, bytes: Array[Byte]): Unit = {
+    import java.nio.file.StandardOpenOption._
     Files.createDirectories(file.getParent)
-    Files.write(file, bytes)
+    Files.write(file, bytes, CREATE, WRITE)
+  }
+
+  /** Write string to given file. */
+  def write(path: Path, content: String): Unit =
+    write(path, content.getBytes())
+
+  // Read fully content of given file if it exists
+  def readFully(path: Path): Option[String] = {
+    if (!Files.exists(path)) None
+    else {
+      val source = scala.io.Source.fromFile(path.toFile())
+      try Some(source.mkString)
+      catch { case _: Exception => None }
+      finally source.close()
+    }
   }
 
   /** Finds all files starting in `base` that match `pattern`. */

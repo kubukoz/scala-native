@@ -1,10 +1,10 @@
 package scala.scalanative
 package linker
 
-import scala.scalanative.NativePlatform
-
-import org.junit.Test
 import org.junit.Assert._
+import org.junit.Test
+
+import scala.scalanative.NativePlatform
 
 class TraitReachabilitySuite extends ReachabilitySuite {
   val TestClsName = "Test"
@@ -49,7 +49,8 @@ class TraitReachabilitySuite extends ReachabilitySuite {
     Seq(Test, TestModule, TestInit, TestMain, TestModuleMain)
 
   @Test def unusedTrait(): Unit = testReachable() {
-    val source = """
+    val source =
+      """
       trait Parent
       class Child extends Parent
 
@@ -66,7 +67,8 @@ class TraitReachabilitySuite extends ReachabilitySuite {
   }
 
   @Test def inheritedTrait(): Unit = testReachable() {
-    val source = """
+    val source =
+      """
       trait Parent
       class Child extends Parent
 
@@ -86,7 +88,8 @@ class TraitReachabilitySuite extends ReachabilitySuite {
   }
 
   @Test def traitMethodImplementors(): Unit = testReachable() {
-    val source = """
+    val source =
+      """
       trait Parent {
         def foo: Unit
       }
@@ -116,7 +119,8 @@ class TraitReachabilitySuite extends ReachabilitySuite {
 
   @Test def traitMethodImplementors2(): Unit =
     testReachable() {
-      val source = """
+      val source =
+        """
       trait Parent {
         def foo: Unit
       }
@@ -153,7 +157,8 @@ class TraitReachabilitySuite extends ReachabilitySuite {
     }
 
   @Test def traitMethodDefaultImplementation(): Unit = testReachable() {
-    val source = """
+    val source =
+      """
       trait Parent {
         def foo: Unit = ()
       }
@@ -189,7 +194,8 @@ class TraitReachabilitySuite extends ReachabilitySuite {
   }
 
   @Test def traitMethodDefaultImplementation2(): Unit = testReachable() {
-    val source = """
+    val source =
+      """
       trait Parent {
         def foo: Unit = ()
       }
@@ -227,7 +233,8 @@ class TraitReachabilitySuite extends ReachabilitySuite {
 
   // Issue #805
   @Test def inheritedMainMethod(): Unit = testReachable() {
-    val source = """
+    val source =
+      """
        trait Parent {
          def main(args: Array[String]): Unit = ()
        }
