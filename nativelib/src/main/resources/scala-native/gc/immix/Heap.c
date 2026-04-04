@@ -72,7 +72,13 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
     GC_LOG_DEBUG("Heap_Init: memoryLimit=%zu, minHeapSize=%zu, maxHeapSize=%zu",
                  memoryLimit, minHeapSize, maxHeapSize);
 
-    /*
+#ifdef TARGET_PLAYDATE
+    // Playdate has fixed memory (no virtual memory, no overcommit).
+    // Pre-allocate the entire heap at startup to avoid fragmentation
+    // and runtime growth failures.
+    maxHeapSize = memoryLimit;
+    minHeapSize = maxHeapSize;
+#else
     if (maxHeapSize < MIN_HEAP_SIZE) {
         GC_LOG_ERROR("GC_MAXIMUM_HEAP_SIZE too small to initialize heap. "
                      "Minimum required: %zum",
@@ -100,10 +106,7 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
     if (maxHeapSize == UNLIMITED_HEAP_SIZE) {
         maxHeapSize = memoryLimit;
     }
-     */
-
-    maxHeapSize = memoryLimit;
-    minHeapSize = maxHeapSize;
+#endif
     GC_LOG_DEBUG("Heap_Init: adjusted maxHeapSize=%zu (%zuMB)",
                  maxHeapSize, maxHeapSize / (1024 * 1024));
 
@@ -248,9 +251,13 @@ bool Heap_shouldGrow(Heap *heap) {
                  blockCount, unavailableBlockCount, freeBlockCount,
                  recycledBlockCount);
 
-    // return freeBlockCount * 2 < blockCount ||
-    //        4 * unavailableBlockCount > blockCount;
+#ifdef TARGET_PLAYDATE
+    // Playdate pre-allocates all memory at startup, no dynamic growth.
     return false;
+#else
+    return freeBlockCount * 2 < blockCount ||
+           4 * unavailableBlockCount > blockCount;
+#endif
 }
 
 void Heap_Recycle(Heap *heap) {
