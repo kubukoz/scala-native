@@ -1,20 +1,90 @@
+/* This provides a devenv based developer shell. Choices:
+ *
+ * - sets the JDK to JDK 21
+ * - sets the environment variables for:
+ *    - no experimental compiler
+ *    - debug mode
+ *    - optimizer on
+ *    - immix GC
+ *    - no LTO
+ *
+ * See also: docs/contrib/build-setup.md
+ */
 {
-  inputs.nixpkgs.url = "github:nixos/nixpkgs";
-  inputs.flake-utils.url = "github:numtide/flake-utils";
+  inputs = {
+    nixpkgs.url = "github:cachix/devenv-nixpkgs/rolling";
+    systems.url = "github:nix-systems/default";
+    devenv.url = "github:cachix/devenv";
+    devenv.inputs.nixpkgs.follows = "nixpkgs";
+  };
 
-  outputs = { nixpkgs, flake-utils, ... }:
-    flake-utils.lib.eachDefaultSystem (
-      system:
-      let
-        pkgs = import nixpkgs {
-          inherit system;
-        };
-      in
-      {
-        devShells.default = pkgs.mkShell {
-          buildInputs = [ (pkgs.sbt.override { jre = pkgs.openjdk8; }) ];
-        };
-      }
-    );
+  nixConfig = {
+    extra-trusted-public-keys = "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=";
+    extra-substituters = "https://devenv.cachix.org";
+  };
+
+  outputs = { self, nixpkgs, devenv, systems, ... } @ inputs:
+    let
+      forEachSystem = nixpkgs.lib.genAttrs (import systems);
+      # Use a fixed JDK version of our choice.
+      useFixedJDK = (final: prev: {
+        jdk = final.jdk21;
+      });
+    in
+    {
+      packages = forEachSystem (system: {
+        devenv-up = self.devShells.${system}.default.config.procfileScript;
+        devenv-test = self.devShells.${system}.default.config.test;
+      });
+
+      devShells = forEachSystem
+        (system:
+          let
+            pkgs = nixpkgs.legacyPackages.${system};
+          in
+          {
+            default = devenv.lib.mkShell {
+              inherit inputs pkgs;
+              modules = [
+                {
+                  stdenv = pkgs.llvmPackages.stdenv;
+
+                  languages = {
+                    scala = {
+                      enable = true;
+                      sbt.enable = true;
+                    };
+                    c.enable = true;
+                    java.enable = true;
+                  };
+
+                  overlays = [
+                    useFixedJDK
+                  ];
+
+                  env = {
+                    ENABLE_EXPERIMENTAL_COMPILER = "false";
+                    SCALANATIVE_MODE = "debug";
+                    SCALANATIVE_GC = "immix";
+                    SCALANATIVE_LTO = "none";
+                    SCALANATIVE_OPTIMIZE = "true";
+                  };
+
+                  hardeningDisable = [ "fortify" ];
+
+                  packages = with pkgs; [
+                    boehmgc
+                    libunwind
+                    clang
+                    zlib
+                  ];
+
+                  enterShell = ''
+                    echo 'run sbt to get started'
+                  '';
+                }
+              ];
+            };
+          });
+    };
 }
-
