@@ -84,17 +84,11 @@ static bool GC_logInitialized = false;
 static FILE *GC_logOutput = NULL;
 
 void GC_Log_Init(void) {
-    #ifdef PD_DEBUG
-    GC_logLevel = GC_LOG_LEVEL_DEBUG;
-    GC_logInitialized = true;
-    pd_log_error("[ScalaNative GC | Debug] Initializing GC logging system.\n");
-    return;
-    #else
-
     if (GC_logInitialized)
         return;
     GC_logInitialized = true;
 
+#ifndef TARGET_PLAYDATE
     // Default output to stderr
     GC_logOutput = stderr;
 
@@ -104,15 +98,9 @@ void GC_Log_Init(void) {
         FILE *logFile = fopen(fileEnv, "a");
         if (logFile != NULL) {
             GC_logOutput = logFile;
-        } else {
-            // Fall back to stderr and warn about the failure
-            #ifdef PD_DEBUG
-            pd_log_error(
-                    "[ScalaNative GC | Warning] Failed to open log file: %s\n",
-                    fileEnv);
-            #endif
         }
     }
+#endif
 
     // Default level
     GC_logLevel = GC_LOG_LEVEL_WARN;
@@ -131,7 +119,6 @@ void GC_Log_Init(void) {
             GC_logLevel = GC_LOG_LEVEL_NONE;
         }
     }
-    #endif
 }
 
 GC_LogLevel GC_Log_GetLevel(void) { return GC_logLevel; }
