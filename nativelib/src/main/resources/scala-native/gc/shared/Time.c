@@ -6,6 +6,10 @@
 #include "Time.h"
 #include <time.h>
 
+#ifdef TARGET_PLAYDATE
+extern unsigned int pd_getCurrentTimeMilliseconds(void);
+#endif
+
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -30,7 +34,9 @@ static int winFreqQuadPart(int *quad) {
 #endif
 
 long long Time_current_millis(void) {
-#if defined(_WIN32)
+#if defined(TARGET_PLAYDATE)
+    return (long long)pd_getCurrentTimeMilliseconds();
+#elif defined(_WIN32)
     // GetTickCount64 returns monotonic time in milliseconds
     return (long long)GetTickCount64();
 #else
@@ -47,7 +53,9 @@ long long Time_current_nanos(void) {
     long long nano_time = 0LL;
 #define NANOS_PER_SEC 1000000000LL
 
-#if defined(_WIN32)
+#if defined(TARGET_PLAYDATE)
+    return (long long)pd_getCurrentTimeMilliseconds() * 1000000LL;
+#elif defined(_WIN32)
     // return value of 0 is failure
     LARGE_INTEGER count;
     int quad;

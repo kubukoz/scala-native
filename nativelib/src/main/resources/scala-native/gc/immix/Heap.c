@@ -1,6 +1,7 @@
 #if defined(SCALANATIVE_GC_IMMIX)
 
 #include <stdlib.h>
+#include "../../pd_exit.h"
 #include <stdio.h>
 #include "Heap.h"
 #include "Block.h"
@@ -68,6 +69,8 @@ word_t *Heap_mapAndAlign(size_t memoryLimit, size_t alignmentSize) {
  */
 void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
     size_t memoryLimit = Heap_getMemoryLimit();
+    GC_LOG_DEBUG("Heap_Init: memoryLimit=%zu, minHeapSize=%zu, maxHeapSize=%zu",
+                 memoryLimit, minHeapSize, maxHeapSize);
 
     /*
     if (maxHeapSize < MIN_HEAP_SIZE) {
@@ -101,16 +104,22 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
 
     maxHeapSize = memoryLimit;
     minHeapSize = maxHeapSize;
+    GC_LOG_DEBUG("Heap_Init: adjusted maxHeapSize=%zu (%zuMB)",
+                 maxHeapSize, maxHeapSize / (1024 * 1024));
 
     uint32_t maxNumberOfBlocks = maxHeapSize / SPACE_USED_PER_BLOCK;
     uint32_t initialBlockCount = minHeapSize / SPACE_USED_PER_BLOCK;
     heap->maxHeapSize = maxHeapSize;
     heap->blockCount = initialBlockCount;
     heap->maxBlockCount = maxNumberOfBlocks;
+    GC_LOG_DEBUG("Heap_Init: blocks=%u, maxBlocks=%u",
+                 initialBlockCount, maxNumberOfBlocks);
 
     // reserve space for block headers
     size_t blockMetaSpaceSize = maxNumberOfBlocks * sizeof(BlockMeta);
+    GC_LOG_DEBUG("Heap_Init: allocating blockMeta %zu bytes", blockMetaSpaceSize);
     word_t *blockMetaStart = Heap_mapAndAlign(blockMetaSpaceSize, WORD_SIZE);
+    GC_LOG_DEBUG("Heap_Init: blockMeta at %p", blockMetaStart);
     heap->blockMetaStart = blockMetaStart;
     heap->blockMetaEnd =
         blockMetaStart + initialBlockCount * sizeof(BlockMeta) / WORD_SIZE;
@@ -118,7 +127,9 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
     // reserve space for line headers
     size_t lineMetaSpaceSize =
         (size_t)maxNumberOfBlocks * LINE_COUNT * LINE_METADATA_SIZE;
+    GC_LOG_DEBUG("Heap_Init: allocating lineMeta %zu bytes", lineMetaSpaceSize);
     word_t *lineMetaStart = Heap_mapAndAlign(lineMetaSpaceSize, WORD_SIZE);
+    GC_LOG_DEBUG("Heap_Init: lineMeta at %p", lineMetaStart);
     heap->lineMetaStart = lineMetaStart;
     assert(LINE_COUNT * LINE_SIZE == BLOCK_TOTAL_SIZE);
     assert(LINE_COUNT * LINE_METADATA_SIZE % WORD_SIZE == 0);
@@ -128,11 +139,15 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
     // reserve space for bytemap
     size_t bytemapSpaceSize =
         maxHeapSize / ALLOCATION_ALIGNMENT + sizeof(Bytemap);
+    GC_LOG_DEBUG("Heap_Init: allocating bytemap %zu bytes", bytemapSpaceSize);
     Bytemap *bytemap =
         (Bytemap *)Heap_mapAndAlign(bytemapSpaceSize, ALLOCATION_ALIGNMENT);
+    GC_LOG_DEBUG("Heap_Init: bytemap at %p", bytemap);
     heap->bytemap = bytemap;
 
     // Init heap for small objects
+    GC_LOG_DEBUG("Heap_Init: allocating main heap %zu bytes (%zuMB)",
+                 maxHeapSize, maxHeapSize / (1024 * 1024));
     word_t *heapStart = Heap_mapAndAlign(maxHeapSize, BLOCK_TOTAL_SIZE);
     if (!heapStart) {
         GC_LOG_ERROR("Failed to allocate heap space, "
@@ -143,6 +158,7 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
                      getFreeMemorySize() / (1024.0 * 1024.0));
         exit(1);
     }
+    GC_LOG_DEBUG("Heap_Init: heapStart at %p", heapStart);
     heap->heapSize = minHeapSize;
     heap->heapStart = heapStart;
     heap->heapEnd = heapStart + minHeapSize / WORD_SIZE;
@@ -171,6 +187,8 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
         Stats_Init(heap->stats, statsFile);
     }
     mutex_init(&heap->lock);
+    GC_LOG_DEBUG("Heap_Init: complete, heapSize=%zu (%zuMB)",
+                 heap->heapSize, heap->heapSize / (1024 * 1024));
 }
 
 void Heap_Collect(Heap *heap, Stack *stack) {

@@ -85,7 +85,10 @@ static FILE *GC_logOutput = NULL;
 
 void GC_Log_Init(void) {
     #ifdef PD_DEBUG
+    GC_logLevel = GC_LOG_LEVEL_DEBUG;
+    GC_logInitialized = true;
     pd_log_error("[ScalaNative GC | Debug] Initializing GC logging system.\n");
+    return;
     #else
 
     if (GC_logInitialized)

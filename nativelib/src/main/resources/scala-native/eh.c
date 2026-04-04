@@ -1,6 +1,7 @@
 #ifndef SCALANATIVE_USING_CPP_EXCEPTIONS
 
 #include <stdlib.h>
+#include "pd_exit.h"
 #include <stdio.h>
 #include <stdbool.h>
 #include "string_constants.h"

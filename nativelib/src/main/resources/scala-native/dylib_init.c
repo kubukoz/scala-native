@@ -1,6 +1,7 @@
 #if defined SCALANATIVE_DYLIB && !defined SCALANATIVE_NO_DYLIB_CTOR
 
 #include <stdlib.h>
+#include "pd_exit.h"
 #include <stdio.h>
 
 #define NO_DYLIB_CTOR_ENV "SCALANATIVE_NO_DYLIB_CTOR"

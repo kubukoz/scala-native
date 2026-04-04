@@ -11,6 +11,7 @@
 #include "libunwind/libunwind.h"
 #include <dlfcn.h>
 #include <string.h>
+#include "../../pd_exit.h"
 
 // The unwinding on NetBSD is unstable, they don't provide CFI
 // annotations for most of libc and other places, nor for the signal

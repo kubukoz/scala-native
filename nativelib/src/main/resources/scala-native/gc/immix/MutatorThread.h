@@ -43,6 +43,7 @@ typedef MutatorThreadNode *MutatorThreads;
 // MutatorThread Lifecycle API
 // =============================================================================
 void MutatorThread_init(word_t **stackBottom);
+void MutatorThread_setStackBottom(word_t **stackBottom);
 void MutatorThread_delete(MutatorThread *self);
 void MutatorThread_switchState(MutatorThread *self,
                                GC_MutatorThreadState newState);

@@ -51,6 +51,10 @@ INLINE void *scalanative_GC_alloc(Rtti *info, size_t size) {
     } else {
         alloc = (Object *)Allocator_Alloc(&heap, size);
     }
+    if (alloc == NULL) {
+        GC_LOG_ERROR("scalanative_GC_alloc: allocation returned NULL for size=%zu", size);
+        Heap_exitWithOutOfMemory("scalanative_GC_alloc returned NULL");
+    }
     alloc->rtti = info;
     return (void *)alloc;
 }
@@ -59,6 +63,10 @@ INLINE void *scalanative_GC_alloc_small(Rtti *info, size_t size) {
     size = MathUtils_RoundToNextMultiple(size, ALLOCATION_ALIGNMENT);
 
     Object *alloc = (Object *)Allocator_Alloc(&heap, size);
+    if (alloc == NULL) {
+        GC_LOG_ERROR("scalanative_GC_alloc_small: NULL for size=%zu", size);
+        Heap_exitWithOutOfMemory("scalanative_GC_alloc_small returned NULL");
+    }
     alloc->rtti = info;
     return (void *)alloc;
 }
@@ -67,6 +75,10 @@ INLINE void *scalanative_GC_alloc_large(Rtti *info, size_t size) {
     size = MathUtils_RoundToNextMultiple(size, ALLOCATION_ALIGNMENT);
 
     Object *alloc = (Object *)LargeAllocator_Alloc(&heap, size);
+    if (alloc == NULL) {
+        GC_LOG_ERROR("scalanative_GC_alloc_large: NULL for size=%zu", size);
+        Heap_exitWithOutOfMemory("scalanative_GC_alloc_large returned NULL");
+    }
     alloc->rtti = info;
     return (void *)alloc;
 }
@@ -81,6 +93,10 @@ INLINE void *scalanative_GC_alloc_array(Rtti *info, size_t length,
 }
 
 INLINE void scalanative_GC_collect() { Heap_Collect(&heap, &stack); }
+
+void scalanative_GC_setStackBottom(void *stackbottom) {
+    MutatorThread_setStackBottom((word_t **)stackbottom);
+}
 
 INLINE void scalanative_GC_set_weak_references_collected_callback(
     WeakReferencesCollectedCallback callback) {

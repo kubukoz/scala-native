@@ -23,7 +23,13 @@ size_t Settings_MaxHeapSize(void) {
     return Parse_Env_Or_Default("GC_MAXIMUM_HEAP_SIZE", UNLIMITED_HEAP_SIZE);
 }
 
-char *Settings_StatsFileName(void) { return getenv(GC_STATS_FILE_SETTING); }
+char *Settings_StatsFileName(void) {
+#ifdef TARGET_PLAYDATE
+    return "pd_gc_stats"; // non-NULL to enable stats logging via pd_log_error
+#else
+    return getenv(GC_STATS_FILE_SETTING);
+#endif
+}
 
 // =============================================================================
 // Settings Initialization

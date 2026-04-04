@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "../pd_exit.h"
 #include <stdbool.h>
 #include <string.h>
 #include "string_constants.h"

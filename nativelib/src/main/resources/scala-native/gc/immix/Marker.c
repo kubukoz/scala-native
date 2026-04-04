@@ -181,7 +181,46 @@ NO_SANITIZE void Marker_markProgramStack(MutatorThread *thread, Heap *heap,
         }
     }
 #endif
+#ifdef TARGET_PLAYDATE
+    // Playdate (STM32H7, ARM Cortex-M7) is a bare-metal single-threaded
+    // device with no MMU. The C stack lives in DTCM (Data Tightly-Coupled
+    // Memory) starting at 0x20000000, with only ~10KB available.
+    //
+    // The GC's conservative stack scan needs valid bounds (stackTop and
+    // stackBottom) to know which memory range to scan for GC root pointers.
+    // On normal OSes these are reliable, but on Playdate they can be wrong:
+    //
+    // - stackBottom is set during scalanative_GC_init() (called from
+    //   eventHandler/kEventInit), capturing a local variable address from
+    //   deep in the Playdate SDK's init call chain.
+    // - stackTop is captured at GC time via MutatorThread_approximateStackTop().
+    //
+    // The Playdate SDK later calls our update() callback from a *different*
+    // stack depth. If update() runs at a shallower depth (higher address on
+    // ARM, where the stack grows down) than the original init call,
+    // stackTop > stackBottom, and markRange scans downward from stackBottom
+    // into unmapped memory below DTCM (addresses < 0x20000000), causing a
+    // hard fault (DACCVIOL at MMFAR below 0x20000000).
+    //
+    // Fix: we call scalanative_GC_setStackBottom() at the top of update()
+    // in main.c to keep stackBottom current. As a safety net, we also clamp
+    // the scan range to the valid SRAM region (0x20000000 - 0x20080000,
+    // covering 512KB of DTCM + SRAM on the STM32H7) so that even if the
+    // bounds are slightly off, we never read from unmapped memory.
+    {
+        word_t **lo = stackTop < stackBottom ? stackTop : stackBottom;
+        word_t **hi = stackTop < stackBottom ? stackBottom : stackTop;
+        word_t **sram_lo = (word_t **)0x20000000;
+        word_t **sram_hi = (word_t **)0x20080000;
+        if (lo < sram_lo) lo = sram_lo;
+        if (hi > sram_hi) hi = sram_hi;
+        if (lo < hi) {
+            Marker_markRange(heap, stack, lo, hi, sizeof(word_t));
+        }
+    }
+#else
     Marker_markRange(heap, stack, stackTop, stackBottom, sizeof(word_t));
+#endif
 
     // Mark registers buffer
     size_t registerBufferStride =

@@ -3,6 +3,7 @@
 #include "MutatorThread.h"
 #include "State.h"
 #include <stdlib.h>
+#include "../../pd_exit.h"
 #include <stdatomic.h>
 #include <stdint.h>
 #include "shared/ThreadUtil.h"
@@ -14,6 +15,18 @@
 #endif
 
 static mutex_t threadListsModificationLock;
+
+// Update the recorded stack bottom for the current mutator thread.
+// On bare-metal targets like Playdate, stackBottom must be refreshed
+// before any code that may trigger GC, because the runtime may call
+// user code (e.g. the update callback) from a different stack depth
+// than the one captured during GC_init. See Marker_markProgramStack
+// for the full explanation.
+void MutatorThread_setStackBottom(Field_t *stackbottom) {
+    if (currentMutatorThread != NULL) {
+        currentMutatorThread->stackBottom = stackbottom;
+    }
+}
 
 void MutatorThread_init(Field_t *stackbottom) {
     MutatorThread *self = (MutatorThread *)malloc(sizeof(MutatorThread));

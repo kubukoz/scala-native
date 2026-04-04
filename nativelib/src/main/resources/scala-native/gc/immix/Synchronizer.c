@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdatomic.h>
 #include <stdlib.h>
+#include "../../pd_exit.h"
 #include <string.h>
 #include <errno.h>
 

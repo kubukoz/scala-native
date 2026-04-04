@@ -9,6 +9,7 @@
 #include "YieldPointTrap.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include "../../pd_exit.h"
 #include <errno.h>
 #include <string.h>
 #include "shared/MemoryMap.h"

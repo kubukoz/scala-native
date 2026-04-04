@@ -2,6 +2,7 @@
 
 #include "shared/MemoryMap.h"
 #include <stdlib.h>
+#include "../../pd_exit.h"
 #include <stdio.h>
 
 #ifdef _WIN32
@@ -70,6 +71,9 @@ word_t *memoryMap(size_t memorySize) {
 int memoryUnmap(void *address, size_t memorySize) {
 #ifdef _WIN32
     return VirtualFree(address, memorySize, MEM_RELEASE);
+#elif defined(TARGET_PLAYDATE)
+    free(address);
+    return 0;
 #else // Unix
     return munmap(address, memorySize);
 #endif
@@ -84,15 +88,9 @@ word_t *memoryMapPrealloc(size_t memorySize, size_t doPrealloc) {
         return memoryMap(memorySize);
     }
     word_t *addr = malloc(memorySize);
-    // word_t *addr = mmap(NULL, memorySize, HEAP_MEM_PROT,
-    // HEAP_MEM_FLAGS_PREALLOC,
-    //                    HEAP_MEM_FD, HEAP_MEM_FD_OFFSET);if (addr == MAP_FAILED)
+    if (addr == NULL) {
         return NULL;
-#ifndef __linux__
-    // if we are not on linux the next best thing we can do is to mark the pages
-    // as MADV_WILLNEED but only if doPrealloc is enabled.
-    // madvise(addr, memorySize, MADV_WILLNEED);
-#endif // __linux__
+    }
     return addr;
 #endif // !_WIN32
 }
