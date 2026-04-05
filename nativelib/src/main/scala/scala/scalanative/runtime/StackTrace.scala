@@ -89,7 +89,9 @@ private[runtime] object StackTrace {
     def emptyStackTrace = scala.Array.emptyObjectArray
       .asInstanceOf[scala.Array[StackTraceElement]]
     if (raw.isEmpty)
-      return emptyStackTrace
+      return scala.Array(
+        new StackTraceElement("<unknown>", "<unknown>", null, -1)
+      )
 
     implicit val tlContext: Context = ThreadLocalContext.get()
     val buffer = scala.Array.newBuilder[StackTraceElement]

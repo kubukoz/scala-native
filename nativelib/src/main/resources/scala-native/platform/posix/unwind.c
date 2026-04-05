@@ -114,48 +114,29 @@ int scalanative_unwind_get_proc_name_by_ip(size_t ip, char *buffer,
 
 #include "../unwind.h"
 #include <string.h>
-#include <stdlib.h>
+
+// Stubs for platforms without libunwind (e.g. Playdate).
+// Return error codes so callers gracefully fall back to empty stack traces.
 
 int scalanative_unwind_get_proc_name(void *cursor, char *buffer, size_t length,
                                      void *offset) {
-    strcpy("unwind-not-supported", buffer);
-    exit(97);
-    return 0;
+    if (buffer != NULL && length > 0) buffer[0] = '\0';
+    return -1;
 }
 
-size_t scalanative_unwind_sizeof_context() {
-    exit(19);
-    return 0;
-}
+size_t scalanative_unwind_sizeof_context() { return 1; }
+size_t scalanative_unwind_sizeof_cursor() { return 1; }
 
-size_t scalanative_unwind_sizeof_cursor() {
-    exit(20);
-    return 0;
-}
+int scalanative_unwind_init_local(void *cursor, void *context) { return -1; }
+int scalanative_unwind_step(void *cursor) { return 0; }
+int scalanative_unw_reg_ip() { return 0; }
+int scalanative_unwind_get_reg(void *cursor, int regnum, size_t *valp) { return -1; }
+int scalanative_unwind_get_context(void *context) { return -1; }
 
-int scalanative_unwind_init_local(void *cursor, void *context) {
-    exit(21);
-    return 0;
-}
-
-int scalanative_unwind_step(void *cursor) {
-    exit(22);
-    return 0;
-}
-
-int scalanative_unw_reg_ip() {
-    exit(23);
-    return 0;
-}
-
-int scalanative_unwind_get_reg(void *cursor, int regnum, size_t *valp) {
-    exit(24);
-    return 0;
-}
-
-int scalanative_unwind_get_context(void *context) {
-    exit(25);
-    return 0;
+int scalanative_unwind_get_proc_name_by_ip(size_t ip, char *buffer,
+                                           size_t length, size_t *offset) {
+    if (buffer != NULL && length > 0) buffer[0] = '\0';
+    return -1;
 }
 
 #endif

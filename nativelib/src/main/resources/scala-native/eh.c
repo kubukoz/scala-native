@@ -5,6 +5,60 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include "string_constants.h"
+
+#ifdef TARGET_PLAYDATE
+
+// On Playdate (bare-metal ARM), we don't have a working unwinder.
+// Local try/catch works via direct jumps (optimized in Lower.scala).
+// scalanative_throw is only called when there's no local handler —
+// in that case we abort gracefully.
+
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
+
+typedef void *Exception;
+
+size_t scalanative_Throwable_sizeOfExceptionWrapper() {
+    // Returning 0 would skip allocation (treated as C++ mode).
+    // We need a non-zero size so the wrapper is allocated,
+    // even though we never use it for real unwinding.
+    return sizeof(void *);
+}
+
+Exception scalanative_catch(void *unwindException) {
+    // Should never be called — local catch uses direct jumps.
+    #ifdef PD_DEBUG
+    pd_log_error("%s scalanative_catch called unexpectedly\n", snFatalErrorPrefix);
+    #endif
+    abort();
+    return (Exception)0;
+}
+
+__attribute__((noreturn))
+void scalanative_throw(Exception obj) {
+    #ifdef PD_DEBUG
+    pd_log_error("%s Unhandled exception (no local catch handler)\n", snFatalErrorPrefix);
+    #endif
+    extern void scalanative_Throwable_showStackTrace(Exception exception);
+    scalanative_Throwable_showStackTrace(obj);
+    abort();
+}
+
+int scalanative_personality(int version, int actions,
+                            long long exception_class,
+                            void *unwindException,
+                            void *context) {
+    // Should never be called without a real unwinder.
+    #ifdef PD_DEBUG
+    pd_log_error("%s scalanative_personality called unexpectedly\n", snFatalErrorPrefix);
+    #endif
+    abort();
+    return 0;
+}
+
+#else // !TARGET_PLAYDATE
+
 #include "unwind.h"
 
 #if defined(__SCALANATIVE_DELIMCC)
@@ -15,47 +69,6 @@
 #ifdef PD_DEBUG
 extern void pd_log_error(char *str, ...);
 #endif
-
-#ifdef TARGET_PLAYDATE
-
-typedef void *Exception;
-
-size_t scalanative_Throwable_sizeOfExceptionWrapper() {
-    return -1;
-}
-
-Exception scalanative_catch(void *unwindException) {
-    #ifdef PD_DEBUG
-    pd_log_error(
-            "%s Unwinding is not supported on Playdate. Exception thrown but no personality function to catch it.\n",
-            snFatalErrorPrefix);
-     #endif
-     abort();
-}
-
-
-void scalanative_throw(Exception obj) {
-    #ifdef PD_DEBUG
-    pd_log_error(
-            "%s Throwing is not supported on Playdate. ",
-            snFatalErrorPrefix);
-    #endif
-    abort();
-}
-int scalanative_personality(int version, int actions,
-                                            uint64_t exception_class,
-                                            void *unwindException,
-                                            void *context) {
-
-   #ifdef PD_DEBUG
-   pd_log_error(
-            "%s Unwinding is not supported on Playdate. Exception thrown but no personality function to catch it.\n",
-            snFatalErrorPrefix);
-    #endif
-    abort();
-    return 0;
-}
-#else
 
 // gets the ExceptionWrapper from the _Unwind_Exception which is at the end of
 // it. +1 goes to the end of the struct since it adds with the size of
@@ -362,5 +375,6 @@ __attribute__((noreturn)) void scalanative_throw(Exception obj) {
     #endif
     abort();
 }
-#endif
-#endif //no playdate
+
+#endif // TARGET_PLAYDATE
+#endif // SCALANATIVE_USING_CPP_EXCEPTIONS
