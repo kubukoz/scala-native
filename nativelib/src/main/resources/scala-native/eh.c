@@ -8,10 +8,13 @@
 
 #ifdef TARGET_PLAYDATE
 
-// On Playdate (bare-metal ARM), we don't have a working unwinder.
-// Local try/catch works via direct jumps (optimized in Lower.scala).
-// scalanative_throw is only called when there's no local handler —
-// in that case we abort gracefully.
+// On Playdate (bare-metal ARM), we use setjmp/longjmp for exception handling.
+// Local try/catch (throw in same function as catch) uses direct jumps
+// (optimized in Lower.scala). Cross-function exceptions use an SJLJ handler
+// chain: callers with try/catch push a frame via setjmp, and scalanative_throw
+// longjmps to the nearest handler.
+
+#include <setjmp.h>
 
 #ifdef PD_DEBUG
 extern void pd_log_error(char *str, ...);
@@ -19,15 +22,59 @@ extern void pd_log_error(char *str, ...);
 
 typedef void *Exception;
 
+// SJLJ exception handler chain.
+// Each try/catch site pushes a frame before the call and pops it after.
+typedef struct SjljFrame {
+    jmp_buf env;
+    Exception exception;
+    struct SjljFrame *prev;
+} SjljFrame;
+
+static SjljFrame *sjlj_top = NULL;
+
+// Size of SjljFrame for stack allocation by the compiler.
+// The compiler stackallocs this many bytes for each try/catch site.
+size_t scalanative_eh_sjlj_frame_size(void) {
+    return sizeof(SjljFrame);
+}
+
+// Initialize and push an SJLJ frame. `storage` must point to at least
+// sizeof(SjljFrame) bytes (typically stack-allocated by the compiler).
+// Returns pointer to the jmp_buf within the frame.
+void *scalanative_eh_sjlj_push(void *storage) {
+    SjljFrame *frame = (SjljFrame *)storage;
+    frame->exception = (Exception)0;
+    frame->prev = sjlj_top;
+    sjlj_top = frame;
+    return (void *)&frame->env;
+}
+
+// Pop the top SJLJ frame (does not free — caller manages storage).
+void scalanative_eh_sjlj_pop(void) {
+    if (sjlj_top != NULL) {
+        sjlj_top = sjlj_top->prev;
+    }
+}
+
+// Get the exception from the top SJLJ frame (after longjmp).
+Exception scalanative_eh_sjlj_get_exception(void) {
+    if (sjlj_top != NULL) {
+        return sjlj_top->exception;
+    }
+    return (Exception)0;
+}
+
 size_t scalanative_Throwable_sizeOfExceptionWrapper() {
-    // Returning 0 would skip allocation (treated as C++ mode).
-    // We need a non-zero size so the wrapper is allocated,
-    // even though we never use it for real unwinding.
-    return sizeof(void *);
+    // On Playdate we use SJLJ — no _Unwind_Exception wrapper needed.
+    // Return 0 so the Throwable constructor skips the BlobArray allocation,
+    // which avoids GC pressure for cats-effect's TracingEvent.StackTrace
+    // (created on every flatMap/map when debugMode is on).
+    return 0;
 }
 
 Exception scalanative_catch(void *unwindException) {
-    // Should never be called — local catch uses direct jumps.
+    // Should never be called — local catch uses direct jumps,
+    // cross-function catch uses SJLJ.
     #ifdef PD_DEBUG
     pd_log_error("%s scalanative_catch called unexpectedly\n", snFatalErrorPrefix);
     #endif
@@ -37,8 +84,15 @@ Exception scalanative_catch(void *unwindException) {
 
 __attribute__((noreturn))
 void scalanative_throw(Exception obj) {
+    // If there's an SJLJ handler on the chain, longjmp to it.
+    if (sjlj_top != NULL) {
+        sjlj_top->exception = obj;
+        longjmp(sjlj_top->env, 1);
+        __builtin_unreachable();
+    }
+    // No handler — truly unhandled exception.
     #ifdef PD_DEBUG
-    pd_log_error("%s Unhandled exception (no local catch handler)\n", snFatalErrorPrefix);
+    pd_log_error("%s Unhandled exception (no catch handler)\n", snFatalErrorPrefix);
     #endif
     extern void scalanative_Throwable_showStackTrace(Exception exception);
     scalanative_Throwable_showStackTrace(obj);

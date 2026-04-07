@@ -283,6 +283,15 @@ private[codegen] abstract class AbstractCodeGen(
       }
     }
 
+    // setjmp returns twice (initial call + longjmp). LLVM must know this
+    // to avoid optimizing away the second-return code path.
+    name match {
+      case nir.Global.Member(_, sig) if sig.isExtern =>
+        val nir.Sig.Extern(id) = sig.unmangled: @unchecked
+        if (id == "setjmp") str(" returns_twice")
+      case _ => ()
+    }
+
     defn match {
       case _: nir.Defn.Declare   => ()
       case defn: nir.Defn.Define =>
