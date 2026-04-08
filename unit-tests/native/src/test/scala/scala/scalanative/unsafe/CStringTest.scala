@@ -1,14 +1,15 @@
 package scala.scalanative
 package unsafe
 
-import org.junit.Test
-import org.junit.Assert._
-
 import java.nio.charset.Charset
+
+import org.junit.Assert._
+import org.junit.Test
+
 import scalanative.libc.string._
-import scalanative.unsigned._
 // Scala 2.13.7 needs explicit import for implicit conversions
 import scalanative.unsafe.Ptr.ptrToCArray
+import scalanative.unsigned._
 
 class CStringTest {
 
@@ -58,10 +59,12 @@ class CStringTest {
     {
       "greeting": "Hello world!"
     }""",
-      fromCString(c"""
+      fromCString(
+        c"""
     {
       "greeting": "Hello world!"
-    }""")
+    }"""
+      )
     )
 
     assertEquals("\u0020\\X20\u006a\u006b", fromCString(c"\x20\X20\x6a\x6B"))
@@ -108,7 +111,7 @@ class CStringTest {
   }
 
   @Test def toCStringNullReturnsNullIssue1796(): Unit = {
-    Zone.acquire { implicit z => assertNull(toCString(null)) }
+    Zone.acquire { implicit z => assertNull(toCString(null: String)) }
   }
 
   @Test def testToCString(): Unit = {

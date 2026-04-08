@@ -1,15 +1,48 @@
-#scalafmt
+# scalafmt 3.7.14
 8456ecd6e3700f0c9b81616ae04ac80c4f4173dc
+
+# Upgrade to scalafmt 3.0.0-RC6
 cf6d1a4de1e1a9386fc437119158dc7384b9a58e
+
+# Harmonize NIR imports and qualification
+7a22db3de2742b02c6f642f7bb690fcbb055479d
+
+# Replace usage of deprecated `private[this]` with `private`
+4e7a21d831e19cdf9b9e810df08b171227440ec7
+# Replace deprectated `protected[this]` with `protected`
+23ecf283e426a118274595b9ce0ba46a82d10ee2
+# Fix more deprecations in all modules
+0fad84d58ea2db0422f50af6d357f980b8170911
+
+# rename nir.Position to nir.SourcePosition
+3ebbdc711dc5f58a9904e206918101fb7d95541d
+
+# scalafmt 3.9.4
 e8cbc084d65364d8c179e18d591daace7b31b968
 
-#renames / imports
-7a22db3de2742b02c6f642f7bb690fcbb055479d
-9529edb30b4c60e9531e0dca8a215d70f0ea2ac1
-
-#syntax updates
-563f0efae95feebc22c96c288f1e5eeb488d162f
-8d2076b3c5ffc77410028e430ebd5e203da77de2
-
 # Scala Steward: Reformat with scalafmt 3.9.8
-f8ab571bd965e3141c8f20c18d36132f69e8905e
+905811dbb8047c6404bbc0a78deaa61f8b5db884
+
+# scalafmt: un-exclude scala-next, use scala3future (#4515)
+3aa206edaae829fabb5fb85dc2bcb26169613dfb
+
+# scalafmt: update to v3.10.1 (#4530)
+d28d0dc115835ef610c05c865b341c689ddc1fef
+
+# scalafmt: adjust dialects (scala212 as default) (#4507)
+65f1e8db0e417c6b4006d60ef48a541e27bab72a
+
+# scalafmt: rewrite with SortModifiers (#4534)
+a4771d42fcad9635f3a837bf181a96b704f73202
+
+# scalafmt: remove actual scalalib, not spurious (#4532)
+e4adc94d8a1805a00fcc2b3aee8c089fbde954ef
+
+# scalafmt: rewrite and sort imports (#4533)
+89998701011afca723af08cebca345d7aac94a72
+
+# Scala Steward: Reformat with scalafmt 3.10.3
+a04251d4687bcea8d35d94fa77bc21c7a024b78b
+
+# scalafmt 3.10.4
+03bea59c88a4b3811ff0da5f389815eeceb0f7d4

@@ -3,21 +3,22 @@ package llvm
 
 import java.nio.file.{Path, Paths}
 import java.{lang => jl}
+
 import scala.collection.mutable
+import scala.language.implicitConversions
+import scala.util.control.NonFatal
+
 import scala.scalanative.build.Discover
+import scala.scalanative.codegen.llvm.Metadata.conversions._
 import scala.scalanative.codegen.llvm.compat.os.OsCompat
+import scala.scalanative.codegen.{Metadata => CodeGenMetadata}
 import scala.scalanative.io.VirtualDirectory
 import scala.scalanative.nir.ControlFlow.{Block, Graph => CFG}
 import scala.scalanative.nir.Defn.Define.DebugInfo
 import scala.scalanative.util.ShowBuilder.FileShowBuilder
-import scala.scalanative.util.{ShowBuilder, unreachable, unsupported}
+import scala.scalanative.util.{ScopedVar, ShowBuilder, unreachable, unsupported}
 import scala.scalanative.{build, linker, nir}
-import scala.util.control.NonFatal
-import scala.scalanative.codegen.{Metadata => CodeGenMetadata}
 
-import scala.language.implicitConversions
-import scala.scalanative.codegen.llvm.Metadata.conversions._
-import scala.scalanative.util.ScopedVar
 import MetadataCodeGen.DefnScopes
 
 private[codegen] abstract class AbstractCodeGen(
@@ -25,8 +26,7 @@ private[codegen] abstract class AbstractCodeGen(
     defns: Seq[nir.Defn]
 )(implicit val meta: CodeGenMetadata)
     extends MetadataCodeGen {
-  import meta.platform
-  import meta.config
+  import meta.{config, platform}
   import platform._
 
   val pointerType = if (useOpaquePointers) "ptr" else "i8*"
@@ -281,6 +281,15 @@ private[codegen] abstract class AbstractCodeGen(
         str(" ")
         genAttr(attrs.inlineHint)
       }
+    }
+
+    // setjmp returns twice (initial call + longjmp). LLVM must know this
+    // to avoid optimizing away the second-return code path.
+    name match {
+      case nir.Global.Member(_, sig) if sig.isExtern =>
+        val nir.Sig.Extern(id) = sig.unmangled: @unchecked
+        if (id == "setjmp") str(" returns_twice")
+      case _ => ()
     }
 
     defn match {
@@ -1024,12 +1033,14 @@ private[codegen] abstract class AbstractCodeGen(
           Lower.GCYieldPointTrapName.sig.unmangled: @unchecked
         touch(Lower.GCYieldPointTrapName)
         str {
-          if (useOpaquePointers) s"""
-          |  %_${trap.id} = load ptr, ptr @${safepointTrapField}
-          |  %_${fresh().id} = load volatile ptr, ptr %_${trap.id}""".stripMargin
-          else s"""
-          |  %_${trap.id} = load i8**, i8*** bitcast(i8** @$safepointTrapField to i8***)
-          |  %_${fresh().id} = load volatile i8*, i8** %_${trap.id}""".stripMargin
+          if (useOpaquePointers)
+            s"""|
+                |  %_${trap.id} = load ptr, ptr @${safepointTrapField}
+                |  %_${fresh().id} = load volatile ptr, ptr %_${trap.id}""".stripMargin
+          else
+            s"""|
+                |  %_${trap.id} = load i8**, i8*** bitcast(i8** @$safepointTrapField to i8***)
+                |  %_${fresh().id} = load volatile i8*, i8** %_${trap.id}""".stripMargin
         }
 
       case nir.Val.Global(pointee: nir.Global.Member, _)

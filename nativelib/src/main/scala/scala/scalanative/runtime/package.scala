@@ -1,14 +1,15 @@
 package scala.scalanative
 
-import scalanative.annotation.alwaysinline
-import scalanative.unsafe._
-import scalanative.unsigned.USize
-import scalanative.runtime.Intrinsics._
-import scalanative.runtime.monitor._
-import scalanative.runtime.ffi.stdatomic.{atomic_thread_fence, memory_order}
-import scala.scalanative.meta.LinktimeInfo.isMultithreadingEnabled
 import java.util.concurrent.locks.LockSupport
 import java.{lang => jl}
+
+import scala.scalanative.meta.LinktimeInfo.isMultithreadingEnabled
+import scalanative.annotation.alwaysinline
+import scalanative.runtime.Intrinsics._
+import scalanative.runtime.ffi.stdatomic.{atomic_thread_fence, memory_order}
+import scalanative.runtime.monitor._
+import scalanative.unsafe._
+import scalanative.unsigned.USize
 
 package object runtime {
   def filename = ExecInfo.filename
@@ -70,7 +71,7 @@ package object runtime {
         c"%s failed to initialize main java.lang.Thread\n",
         StringConstants.snFatalErrorPrefix
       )
-      System.exit(1)
+      System.exit(140)
     }
 
     val argv = fromRawPtr[CString](rawargv)
@@ -133,14 +134,18 @@ package object runtime {
       thread: Thread,
       throwable: jl.Throwable
   ): Unit = {
-    try handler.uncaughtException(thread, throwable)
-    catch {
-      case ex: jl.Throwable =>
-        val threadName = "\"" + thread.getName() + "\""
-        System.err.println(
-          s"\nException: ${ex.getClass().getName()} thrown from the UncaughtExceptionHandler in thread ${threadName}"
-        )
-    }
+    // pd_log_error(c"Uncaught exception!")
+    System.exit(998)
+    // try
+    // handler.uncaughtException(thread, throwable)
+    ()
+    // catch {
+    //   case ex: jl.Throwable =>
+    //     val threadName = "\"" + thread.getName() + "\""
+    //     System.err.println(
+    //       s"\nException: ${ex.getClass().getName()} thrown from the UncaughtExceptionHandler in thread ${threadName}"
+    //     )
+    // }
   }
 
   @alwaysinline def fromRawPtr[T](rawptr: RawPtr): Ptr[T] =
@@ -256,6 +261,8 @@ package object runtime {
         ex.setStackTrace(error.getStackTrace())
         saveResult(ex)
         throw error
+    } finally {
+      cls.notifyAll()
     }
   }
 
@@ -265,8 +272,7 @@ package object runtime {
       moduleSlot: unsafe.Ptr[AnyRef],
       cls: Class[_]
   ): AnyRef = cls.synchronized {
-    var spins = 32
-    while (spins > 0) {
+    while (true) {
       // The slot can contain one of the 3 values:
       // - Fully initialized object of type `cls`
       // - ExceptionInInitializerError object set by exception cought when executing constructor
@@ -289,16 +295,9 @@ package object runtime {
         ).initCause(ex)
       }
 
-      // Not yet initialized
-      cls.wait(1)
-      spins -= 1
+      cls.wait()
     }
-    throw new NoClassDefFoundError(cls.getName())
-      .initCause(
-        new IllegalStateException(
-          "Failed to load module initialized by other thread"
-        )
-      )
+    ??? // Unreachable
   }
 
   @extern private[runtime] object StackOverflowGuards {

@@ -6,7 +6,9 @@
 package java.util.concurrent
 
 import java.util.concurrent.locks.AbstractQueuedSynchronizer
+
 import scala.annotation.tailrec
+
 import scala.scalanative.annotation.safePublish
 
 object CountDownLatch {
@@ -15,7 +17,7 @@ object CountDownLatch {
    *  count.
    */
   @SerialVersionUID(4982264981922014374L)
-  final private class Sync(val count: Int) extends AbstractQueuedSynchronizer {
+  private final class Sync(val count: Int) extends AbstractQueuedSynchronizer {
     setState(count)
 
     private[concurrent] def getCount() = getState()

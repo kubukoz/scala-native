@@ -1,32 +1,28 @@
 package org.scalanative.testsuite.posixlib
 package sys
 
-import scalanative.unsafe._
-import scalanative.unsigned._
+import org.junit.Assert._
+import org.junit.Assume._
+import org.junit.{BeforeClass, Test}
+
+import org.scalanative.testsuite.posixlib.sys.SocketTestHelpers._
+import org.scalanative.testsuite.utils.Platform
 
 import scalanative.libc.string.memcmp
-
+import scalanative.meta.LinktimeInfo.isWindows
 import scalanative.posix.arpa.inet.inet_addr
 import scalanative.posix.errno.errno
 import scalanative.posix.netinet.in._
 import scalanative.posix.netinet.inOps._
 import scalanative.posix.sys.socket._
 import scalanative.posix.sys.socketOps._
-import scalanative.posix.time._
 import scalanative.posix.sys.time.timeval
 import scalanative.posix.sys.timeOps._
 import scalanative.posix.sys.uio._
 import scalanative.posix.sys.uioOps._
-
-import scalanative.meta.LinktimeInfo.isWindows
-
-import org.scalanative.testsuite.posixlib.sys.SocketTestHelpers._
-import org.scalanative.testsuite.utils.Platform
-
-import org.junit.Test
-import org.junit.Assert._
-import org.junit.Assume._
-import org.junit.BeforeClass
+import scalanative.posix.time._
+import scalanative.unsafe._
+import scalanative.unsigned._
 
 /** Exercise the POSIX socket.h sendmsg and recvmg routines.
  *
@@ -56,37 +52,37 @@ class MsgIoSocketTest {
    */
 
   private final val poemHeader =
-    """	  |
-	  |Percy Bysshe Shelley, 1818 -- Public Domain
-	  |
-	  |OZYMANDIAS of EGYPT
-	  |
-	  |""".stripMargin
+    """|	  |
+       |Percy Bysshe Shelley, 1818 -- Public Domain
+       |
+       |OZYMANDIAS of EGYPT
+       |
+       |""".stripMargin
 
   private final val chunk1 =
-    """	  |I met a traveller from an antique land
-	  |Who said:—Two vast and trunkless legs of stone
-	  |Stand in the desert. Near them on the sand,
-	  |Half sunk, a shatter'd visage lies, whose frown
-	  |And wrinkled lip and sneer of cold command
-	  |""".stripMargin
+    """|	  |I met a traveller from an antique land
+       |Who said:—Two vast and trunkless legs of stone
+       |Stand in the desert. Near them on the sand,
+       |Half sunk, a shatter'd visage lies, whose frown
+       |And wrinkled lip and sneer of cold command
+       |""".stripMargin
 
   private final val chunk2 =
-    """	  |Tell that its sculptor well those passions read
-	  |Which yet survive, stamp'd on these lifeless things,
-	  |The hand that mock'd them and the heart that fed.
-	  |And on the pedestal these words appear:
-	  |"My name is Ozymandias, king of kings:
-	  |
-	  |""".stripMargin
+    """|	  |Tell that its sculptor well those passions read
+       |Which yet survive, stamp'd on these lifeless things,
+       |The hand that mock'd them and the heart that fed.
+       |And on the pedestal these words appear:
+       |"My name is Ozymandias, king of kings:
+       |
+       |""".stripMargin
 
   private final val chunk3 =
-    """	  |Look on my works, ye mighty, and despair!"
-	  |Nothing beside remains: round the decay
-	  |Of that colossal wreck, boundless and bare,
-	  |The lone and level sands stretch far away.
-	  |
-	  |""".stripMargin
+    """|	  |Look on my works, ye mighty, and despair!"
+       |Nothing beside remains: round the decay
+       |Of that colossal wreck, boundless and bare,
+       |The lone and level sands stretch far away.
+       |
+       |""".stripMargin
 
   @Test def msgIoShouldScatterGather(): Unit = if (!isWindows) {
     // sendmsg() should gather, recvmsg() should scatter, the twain shall meet

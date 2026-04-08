@@ -6,13 +6,14 @@
 // revision 1.72
 package java.util.concurrent
 
-import scala.scalanative.runtime.{Intrinsics, fromRawPtr}
-import scala.scalanative.libc.stdatomic.AtomicInt
 import scala.annotation.tailrec
+
 import scala.scalanative.annotation.safePublish
+import scala.scalanative.libc.stdatomic.AtomicInt
+import scala.scalanative.runtime.{Intrinsics, fromRawPtr}
 
 abstract class CountedCompleter[T] protected (
-    @safePublish final private[concurrent] val completer: CountedCompleter[_],
+    @safePublish private[concurrent] final val completer: CountedCompleter[_],
     initialPendingCount: Int
 ) extends ForkJoinTask[T] {
 
@@ -46,7 +47,7 @@ abstract class CountedCompleter[T] protected (
     atomicPending.compareExchangeStrong(expected, count)
 
   // internal-only weak version
-  final private[concurrent] def weakCompareAndSetPendingCount(
+  private[concurrent] final def weakCompareAndSetPendingCount(
       expected: Int,
       count: Int
   ) = atomicPending.compareExchangeWeak(expected, count)
@@ -148,7 +149,7 @@ abstract class CountedCompleter[T] protected (
     if (q != null && maxTasks > 0) q.helpComplete(this, owned, maxTasks)
   }
 
-  override final private[concurrent] def trySetException(ex: Throwable): Int = {
+  override private[concurrent] final def trySetException(ex: Throwable): Int = {
     var a: CountedCompleter[_] = this
     var p = a
     while ({
@@ -161,7 +162,7 @@ abstract class CountedCompleter[T] protected (
     status
   }
 
-  override final protected def exec(): Boolean = {
+  override protected final def exec(): Boolean = {
     compute()
     false
   }

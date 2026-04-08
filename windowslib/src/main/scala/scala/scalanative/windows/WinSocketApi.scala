@@ -181,12 +181,14 @@ object WinSocketApiExt {
 }
 
 object WinSocketApiOps {
+  import util.Conversion._
+
   import WinSocketApi._
   import WinSocketApiExt._
-  import util.Conversion._
 
   private var winSocketsInitialized = false
 
+  @scala.annotation.nowarn("msg=eta-expansion is unnecessary")
   final def init(): Unit = {
     if (!winSocketsInitialized) {
       val requiredVersion = (wordFromBytes _).tupled(WinSocketVersion)

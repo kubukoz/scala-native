@@ -6,19 +6,21 @@
 
 package java.util.concurrent.atomic
 
-import scala.annotation.tailrec
-import scala.language.implicitConversions
-import scala.scalanative.annotation.alwaysinline
-import scala.scalanative.unsafe._
-import scala.scalanative.libc.stdatomic.AtomicRef
-import scala.scalanative.libc.stdatomic.memory_order._
-import scala.scalanative.runtime.ObjectArray
 import java.util.Arrays
 import java.util.function.{BinaryOperator, UnaryOperator}
 
+import scala.annotation.tailrec
+import scala.language.implicitConversions
+
+import scala.scalanative.annotation.alwaysinline
+import scala.scalanative.libc.stdatomic.AtomicRef
+import scala.scalanative.libc.stdatomic.memory_order._
+import scala.scalanative.runtime.ObjectArray
+import scala.scalanative.unsafe._
+
 class AtomicReferenceArray[E <: AnyRef] extends Serializable {
 
-  final private var array: Array[E] = null
+  private final var array: Array[E] = null
 
   @alwaysinline
   private[concurrent] def nativeArray: ObjectArray =
@@ -169,11 +171,11 @@ class AtomicReferenceArray[E <: AnyRef] extends Serializable {
       i: Int,
       expectedValue: E,
       newValue: E
-  ): Boolean =
-    if (array(i) eq expectedValue) {
-      array(i) = newValue
-      true
-    } else false
+  ): Boolean = {
+    nativeArray
+      .at(i)
+      .compareExchangeWeak(expectedValue, newValue, memory_order_relaxed)
+  }
 
   /** Atomically updates (with memory effects as specified by
    *  `VarHandle#compareAndSet`) the element at index {@code i} with the results

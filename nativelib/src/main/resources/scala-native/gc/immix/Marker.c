@@ -4,7 +4,6 @@
 #include <setjmp.h>
 #include "Marker.h"
 #include "Object.h"
-#include "immix_commix/Log.h"
 #include "State.h"
 #include "datastructures/Stack.h"
 #include "immix_commix/headers/ObjectHeader.h"
@@ -153,30 +152,27 @@ NO_SANITIZE static void Marker_markRange(Heap *heap, Stack *stack,
 
 NO_SANITIZE void Marker_markProgramStack(MutatorThread *thread, Heap *heap,
                                          Stack *stack) {
-    word_t **stackBottom = thread->stackBottom;
+    word_t **stackBottom = MutatorThread_getStackBottom(thread);
     word_t **stackTop = NULL;
     do {
         // Can spuriously fail, very rare, yet deadly
-        stackTop = (word_t **)atomic_load_explicit(&thread->stackTop,
-                                                   memory_order_acquire);
+        stackTop = MutatorThread_getStackTop(thread, false);
     } while (stackTop == NULL);
 #ifdef SCALANATIVE_THREAD_ALT_STACK
-    // If signal handler is executing in alternative stack we need to mark the
-    // whole thread stack
-    if (!isInRange(stackTop, thread->threadInfo->stackTop,
+    if (thread->threadInfo != NULL &&
+        !isInRange(stackTop, thread->threadInfo->stackTop,
                    thread->threadInfo->stackBottom)) {
         // Area between thread-stackTop and stackGaurdPage might be guarded
         void *stackScanLimit = threadStackScanableLimit(thread->threadInfo);
         stackTop =
             (stackScanLimit != NULL)
-                ? stackScanLimit
+                ? (word_t **)stackScanLimit
                 : stackBottom - 64 * 1024; // not yet initialized, approximate
-                                           // safe scanning limit
         if (thread->threadInfo->signalHandlerStack != NULL) {
             // Marking alternative stack should not be needed, but tests showed
             // that it might contain some pointer to managed object
             word_t **signalHandlerStack =
-                thread->threadInfo->signalHandlerStack;
+                (word_t **)thread->threadInfo->signalHandlerStack;
             Marker_markRange(
                 heap, stack, signalHandlerStack,
                 (word_t **)((char *)signalHandlerStack +
@@ -185,7 +181,46 @@ NO_SANITIZE void Marker_markProgramStack(MutatorThread *thread, Heap *heap,
         }
     }
 #endif
+#ifdef TARGET_PLAYDATE
+    // Playdate (STM32H7, ARM Cortex-M7) is a bare-metal single-threaded
+    // device with no MMU. The C stack lives in DTCM (Data Tightly-Coupled
+    // Memory) starting at 0x20000000, with only ~10KB available.
+    //
+    // The GC's conservative stack scan needs valid bounds (stackTop and
+    // stackBottom) to know which memory range to scan for GC root pointers.
+    // On normal OSes these are reliable, but on Playdate they can be wrong:
+    //
+    // - stackBottom is set during scalanative_GC_init() (called from
+    //   eventHandler/kEventInit), capturing a local variable address from
+    //   deep in the Playdate SDK's init call chain.
+    // - stackTop is captured at GC time via MutatorThread_approximateStackTop().
+    //
+    // The Playdate SDK later calls our update() callback from a *different*
+    // stack depth. If update() runs at a shallower depth (higher address on
+    // ARM, where the stack grows down) than the original init call,
+    // stackTop > stackBottom, and markRange scans downward from stackBottom
+    // into unmapped memory below DTCM (addresses < 0x20000000), causing a
+    // hard fault (DACCVIOL at MMFAR below 0x20000000).
+    //
+    // Fix: we call scalanative_GC_setStackBottom() at the top of update()
+    // in main.c to keep stackBottom current. As a safety net, we also clamp
+    // the scan range to the valid SRAM region (0x20000000 - 0x20080000,
+    // covering 512KB of DTCM + SRAM on the STM32H7) so that even if the
+    // bounds are slightly off, we never read from unmapped memory.
+    {
+        word_t **lo = stackTop < stackBottom ? stackTop : stackBottom;
+        word_t **hi = stackTop < stackBottom ? stackBottom : stackTop;
+        word_t **sram_lo = (word_t **)0x20000000;
+        word_t **sram_hi = (word_t **)0x20080000;
+        if (lo < sram_lo) lo = sram_lo;
+        if (hi > sram_hi) hi = sram_hi;
+        if (lo < hi) {
+            Marker_markRange(heap, stack, lo, hi, sizeof(word_t));
+        }
+    }
+#else
     Marker_markRange(heap, stack, stackTop, stackBottom, sizeof(word_t));
+#endif
 
     // Mark registers buffer
     size_t registerBufferStride =
@@ -206,6 +241,13 @@ void Marker_markModules(Heap *heap, Stack *stack) {
     Bytemap *bytemap = heap->bytemap;
     for (int i = 0; i < nb_modules; i++) {
         Object *object = (Object *)modules[i];
+        // Module slots may point to partially-initialized objects (rtti not
+        // yet written) if GC fires during module construction.  Skip them —
+        // they will be reachable from the program stack instead.
+        if (object != NULL && Heap_IsWordInHeap(heap, (word_t *)object) &&
+            object->rtti == NULL) {
+            continue;
+        }
         Marker_markField(heap, stack, (Field_t)object);
     }
 }

@@ -22,8 +22,8 @@
 package java.util.concurrent
 
 import java.util._
-import java.util.function._
 import java.util.concurrent.atomic._
+import java.util.function._
 
 import scala.scalanative.annotation.safePublish
 import scala.scalanative.meta.LinktimeInfo
@@ -124,14 +124,12 @@ class ThreadLocalRandom extends Random {
   override def setSeed(seed: Long): Unit = {
     if (initialized)
       throw new UnsupportedOperationException
-
-    super.setSeed(seed)
   }
 
-  final private def nextSeed(): Long = {
+  private final def nextSeed(): Long = {
     val t = Thread.currentThread()
     t.threadLocalRandomSeed +=
-      ThreadLocalRandom.GAMMA // read and update per-thread seed
+      ((t.threadId() << 1) + ThreadLocalRandom.GAMMA) // read and update per-thread seed
     t.threadLocalRandomSeed
   }
 
@@ -139,6 +137,9 @@ class ThreadLocalRandom extends Random {
    * override nextDouble(). The RandomGenerator default method produces
    * exactly the same bits.
    */
+
+  override protected def next(bits: Int): Int =
+    nextInt() >>> (32 - bits)
 
   override def nextInt(): Int = ThreadLocalRandom.mix32(nextSeed())
 

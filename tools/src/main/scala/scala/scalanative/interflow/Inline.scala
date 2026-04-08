@@ -1,17 +1,14 @@
 package scala.scalanative
 package interflow
 
-import scala.scalanative.nir.Defn.Define.DebugInfo
 import scala.scalanative.linker._
+import scala.scalanative.nir.Defn.Define.DebugInfo
 import scala.scalanative.util.unreachable
 
 private[interflow] trait Inline { self: Interflow =>
   val optimizerConfig = config.compilerConfig.optimizerConfig
   import optimizerConfig.{
-    smallFunctionSize,
-    maxCallerSize,
-    maxCalleeSize,
-    maxInlineDepth
+    maxCalleeSize, maxCallerSize, maxInlineDepth, smallFunctionSize
   }
 
   def shallInline(name: nir.Global.Member, args: Seq[nir.Val])(implicit
@@ -27,7 +24,7 @@ private[interflow] trait Inline { self: Interflow =>
       .fold[Boolean] {
         false
       } { defn =>
-        def isCtor = name.sig.isCtor
+        def isCtor = name.sig.isCtor || name.sig.isTraitInit
         def isSmall = defn.insts.size <= smallFunctionSize
         def isExtern = defn.attrs.isExtern
         def hasVirtualArgs = args.exists(_.isInstanceOf[nir.Val.Virtual])

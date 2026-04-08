@@ -6,7 +6,7 @@ inputs:
     required: true
   java-version:
     description: "Java version to use in tests"
-    default: "8"
+    default: "17"
   llvm-version:
     description: "LLVM version to use"
     default: "20.1.4"
@@ -17,10 +17,12 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-java@v4
+    - uses: coursier/cache-action@v6
+    - uses: coursier/setup-action@v1
       with:
-        distribution: "zulu"
-        java-version: ${{inputs.java-version}}
+        jvm: ${{inputs.java-version}}
+        apps: sbt
+
     # We need to set proper Pagefile limits in advance.
     # GitHub actions default page file size is quite small,
     # it's not enough to run all tests, especially when using None GC.
@@ -61,9 +63,7 @@ runs:
       with:
         path: |
           ${{steps.resolve-env.outputs.ProgramFiles}}\LLVM\
-          ${{steps.resolve-env.outputs.LocalAppData}}\Coursier\Cache\v1\
-          ${{steps.resolve-env.outputs.UserProfile}}\.ivy2\cache
-        key: ${{ runner.os }}-${{ inputs.scala-version }}-deps
+        key: llvm-${{ inputs.llvm-version }}
 
     # Install LLVM in case if cache is missing
     - name: Install LLVM

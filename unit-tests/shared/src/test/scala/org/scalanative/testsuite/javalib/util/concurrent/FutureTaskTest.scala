@@ -7,18 +7,19 @@
  */
 package org.scalanative.testsuite.javalib.util.concurrent
 
-import org.junit.Assert._
-import org.junit.Assume._
-import org.junit.{Test, Ignore}
-import org.scalanative.testsuite.utils.Platform
-import JSR166Test._
-
-import java.util.concurrent.TimeUnit._
 import java.util
 import java.util._
+import java.util.concurrent.TimeUnit._
 import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.FutureTask
+
+import org.junit.Assert._
+import org.junit.Assume._
+import org.junit.{Ignore, Test}
+
+import org.scalanative.testsuite.utils.Platform
+
+import JSR166Test._
 
 object FutureTaskTest {
 
@@ -32,10 +33,10 @@ object FutureTaskTest {
 
   sealed trait PublicFutureTask { self: FutureTask[AnyRef] =>
     val runCounter: AtomicInteger
-    final protected val doneCounter = new AtomicInteger(0)
-    final protected val runAndResetCounter = new AtomicInteger(0)
-    final protected val setCounter = new AtomicInteger(0)
-    final protected val setExceptionCounter = new AtomicInteger(0)
+    protected final val doneCounter = new AtomicInteger(0)
+    protected final val runAndResetCounter = new AtomicInteger(0)
+    protected final val setCounter = new AtomicInteger(0)
+    protected final val setExceptionCounter = new AtomicInteger(0)
     def runCount(): Int = this.runCounter.get()
     def doneCount(): Int = this.doneCounter.get()
     def runAndResetCount(): Int = runAndResetCounter.get()
@@ -737,7 +738,7 @@ class FutureTaskTest extends JSR166Test {
   @Test def testGet_ExecutionException(): Unit = {
     val e = new ArithmeticException
     val task = FutureTaskTest.PublicFutureTask(new Callable[Any]() {
-      override def call = throw e
+      override def call: Any = throw e
     })
     task.run()
     assertEquals(1, task.runCount())
@@ -760,7 +761,7 @@ class FutureTaskTest extends JSR166Test {
   @Test def testTimedGet_ExecutionException2(): Unit = {
     val e = new ArithmeticException
     val task = FutureTaskTest.PublicFutureTask(new Callable[Any]() {
-      override def call = throw e
+      override def call: Any = throw e
     })
     task.run()
     try {

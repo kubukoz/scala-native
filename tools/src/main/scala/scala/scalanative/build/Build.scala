@@ -1,20 +1,20 @@
 package scala.scalanative
 package build
 
-import java.nio.file.{Files, Path, Paths}
-import scala.scalanative.util.Scope
-import scala.scalanative.linker.ReachabilityAnalysis
-import scala.scalanative.codegen.llvm.CodeGen.IRGenerators
-import scala.util.Try
-import java.nio.file.FileVisitOption
-import java.nio.file.StandardOpenOption
-import java.util.Optional
 import java.nio.file.attribute.FileTime
+import java.nio.file.{FileVisitOption, Files, Path, Paths, StandardOpenOption}
+import java.util.Optional
 import java.util.concurrent.Executors
+
+import scala.collection.immutable
 import scala.concurrent._
 import scala.concurrent.duration.Duration
-import scala.util.{Success, Properties}
-import scala.collection.immutable
+import scala.util.{Properties, Success, Try}
+
+import scala.scalanative.codegen.llvm.CodeGen.IRGenerators
+import scala.scalanative.linker.ReachabilityAnalysis
+import scala.scalanative.util.Scope
+
 import ScalaNative._
 
 /** Utility methods for building code using Scala Native. */
@@ -215,11 +215,15 @@ object Build {
         // format: off
         val jlRunnable = nir.Global.Top("java.lang.Runnable")
         val jlThread = nir.Global.Top("java.lang.Thread")
+        val jlThreadBuilder = nir.Global.Top("java.lang.Thread$Builder")
         val jlThreadBuildersOfPlatform = nir.Global.Top("java.lang.ThreadBuilders$PlatformThreadBuilder")
-        val jlThreadBuildersOfPlatformStart = jlThreadBuildersOfPlatform.member(nir.Sig.Method("start", Seq(jlRunnable, jlThread).map(nir.Type.Ref(_))))
+
         val jlThreadStart = jlThread.member(nir.Sig.Method("start", Seq(nir.Type.Unit)))
+        val jlThreadBuilderStart = jlThreadBuilder.member(nir.Sig.Method("start", Seq(jlRunnable, jlThread).map(nir.Type.Ref(_))))
+        val jlThreadBuildersOfPlatformStart = jlThreadBuildersOfPlatform.member(nir.Sig.Method("start", Seq(jlRunnable, jlThread).map(nir.Type.Ref(_))))
         val usesSystemThreads =
           analysis.infos.get(jlThreadBuildersOfPlatformStart).isDefined ||
+          analysis.infos.get(jlThreadBuilderStart).isDefined ||
           analysis.infos.get(jlThreadStart).isDefined
         // format: on
         if (!usesSystemThreads) {

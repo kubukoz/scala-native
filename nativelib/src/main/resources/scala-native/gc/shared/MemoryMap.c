@@ -1,6 +1,9 @@
 // MemoryMap.c is used by all GCs and Zone
 
 #include "shared/MemoryMap.h"
+#include <stdlib.h>
+#include "../../pd_exit.h"
+#include <stdio.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -36,6 +39,10 @@
 #define HEAP_MEM_FD_OFFSET 0
 #endif // Unix
 
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
+
 word_t *memoryMap(size_t memorySize) {
 #ifdef _WIN32
     // On Windows only reserve given chunk of memory. It should be explicitly
@@ -44,10 +51,19 @@ word_t *memoryMap(size_t memorySize) {
     // supports only 32-bit address space and is in most cases not recommended.
     return VirtualAlloc(NULL, memorySize, MEM_RESERVE, PAGE_NOACCESS);
 #else // Unix
-    word_t *addr = mmap(NULL, memorySize, HEAP_MEM_PROT, HEAP_MEM_FLAGS,
-                        HEAP_MEM_FD, HEAP_MEM_FD_OFFSET);
-    if (addr == MAP_FAILED)
+    #ifdef PD_DEBUG
+    pd_log_error("Trying to map %d bytes of memory\n", memorySize);
+    #endif
+    word_t *addr = malloc(memorySize);
+    if (addr == NULL) {
+        #ifdef PD_DEBUG
+        pd_log_error("Failed to map memory\n");
+        #endif
         return NULL;
+    }
+    #ifdef PD_DEBUG
+    pd_log_error("Mapped %d bytes of memory to %p\n", memorySize, addr);
+    #endif
     return addr;
 #endif
 }
@@ -55,6 +71,9 @@ word_t *memoryMap(size_t memorySize) {
 int memoryUnmap(void *address, size_t memorySize) {
 #ifdef _WIN32
     return VirtualFree(address, memorySize, MEM_RELEASE);
+#elif defined(TARGET_PLAYDATE)
+    free(address);
+    return 0;
 #else // Unix
     return munmap(address, memorySize);
 #endif
@@ -68,17 +87,10 @@ word_t *memoryMapPrealloc(size_t memorySize, size_t doPrealloc) {
     if (!doPrealloc) {
         return memoryMap(memorySize);
     }
-    word_t *addr =
-        mmap(NULL, memorySize, HEAP_MEM_PROT, HEAP_MEM_FLAGS_PREALLOC,
-             HEAP_MEM_FD, HEAP_MEM_FD_OFFSET);
-    if (addr == MAP_FAILED)
+    word_t *addr = malloc(memorySize);
+    if (addr == NULL) {
         return NULL;
-#ifndef __linux__
-    // if we are not on linux the next best thing we can do is to mark the pages
-    // as MADV_WILLNEED but only if doPrealloc is enabled.
-    madvise(addr, memorySize, MADV_WILLNEED);
-#endif // __linux__
-
+    }
     return addr;
 #endif // !_WIN32
 }
@@ -94,10 +106,13 @@ bool memoryCommit(void *ref, size_t memorySize) {
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "shared/Log.h"
 
 static void exitWithOutOfMemory() {
-    fprintf(stderr, "Out of heap space\n");
-    exit(1);
+    #ifdef PD_DEBUG
+    pd_log_error("Out of heap space");
+    #endif
+    exit(137);
 }
 
 word_t *memoryMapOrExitOnError(size_t memorySize) {
@@ -114,8 +129,10 @@ word_t *memoryMapOrExitOnError(size_t memorySize) {
 }
 
 static void exitWithFailToUnmapMemory() {
-    fprintf(stderr, "Fail to unmap memory.\n");
-    exit(1);
+    #ifdef PD_DEBUG
+    pd_log_error("Failed to unmap memory");
+    #endif
+    exit(138);
 }
 
 void memoryUnmapOrExitOnError(void *address, size_t memorySize) {

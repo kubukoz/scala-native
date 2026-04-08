@@ -1,16 +1,18 @@
 package scala.scalanative
 package nscplugin
 
+import dotty.tools.backend.jvm.DottyBackendInterface.symExtensions
 import dotty.tools.dotc.ast.tpd._
 import dotty.tools.dotc.core
-import core.Contexts._
-import core.Symbols._
-import core.Flags._
-import core.StdNames._
+import scala.language.implicitConversions
+
 import scala.scalanative.nscplugin.CompilerCompat.SymUtilsCompat.*
 import scalanative.util.unreachable
-import scala.language.implicitConversions
-import dotty.tools.backend.jvm.DottyBackendInterface.symExtensions
+
+import core.Contexts._
+import core.Flags._
+import core.StdNames._
+import core.Symbols._
 
 trait NirGenName(using Context) {
   self: NirCodeGen =>
@@ -77,7 +79,6 @@ trait NirGenName(using Context) {
       else nir.Sig.Scope.Public
 
     def paramTypes = sym.info.paramInfoss.flatten
-      .map(fromType)
       .map(genType(_))
 
     if (sym == defn.`String_+`) genMethodName(defnNir.String_concat)
@@ -87,7 +88,7 @@ trait NirGenName(using Context) {
     else if (sym.name == nme.TRAIT_CONSTRUCTOR)
       owner.member(nir.Sig.Method(id, Seq(nir.Type.Unit), scope))
     else
-      val retType = genType(fromType(sym.info.resultType))
+      val retType = genType(sym.info.resultType)
       owner.member(nir.Sig.Method(id, paramTypes :+ retType, scope))
   }
 
@@ -128,9 +129,8 @@ trait NirGenName(using Context) {
       else nir.Sig.Scope.PublicStatic
 
     val paramTypes = sym.info.paramInfoss.flatten
-      .map(fromType)
       .map(genType(_))
-    val retType = genType(fromType(sym.info.resultType))
+    val retType = genType(sym.info.resultType)
 
     val sig = nir.Sig.Method(id, paramTypes :+ retType, scope)
     owner.member(sig)

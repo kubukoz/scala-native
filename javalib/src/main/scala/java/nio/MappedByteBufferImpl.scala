@@ -1,31 +1,22 @@
 package java.nio
 
-import scala.scalanative.meta.LinktimeInfo.isWindows
+import java.io.{FileDescriptor, IOException}
+import java.nio.channels.FileChannel
 
 import scala.scalanative.annotation.alwaysinline
-
-import scala.scalanative.libc.errno
-import scala.scalanative.libc.string
+import scala.scalanative.libc.LibcExt
+import scala.scalanative.meta.LinktimeInfo.isWindows
 import scala.scalanative.posix.sys.mman._
-import scala.scalanative.posix.unistd.{sysconf, _SC_PAGESIZE}
-
+import scala.scalanative.posix.unistd.{_SC_PAGESIZE, sysconf}
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
-
-import scala.scalanative.windows.WinBaseApi.CreateFileMappingA
-import scala.scalanative.windows.WinBaseApiExt._
-import scala.scalanative.windows.MemoryApi._
 import scala.scalanative.windows.ErrorHandlingApi.GetLastError
+import scala.scalanative.windows.MemoryApi._
 import scala.scalanative.windows.SysInfoApi._
 import scala.scalanative.windows.SysInfoApiOps._
+import scala.scalanative.windows.WinBaseApi.CreateFileMappingA
+import scala.scalanative.windows.WinBaseApiExt._
 import scala.scalanative.windows._
-
-import java.io.IOException
-import java.io.FileDescriptor
-
-import java.nio.channels.FileChannel.MapMode
-import java.nio.channels.FileChannel
-import scala.scalanative.windows.SysInfoApi.GetSystemInfo
 
 private class MappedByteBufferImpl(
     _capacity: Int,
@@ -135,6 +126,9 @@ private class MappedByteBufferImpl(
 }
 
 private[nio] object MappedByteBufferImpl {
+
+  import FileChannel.MapMode
+
   private[nio] implicit object NewMappedByteBuffer
       extends GenMappedBuffer.NewMappedBuffer[ByteBuffer, Byte] {
     def apply(
@@ -157,8 +151,8 @@ private[nio] object MappedByteBufferImpl {
 
   @alwaysinline private def failMapping(): Unit = {
     val reason =
-      if (isWindows) ErrorHandlingApiOps.errorMessage(GetLastError())
-      else fromCString(string.strerror(errno.errno))
+      if (isWindows) ErrorHandlingApiOps.lastErrorMessage()
+      else LibcExt.strError()
     throw new IOException(s"Could not map file to memory: $reason")
   }
 
@@ -206,12 +200,12 @@ private[nio] object MappedByteBufferImpl {
     )
     if (ptr == null) failMapping()
 
-    new MappedByteBufferData(
+    MappedByteBufferData(
       mode = mode,
       mapAddress = ptr,
       length = size,
       pagePosition = pagePosition,
-      windowsMappingHandle = Some(mappingHandle)
+      windowsMappingHandle = mappingHandle
     )
   }
 
@@ -248,9 +242,9 @@ private[nio] object MappedByteBufferImpl {
       fd = fd.fd,
       offset = offset.toSize
     )
-    if (ptr.toInt == -1) failMapping()
+    if (ptr == MAP_FAILED) failMapping()
 
-    new MappedByteBufferData(mode, ptr, size, pagePosition, None)
+    MappedByteBufferData(mode, ptr, size, pagePosition)
   }
 
   private def mapData(
@@ -301,7 +295,7 @@ private[nio] object MappedByteBufferImpl {
       0,
       0,
       size,
-      mode == FileChannel.MapMode.READ_ONLY
+      mode == MapMode.READ_ONLY
     )
   }
 }

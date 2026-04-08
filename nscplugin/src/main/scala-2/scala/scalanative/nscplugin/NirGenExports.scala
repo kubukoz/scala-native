@@ -7,10 +7,10 @@ import scala.tools.nsc
 trait NirGenExports[G <: nsc.Global with Singleton] {
   self: NirGenPhase[G] with NirGenType[G] =>
   import global._
-  import definitions._
+  import global.definitions._
+
   import nirAddons._
   import nirDefinitions._
-  import SimpleType._
 
   case class ExportedSymbol(symbol: Symbol, defn: nir.Defn.Define)
 

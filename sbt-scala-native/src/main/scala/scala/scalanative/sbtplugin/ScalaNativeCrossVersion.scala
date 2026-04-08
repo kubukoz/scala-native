@@ -8,7 +8,7 @@ import sbt._
 object ScalaNativeCrossVersion {
   val currentBinaryVersion = nir.Versions.currentBinaryVersion
 
-  private[this] def crossVersionAddPlatformPart(
+  private def crossVersionAddPlatformPart(
       cross: CrossVersion,
       part: String
   ): CrossVersion = {
@@ -25,11 +25,14 @@ object ScalaNativeCrossVersion {
     }
   }
 
+  private def scalaNativePrefixFromBinary(binaryVersion: String): String =
+    "native" + binaryVersion
+
+  private[scalanative] def scalaNativePrefix: String =
+    scalaNativePrefixFromBinary(currentBinaryVersion)
+
   def scalaNativeMapped(cross: CrossVersion): CrossVersion =
-    crossVersionAddPlatformPart(
-      cross,
-      "native" + nir.Versions.currentBinaryVersion
-    )
+    crossVersionAddPlatformPart(cross, scalaNativePrefix)
 
   val binary: CrossVersion = scalaNativeMapped(CrossVersion.binary)
 

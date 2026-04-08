@@ -1,16 +1,16 @@
 package java.net
 
-import scala.scalanative.unsigned._
-import scala.scalanative.unsafe._
+import java.io.{FileDescriptor, IOException}
+
+import scala.annotation.tailrec
+
 import scala.scalanative.posix.errno._
 import scala.scalanative.posix.fcntl._
 import scala.scalanative.posix.poll._
-import scala.scalanative.posix.pollEvents._
 import scala.scalanative.posix.pollOps._
 import scala.scalanative.posix.sys.socket
-
-import java.io.{FileDescriptor, IOException}
-import scala.annotation.tailrec
+import scala.scalanative.unsafe._
+import scala.scalanative.unsigned._
 
 private[net] class UnixPlainSocketImpl extends AbstractPlainSocketImpl {
 
@@ -34,7 +34,7 @@ private[net] class UnixPlainSocketImpl extends AbstractPlainSocketImpl {
     fd = new FileDescriptor(sock)
   }
 
-  final protected def tryPollOnConnect(timeout: Int): Unit = {
+  protected final def tryPollOnConnect(timeout: Int): Unit = {
     val hasTimeout = timeout > 0
     val deadline = if (hasTimeout) System.currentTimeMillis() + timeout else 0L
     val nAlloc = 1.toUInt
@@ -90,7 +90,7 @@ private[net] class UnixPlainSocketImpl extends AbstractPlainSocketImpl {
 
     pollFd.fd = fd.fd
     pollFd.revents = 0
-    pollFd.events = POLLIN
+    pollFd.events = POLLIN.toShort
 
     val pollRes = poll(pollFd, nAlloc, timeout)
     val revents = pollFd.revents

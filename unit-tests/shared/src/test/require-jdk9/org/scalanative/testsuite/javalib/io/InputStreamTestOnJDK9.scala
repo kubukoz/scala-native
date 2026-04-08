@@ -2,8 +2,8 @@ package org.scalanative.testsuite.javalib.io
 
 import java.io._
 
-import org.junit.Test
 import org.junit.Assert._
+import org.junit.Test
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
 
@@ -28,7 +28,8 @@ class InputStreamTestOnJDK9 {
 
     val streamIn = new ByteArrayInputStream(inputBytes)
     val receiver = new Array[Byte](10)
-    val nRead = streamIn.readNBytes(receiver, 0, receiver.length)
+    // no exception
+    streamIn.readNBytes(receiver, 0, receiver.length)
 
     assertThrows(
       classOf[NullPointerException],

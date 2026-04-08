@@ -1,10 +1,13 @@
 package java.lang
 
-import java.util.{Set => JSet}
-import java.io.{InputStream, IOException}
+import java.io.{IOException, InputStream}
 import java.lang.annotation.Annotation
 import java.lang.reflect.AnnotatedElement
+import java.util.{Set => JSet}
 
+import scala.annotation.nowarn
+
+@nowarn
 final case class Module private[lang] (
     name: String,
     loader: ClassLoader

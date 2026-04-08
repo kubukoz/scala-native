@@ -2,23 +2,24 @@ package java.lang
 
 import java.io._
 import java.nio.charset.StandardCharsets
-import java.{util => ju}
 import java.util.WindowsHelperMethods
+import java.{util => ju}
+
+import scala.scalanative.ffi.time
+import scala.scalanative.meta.LinktimeInfo.isWindows
 import scala.scalanative.posix.pwdOps._
 import scala.scalanative.posix.{pwd, unistd}
-import scala.scalanative.meta.LinktimeInfo.isWindows
-import scala.scalanative.runtime.{Intrinsics, Platform}
 import scala.scalanative.runtime.javalib.Proxy
-import scala.scalanative.ffi.time
+import scala.scalanative.runtime.{Intrinsics, Platform}
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 import scala.scalanative.windows.FileApi._
 import scala.scalanative.windows.FileApiExt.MAX_PATH
+import scala.scalanative.windows.ProcessEnvApi._
 import scala.scalanative.windows.UserEnvApi._
 import scala.scalanative.windows.WinBaseApi._
-import scala.scalanative.windows.ProcessEnvApi._
-import scala.scalanative.windows.winnt.AccessToken
 import scala.scalanative.windows.WinNlsApi._
+import scala.scalanative.windows.winnt.AccessToken
 
 final class System private ()
 
@@ -274,14 +275,14 @@ object System {
 
 // Extract mutable fields to custom object allowing to skip allocations of unused features
 private object Streams {
-  import FileDescriptor.{in => stdin, out => stdout, err => stderr}
+  import FileDescriptor.{err => stderr, in => stdin, out => stdout}
   var in: InputStream = new FileInputStream(stdin)
   var out: PrintStream = new PrintStream(new FileOutputStream(stdout))
   var err: PrintStream = new PrintStream(new FileOutputStream(stderr))
 }
 
-private object SystemProperties {
-  import System.{lineSeparator, getenv}
+private[java] object SystemProperties {
+  import System.{getenv, lineSeparator}
 
   private val systemProperties0 = loadProperties()
   private val systemProperties = {
@@ -292,7 +293,7 @@ private object SystemProperties {
     systemProperties0
   }
 
-  private final val CurrentDirectoryKey = "user.dir"
+  final val CurrentDirectoryKey = "user.dir"
   private lazy val initializeCurrentDirectory =
     getCurrentDirectory().foreach(
       systemProperties.setProperty(CurrentDirectoryKey, _)
@@ -408,9 +409,11 @@ private object SystemProperties {
         Some(fromCWideString(buf, StandardCharsets.UTF_16LE))
       else None
     } else {
-      val buf: Ptr[scala.Byte] = stackalloc[scala.Byte](bufSize)
-      val cwd = unistd.getcwd(buf, bufSize)
-      Option(cwd).map(fromCString(_))
+      // val buf: Ptr[scala.Byte] = stackalloc[scala.Byte](bufSize)
+      // val cwd = unistd.getcwd(buf, bufSize)
+      // Option(cwd).map(fromCString(_))
+      // todo: implement stubs for the above so that it links fine without Scala changes
+      None
     }
   }
 
@@ -425,12 +428,14 @@ private object SystemProperties {
         else None
       }
     } else {
-      val buf = stackalloc[pwd.passwd]()
-      val uid = unistd.getuid()
-      val res = pwd.getpwuid(uid, buf)
-      if (res == 0 && buf.pw_dir != null)
-        Some(fromCString(buf.pw_dir))
-      else None
+      // val buf = stackalloc[pwd.passwd]()
+      // val uid = unistd.getuid()
+      // val res = pwd.getpwuid(uid, buf)
+      // if (res == 0 && buf.pw_dir != null)
+      //   Some(fromCString(buf.pw_dir))
+      // else None
+      // todo: implement stubs for the above so that it links fine without Scala changes
+      None
     }
   }
 
@@ -478,9 +483,10 @@ private object SystemProperties {
       .orElse {
         if (isWindows) None
         else {
-          val passwd = stackalloc[pwd.passwd]()
-          if (pwd.getpwuid(unistd.geteuid(), passwd) != 0) None
-          else Option(passwd.pw_name).map(fromCString(_))
+          // val passwd = stackalloc[pwd.passwd]()
+          // if (pwd.getpwuid(unistd.geteuid(), passwd) != 0) None
+          // else Option(passwd.pw_name).map(fromCString(_))
+          None
         }
       }
   }

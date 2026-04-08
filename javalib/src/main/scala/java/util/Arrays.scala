@@ -1,25 +1,24 @@
 /* Ported from Scala.js commit: ba618ed dated: 2020-10-05
- * 
+ *
  *  Contains Scala Native specific updates subsequent to original port.
  *  See Scala Native git repository history.
  */
 
 package java.util
 
-import scala.annotation.tailrec
+import java.util.function._
+import java.util.stream.StreamSupport
+import java.{util => ju}
 
+import scala.annotation.tailrec
 import scala.reflect.ClassTag
 
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 
-import java.{util => ju}
-import java.util.function._
-import java.util.stream.StreamSupport
-
 object Arrays extends ArraysJDK9Methods {
   @inline
-  private final implicit def naturalOrdering[T <: AnyRef]: Ordering[T] = {
+  private implicit final def naturalOrdering[T <: AnyRef]: Ordering[T] = {
     new Ordering[T] {
       def compare(x: T, y: T): Int = x.asInstanceOf[_Comparable[T]].compareTo(y)
     }

@@ -1,28 +1,27 @@
 package java.net
 
-import scala.scalanative.unsafe._
-import scala.scalanative.unsigned._
+import java.net.SocketHelpers.sockaddrToByteArray
+import java.{util => ju}
 
 import scala.annotation.tailrec
 
-import java.net.SocketHelpers.sockaddrToByteArray
-
-import java.{util => ju}
-import ju.Objects
-import ju.stream.Stream
-
-import scala.scalanative.posix.errno.{errno, ENXIO}
+import scala.scalanative.libc.LibcExt
+import scala.scalanative.meta.LinktimeInfo
+import scala.scalanative.posix.errno.{ENXIO, errno}
 import scala.scalanative.posix.net.`if`._
 import scala.scalanative.posix.net.ifOps._
 import scala.scalanative.posix.netinet.in._
 import scala.scalanative.posix.netinet.inOps._
+import scala.scalanative.posix.string._
 import scala.scalanative.posix.sys.ioctl.ioctl
 import scala.scalanative.posix.sys.socket._
 import scala.scalanative.posix.sys.socketOps._
-import scala.scalanative.posix.string._
 import scala.scalanative.posix.unistd
+import scala.scalanative.unsafe._
+import scala.scalanative.unsigned._
 
-import scala.scalanative.meta.LinktimeInfo
+import ju.Objects
+import ju.stream.Stream
 
 import macOsIf._
 import macOsIfDl._
@@ -367,8 +366,7 @@ object NetworkInterface {
 
     if (ret != null) unixGetByName(fromCString(ret))
     else if (errno == ENXIO) null // no interface has that index
-    else
-      throw new SocketException(fromCString(strerror(errno)))
+    else throw new SocketException(LibcExt.strError())
   }
 
   private def unixGetByInetAddress(addr: InetAddress): NetworkInterface = {
@@ -421,9 +419,7 @@ object NetworkInterface {
 
       val gifStatus = getifaddrs(ifap)
       if (gifStatus == -1)
-        throw new SocketException(
-          s"getifaddrs failed: ${fromCString(strerror(errno))}"
-        )
+        throw new SocketException(s"getifaddrs failed: ${LibcExt.strError()}")
 
       val result =
         try {
@@ -454,9 +450,7 @@ object NetworkInterface {
 
       val gifStatus = getifaddrs(ifap)
       if (gifStatus == -1)
-        throw new SocketException(
-          s"getifaddrs failed: ${fromCString(strerror(errno))}"
-        )
+        throw new SocketException(s"getifaddrs failed: ${LibcExt.strError()}")
 
       val result =
         try {
@@ -494,9 +488,7 @@ object NetworkInterface {
     val nameIndex = if_nameindex()
 
     if (nameIndex == null)
-      throw new SocketException(
-        s"if_nameindex() failed: ${fromCString(strerror(errno))}"
-      )
+      throw new SocketException(s"if_nameindex() failed: ${LibcExt.strError()}")
 
     try {
       accumulateNetIfs(nameIndex, accumulator)
@@ -528,7 +520,7 @@ object NetworkInterface {
     val fd = socket(AF_INET, SOCK_DGRAM, 0)
 
     if (fd == -1) {
-      val msg = fromCString(strerror(errno))
+      val msg = LibcExt.strError()
       throw new SocketException(s"socket(AF_INET, SOCK_DGRAM) failed: ${msg}\n")
     }
 
@@ -556,9 +548,7 @@ object NetworkInterface {
 
     val gifStatus = getifaddrs(ifap)
     if (gifStatus == -1)
-      throw new SocketException(
-        s"getifaddrs failed: ${fromCString(strerror(errno))}"
-      )
+      throw new SocketException(s"getifaddrs failed: ${LibcExt.strError()}")
 
     try
       Zone.acquire { implicit z =>
@@ -632,7 +622,7 @@ object NetworkInterface {
         val status =
           ioctl(fd, unixIf.SIOCGIFHWADDR, request.asInstanceOf[Ptr[Byte]]);
         if (status != 0) {
-          val msg = fromCString(strerror(errno))
+          val msg = LibcExt.strError()
           throw new SocketException(s"ioctl SIOCGIFHWADDR failed: ${msg}\n")
         }
       } finally {
@@ -688,7 +678,7 @@ object NetworkInterface {
           ioctl(fd, unixIf.SIOCGIFMTU, request.asInstanceOf[Ptr[Byte]]);
         if (status != 0)
           throw new SocketException(
-            s"ioctl SIOCGIFMTU failed: ${fromCString(strerror(errno))}"
+            s"ioctl SIOCGIFMTU failed: ${LibcExt.strError()}"
           )
 
       } finally {
@@ -737,7 +727,7 @@ object NetworkInterface {
           ioctl(fd, unixIf.SIOCGIFFLAGS, request.asInstanceOf[Ptr[Byte]]);
 
         if (status != 0) {
-          val msg = fromCString(strerror(errno))
+          val msg = LibcExt.strError()
           throw new SocketException(s"ioctl SIOCGIFFLAGS failed: ${msg}\n")
         }
       } finally {
@@ -776,9 +766,7 @@ object NetworkInterface {
     val gifStatus = getifaddrs(ifap)
 
     if (gifStatus == -1)
-      throw new SocketException(
-        s"getifaddrs failed: ${fromCString(strerror(errno))}"
-      )
+      throw new SocketException(s"getifaddrs failed: ${LibcExt.strError()}")
 
     try {
       val ifNameC = toCString(ifName)
@@ -818,9 +806,7 @@ object NetworkInterface {
     val gifStatus = getifaddrs(ifap)
 
     if (gifStatus == -1)
-      throw new SocketException(
-        s"getifaddrs failed: ${fromCString(strerror(errno))}"
-      )
+      throw new SocketException(s"getifaddrs failed: ${LibcExt.strError()}")
 
     try {
       val ifNameC = toCString(ifName)

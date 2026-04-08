@@ -1,16 +1,16 @@
 package org.scalanative.testsuite.javalib.util
 
-import org.junit.Test
+import java.util.TreeSet
+import java.{lang => jl}
+
 import org.junit.Assert._
+import org.junit.Test
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
 
-import java.{lang => jl}
-import java.util.TreeSet
-
 /* This file exercises local overrides of methods in SortedSet and
  * NavigableSet.
- * 
+ *
  * See JEP431_ReverseOrderTreeSetTestOnJDK21 for more Tests using forward
  * and reversed() TreeSets.
  */

@@ -3,6 +3,7 @@
 package scala.tools.partest.scalanative
 
 import java.io.File
+
 import scala.tools.partest.nest.{DirectCompiler, SuiteRunner}
 import scala.tools.partest.{FileOps, nest}
 
@@ -30,7 +31,7 @@ class ScalaNativeRunner(
     Option(url).map(url => new File(url.toURI))
   }
 
-  override def newCompiler = {
+  override def newCompiler: DirectCompiler = {
     new DirectCompiler(this) with ScalaNativeDirectCompiler
   }
 

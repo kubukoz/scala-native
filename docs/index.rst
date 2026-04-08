@@ -2,7 +2,16 @@
 Scala Native
 ============
 
-Version: |release|
+
++----------------------+------------------------+
+| Releases [1]_                                 |
++======================+========================+
+| Type                 | Version                |
++----------------------+------------------------+
+| Stable               | |last_stable_release|  |
++----------------------+------------------------+
+| Latest               | |release|              |
++----------------------+------------------------+
 
 Scala Native is an optimizing ahead-of-time compiler and lightweight managed
 runtime designed specifically for Scala. It features:
@@ -97,5 +106,7 @@ and the development process behind the project.
   blog/index
   changelog/index
   faq
+
+.. [1] See :ref:`release-types`
 
 Document built at : |today|

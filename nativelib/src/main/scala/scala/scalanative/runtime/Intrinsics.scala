@@ -1,8 +1,8 @@
 package scala.scalanative
 package runtime
 
-import scalanative.unsafe._
 import scala.scalanative.unsigned._
+import scalanative.unsafe._
 
 object Intrinsics {
   private[runtime] object internal {
@@ -125,7 +125,7 @@ object Intrinsics {
   def elemRawPtr(rawptr: RawPtr, offset: RawSize): RawPtr =
     intrinsic
 
-    /** Intrinsified computation of derived raw pointer. */
+  /** Intrinsified computation of derived raw pointer. */
   def elemRawPtr(rawptr: RawPtr, offset: Int): RawPtr =
     intrinsic
 

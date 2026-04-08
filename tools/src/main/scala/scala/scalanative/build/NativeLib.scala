@@ -7,12 +7,11 @@ import java.util.Arrays
 import java.util.regex._
 
 import scala.concurrent._
-import scala.util.Failure
-import scala.util.Success
+import scala.util.{Failure, Success}
 
-import scalanative.build.IO.RichPath
 import scala.scalanative.linker.ReachabilityAnalysis
 import scala.scalanative.nir.Attr
+import scalanative.build.IO.RichPath
 
 /** Original jar or dir path and generated dir path for native code */
 private[scalanative] case class NativeLib(src: Path, dest: Path)
@@ -103,7 +102,7 @@ private[scalanative] object NativeLib {
       }
     }
 
-    (withAnalysisInfo _)
+    (withAnalysisInfo(_))
       .andThen(withProjectDescriptor)
       .apply(initialConfig)
   }
@@ -381,11 +380,10 @@ private[scalanative] object NativeLib {
     }
 
   /** Used to find native source files in directories */
-  private def srcPatterns(path: Path): String =
-    LLVM.srcExtensions.mkString(s"glob:${srcPathPattern(path)}**{", ",", "}")
-
-  private def srcPathPattern(path: Path): String =
-    makeDirPath(path, nativeCodeDir)
+  private def srcPatterns(path: Path, elems: String*): String = {
+    val glob = allFilesPattern(path, elems: _*)
+    LLVM.srcExtensions.mkString(glob + "{", ",", "}")
+  }
 
   /** Used to create hash of the directory to copy
    *
@@ -394,8 +392,8 @@ private[scalanative] object NativeLib {
    *  @return
    *    The file pattern
    */
-  private def allFilesPattern(path: Path): String =
-    s"glob:${srcPathPattern(path)}**"
+  private def allFilesPattern(path: Path, elems: String*): String =
+    s"glob:${makeDirPath(path, elems :+ nativeCodeDir: _*)}**"
 
   /** This method guarantees that only code copied and generated into the
    *  `native` directory and also in the `scala-native` sub directory gets
@@ -411,8 +409,7 @@ private[scalanative] object NativeLib {
   private def destSrcPattern(destPath: Path): String = {
     val dirPattern = s"{${destPath.getFileName()}}"
     val workDir = destPath.getParent()
-    val pathPat = makeDirPath(workDir, dirPattern, nativeCodeDir)
-    LLVM.srcExtensions.mkString(s"glob:$pathPat**{", ",", "}")
+    srcPatterns(workDir, dirPattern)
   }
 
   private def makeDirPath(path: Path, elems: String*): String = {

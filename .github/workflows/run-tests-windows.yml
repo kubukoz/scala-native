@@ -25,7 +25,7 @@ jobs:
       # Disable autocrlf setting, otherwise scalalib patches might not be possible to apply
       - name: Setup git config
         run: git config --global core.autocrlf false
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/windows-setup-env
         id: setup
         with:
@@ -77,12 +77,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scala: [3]
+        scala: [2.12, 3]
     steps:
       # Disable autocrlf setting, otherwise scalalib patches might not be possible to apply
       - name: Setup git config
         run: git config --global core.autocrlf false
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/windows-setup-env
         with:
           scala-version: ${{matrix.scala}}
@@ -128,7 +128,7 @@ jobs:
       # Disable autocrlf setting, otherwise scalalib patches might not be possible to apply
       - name: Setup git config
         run: git config --global core.autocrlf false
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/windows-setup-env
         id: setup
         with:
@@ -159,13 +159,12 @@ jobs:
     steps:
       - name: Setup git config
         run: git config --global core.autocrlf false
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/windows-setup-env
         id: setup
         with:
           scala-version: ${{matrix.scala}}
           llvm-version: ${{ matrix.llvm }}
-          java-version: 8
 
       - name: Run tests
         shell: cmd

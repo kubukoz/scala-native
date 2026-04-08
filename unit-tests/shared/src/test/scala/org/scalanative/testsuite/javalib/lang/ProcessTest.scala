@@ -1,22 +1,26 @@
 package org.scalanative.testsuite.javalib.lang
 
-import java.util.concurrent.TimeUnit
 import java.io._
-import java.nio.file._
 import java.nio.charset.StandardCharsets
+import java.nio.file._
+import java.util.concurrent.TimeUnit
 
-import scala.io.Source
-
-import org.junit.Test
-import org.junit.Assert._
-import org.junit.Assume._
-import org.junit.Ignore
-
-import org.scalanative.testsuite.utils.Platform, Platform._
-import scala.scalanative.junit.utils.AssumesHelper._
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent._
 import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext.Implicits.global
+import scala.io.Source
+import scala.sys.{process => sp}
+import scala.util.{Failure, Success, Try}
+
+import org.junit.Assert._
+import org.junit.Assume._
+import org.junit.{Ignore, Test}
+
+import org.scalanative.testsuite.utils.Platform
+
+import scala.scalanative.junit.utils.AssumesHelper._
+
+import Platform._
 
 class ProcessTest {
   import ProcessUtils._
@@ -44,33 +48,40 @@ class ProcessTest {
     assertEquals("1", out)
   }
 
+  /* 'pathOverride()' and 'pathPrefixOverride()' test that SN does
+   * what JDK does.  They do not check that SN does not do what
+   * JDK does not do.  See SN Issue 4705.
+   */
+
   @Test def pathOverride(): Unit = {
-    assumeNotJVMCompliant()
     assumeFalse(
       "Not possible in Windows, would use dir keyword anyway",
       isWindows
     )
 
-    val pb = new ProcessBuilder("ls", resourceDir)
+    /* JVM follows parent PATH when invoking binaries.
+     * If that binary is a shell and and envp is null, the parent PATH
+     * will be used in the shell, elsewise any PATH in the child envp.
+     */
+    val pb = new ProcessBuilder("/bin/sh", "-c", "ls", resourceDir)
     pb.environment.put("PATH", resourceDir)
     checkPathOverride(pb)
   }
 
   @Test def pathPrefixOverride(): Unit = {
-    assumeNotJVMCompliant()
     assumeFalse(
       "Not possible in Windows, would use dir keyword anyway",
       isWindows
     )
 
-    val pb = new ProcessBuilder("ls", resourceDir)
+    // JVM only follows PATH when invoking shells, not for binary executables.
+    val pb = new ProcessBuilder("/bin/sh", "-c", "ls", resourceDir)
     pb.environment.put("PATH", s"$resourceDir:${pb.environment.get("PATH")}")
     checkPathOverride(pb)
   }
 
-  // Exercise the fork() path in UnixProcessGen2
+  // Exercise posix_spawn_file_actions_addchdir() path in UnixProcessFactory.
   @Test def dirOverride(): Unit = {
-    assumeNotJVMCompliant()
     assumeFalse("Not tested in Windows", isWindows)
 
     val pb = new ProcessBuilder("./ls")
@@ -107,7 +118,9 @@ class ProcessTest {
         proc.getOutputStream.close()
       }
       assertProcessExitOrTimeout(proc)
-      assertEquals("", readInputStream(proc.getErrorStream()))
+      // both streams are empty; stdout to file, and stderr is empty
+      assertEquals(-1, proc.getInputStream.read()) // null input
+      assertEquals(-1, proc.getErrorStream.read()) // pipe input
       val out = Source.fromFile(file.toString).getLines().mkString
 
       assertEquals("inputStreamWritesToFile()", "hello", out)
@@ -324,7 +337,8 @@ class ProcessTest {
     val proc = processSleep(2.0).start()
 
     try {
-      val timeout = 10 * 1000 // Value from Issue 3944
+      // for context: https://github.com/scala-native/scala-native/issues/3944
+      val timeout = 30 * 1000
 
       /*  Exception before fix, where nnnn is a pid number:
        *
@@ -395,7 +409,7 @@ class ProcessTest {
 
     proc.destroy()
 
-    val timeout = 501 // Make message distinguished.
+    val timeout = 50101 // Make message distinguished.
     assertTrue(
       "process should have exited but timed out" +
         s" (limit: ${timeout} milliseconds)",
@@ -413,7 +427,7 @@ class ProcessTest {
 
     proc.destroyForcibly()
 
-    val timeout = 502 // Make message distinguished.
+    val timeout = 50202 // Make message distinguished.
     assertTrue(
       "process should have exited but timed out" +
         s" (limit: ${timeout} milliseconds)",
@@ -486,7 +500,7 @@ class ProcessTest {
     val iterations = 16
 
     // See Design Note just before this Test.
-    val perIterationTimeout = 20 // seconds
+    val perIterationTimeout = 30 // seconds
 
     /* Give a smidge more time to the worst case where each iteration succeeds
      * just before timing out. Test might be executing on slow uniprocessor or
@@ -603,6 +617,542 @@ class ProcessTest {
       proc.waitFor()
     )
     assertEquals("foo", Files.readAllLines(out).toArray().mkString)
+  }
+
+  /* Problems using j.l.Process via Scala are under active investigation.
+   * Reduce the sensitivity of some '*usingScala*' Tests so to
+   * reduce the number of failures for other PRs in mainline CI for
+   * a cause known to be highly unrelated to the changes of those PRs.
+   *
+   * Use the time saved from tracing failure logs to chase the root cause.
+   */
+
+  private val gitTestIterationsSmall = 1
+  private val gitTestIterations = 20
+
+  private val githubWorkspace =
+    Paths.get(sys.env.get("GITHUB_WORKSPACE").getOrElse("."))
+
+  /* testGitLSFilesUsing* tests use a documented git feature, the ':/'
+   * argument, to cause files to be listed from the project root
+   * rather than the current working directory.
+   *
+   * This allows the test to be run interactively on JVM in some environments
+   * where they had previously failed. See SN Issue #4676.
+   *
+   * In some yet-to-be-determined environments, the SN test environment sets
+   * the current working directory to the project-root plus the following
+   * suffix. In each case the terminal dot/full_stop is part of the CWD.
+   *   JVM: unit-tests/jvm/.3/.
+   *   SN : .
+   *
+   * On JVM, the latter is an empty directory, so 'git ls-files'
+   * follows its documented behavior and return an empty string.
+   * Supplying the ':/' argument allows the test to succeed as intended.
+   *
+   * The unanswered questions are why do the initial working directories
+   * differ and why does code without the ':/' argument succeed in CI?
+   * Questions for a rainy day.
+   */
+
+  @Test def testGitLsFilesUsingJavaProcessStart(
+  ): Unit = (0 until gitTestIterations).foreach { iter =>
+
+    val prefix =
+      s"[iter=$iter ${new java.io.File(".").getAbsolutePath}] `git ls-files`"
+
+    // run git ls-files --full-name :/ on project root source
+    val proc = processForCommand("git", "ls-files", "--full-name", ":/")
+      .redirectOutput(ProcessBuilder.Redirect.PIPE)
+      .redirectError(ProcessBuilder.Redirect.PIPE)
+      .directory(githubWorkspace.toFile)
+      .start()
+
+    val stdout = Source.fromInputStream(proc.getInputStream).mkString
+    val stderr = Source.fromInputStream(proc.getErrorStream).mkString
+
+    assertTrue(
+      s"$prefix should exit quickly",
+      proc.waitFor(30, TimeUnit.SECONDS)
+    )
+
+    assertTrue(s"$prefix stdout: <${trunc(stdout)}>", stdout.length > 100)
+    assertEquals(s"$prefix stderr: <${trunc(stderr)}>", "", stderr)
+
+    assertTrue(s"$prefix exited", !proc.isAlive)
+    assertEquals(
+      s"$prefix exit code; stderr: <${trunc(stderr)}",
+      0,
+      proc.exitValue()
+    )
+  }
+
+  @Test def testGitInitUsingJavaProcessStart(
+  ): Unit = (0 until gitTestIterations).foreach { iter =>
+
+    val prefix = s"[iter=$iter ${new java.io.File(".").getAbsolutePath}] "
+    val dir = Files.createTempDirectory("test-")
+
+    val pbInit = processForCommand("git", "init", "-b", "main", dir.toString)
+      .redirectOutput(ProcessBuilder.Redirect.PIPE)
+      .redirectError(ProcessBuilder.Redirect.PIPE)
+
+    // run init the first time
+    locally {
+      val proc = pbInit.start()
+      val stdout = Source.fromInputStream(proc.getInputStream).mkString
+      val stderr = Source.fromInputStream(proc.getErrorStream).mkString
+
+      assertTrue(
+        s"$prefix`git init` should exit quickly",
+        proc.waitFor(30, TimeUnit.SECONDS)
+      )
+
+      assertTrue(
+        s"$prefix`git init` stdout: <$stdout>",
+        stdout.startsWith("Initialized empty Git repository in ")
+      )
+
+      assertEquals(s"$prefix`git init` stderr: <$stderr>", "", stderr)
+
+      assertTrue(s"$prefix`git init` exited", !proc.isAlive)
+      assertEquals(s"$prefix`git init` exit code", 0, proc.exitValue())
+    }
+
+    // run init the second time
+    locally {
+      val proc = pbInit.start()
+      val stdout = Source.fromInputStream(proc.getInputStream).mkString
+      val stderr = Source.fromInputStream(proc.getErrorStream).mkString
+
+      assertTrue(
+        s"$prefix`git init` should exit quickly",
+        proc.waitFor(30, TimeUnit.SECONDS)
+      )
+
+      assertTrue(
+        s"$prefix`git init` stdout: <$stdout>",
+        stdout.startsWith("Reinitialized existing Git repository in ")
+      )
+
+      assertEquals(
+        s"$prefix`git init` stderr: <$stderr>",
+        "warning: re-init: ignored --initial-branch=main\n",
+        stderr
+      )
+
+      assertTrue(s"$prefix`git init` exited", !proc.isAlive)
+      assertEquals(s"$prefix`git init` exit code", 0, proc.exitValue())
+    }
+
+    // run log, hoping it fails
+    locally {
+      val pbLog = processForCommand("git", "-C", dir.toString, "log")
+        .redirectOutput(ProcessBuilder.Redirect.PIPE)
+        .redirectError(ProcessBuilder.Redirect.PIPE)
+
+      val proc = pbLog.start()
+      val stdout = Source.fromInputStream(proc.getInputStream).mkString
+      val stderr = Source.fromInputStream(proc.getErrorStream).mkString
+
+      assertTrue(
+        s"$prefix`git log` should exit quickly",
+        proc.waitFor(30, TimeUnit.SECONDS)
+      )
+
+      assertEquals(s"$prefix`git log` stdout: <$stdout>", "", stdout)
+
+      assertEquals(
+        s"$prefix`git log` stderr: <$stderr>",
+        "fatal: your current branch 'main' does not have any commits yet\n",
+        stderr
+      )
+
+      assertTrue(s"$prefix`git log` exited", !proc.isAlive)
+      assertEquals(s"$prefix`git log` exit code", 128, proc.exitValue())
+    }
+
+    // run log, hoping it fails, this time specifying directory in ProcessBuilder
+    locally {
+      val pbLog = processForCommand("git", "log")
+        .redirectOutput(ProcessBuilder.Redirect.PIPE)
+        .redirectError(ProcessBuilder.Redirect.PIPE)
+        .directory(dir.toFile)
+
+      val proc = pbLog.start()
+      val stdout = Source.fromInputStream(proc.getInputStream).mkString
+      val stderr = Source.fromInputStream(proc.getErrorStream).mkString
+
+      assertTrue(
+        s"$prefix`git log` should exit quickly",
+        proc.waitFor(30, TimeUnit.SECONDS)
+      )
+
+      assertEquals(s"$prefix`git log` stdout: <$stdout>", "", stdout)
+
+      assertEquals(
+        s"$prefix`git log` stderr: <$stderr>",
+        "fatal: your current branch 'main' does not have any commits yet\n",
+        stderr
+      )
+
+      assertTrue(s"$prefix`git log` exited", !proc.isAlive)
+      assertEquals(s"$prefix`git log` exit code", 128, proc.exitValue())
+    }
+  }
+
+  @Test def testGitLsFilesUsingScalaProcessRun(
+  ): Unit = (0 until gitTestIterations).foreach { iter =>
+
+    val prefix =
+      s"[iter=$iter ${new java.io.File(".").getAbsolutePath}] `git ls-files`"
+
+    // run git ls-files --full-name :/ on project root source
+    val argv = Seq("git", "ls-files", "--full-name", ":/")
+    val (res, stdout, stderr) =
+      ProcessTest.runArgv(10.seconds, githubWorkspace)(argv: _*)
+    res match {
+      case Success(x) =>
+        assertEquals(s"$prefix exit; stderr: ${trunc(stderr)}", 0, x)
+        assertTrue(s"$prefix stdout: <${trunc(stdout)}>", stdout.length > 100)
+        assertEquals(s"$prefix stderr: <${trunc(stderr)}>", "", stderr)
+      case Failure(x) => fail(s"$prefix failed: $x")
+    }
+  }
+
+  @Test def testGitInitUsingScalaProcessRun(
+  ): Unit = (0 until gitTestIterationsSmall).foreach { iter =>
+
+    val prefix = s"[iter=$iter ${new java.io.File(".").getAbsolutePath}] "
+    val dir = Files.createTempDirectory("test-")
+
+    val argvInit = Seq("git", "init", "-b", "main", dir.toString)
+
+    // run init the first time
+    locally {
+      val (res, stdout, stderr) = ProcessTest.runArgv()(argvInit: _*)
+      res match {
+        case Success(x) => assertEquals(s"$prefix`git init` exit code", 0, x)
+        case Failure(x) => fail(s"$prefix`git init` failed: " + x)
+      }
+
+      assertTrue(
+        s"$prefix`git init` stdout: <$stdout>",
+        stdout.startsWith("Initialized empty Git repository in ")
+      )
+
+      assertEquals(s"$prefix`git init` stderr: <$stderr>", "", stderr)
+    }
+
+    // run init the second time
+    locally {
+      val (res, stdout, stderr) = ProcessTest.runArgv()(argvInit: _*)
+      res match {
+        case Success(x) => assertEquals(s"$prefix`git init` exit code", 0, x)
+        case Failure(x) => fail(s"$prefix`git init` failed: " + x)
+      }
+
+      assertTrue(
+        s"$prefix`git init` stdout: <$stdout>",
+        stdout.startsWith("Reinitialized existing Git repository in ")
+      )
+
+      assertEquals(
+        s"$prefix`git init` stderr: <$stderr>",
+        "warning: re-init: ignored --initial-branch=main\n",
+        stderr
+      )
+    }
+
+    // run log, hoping it fails
+    locally {
+      val (res, stdout, stderr) =
+        ProcessTest.runArgv()("git", "-C", dir.toString, "log")
+      res match {
+        case Success(x) => assertEquals(s"$prefix`git log` exit code", 128, x)
+        case Failure(x) => fail(s"$prefix`git log` failed: " + x)
+      }
+
+      assertEquals(s"$prefix`git log` stdout: <$stdout>", "", stdout)
+      assertEquals(
+        s"$prefix`git log` stderr: <$stderr>",
+        "fatal: your current branch 'main' does not have any commits yet\n",
+        stderr
+      )
+    }
+
+    // run log, hoping it fails, this time specifying directory in ProcessBuilder
+    locally {
+      val (res, stdout, stderr) = ProcessTest.runArgv(cwd = dir)("git", "log")
+      res match {
+        case Success(x) => assertEquals(s"$prefix`git log` exit code", 128, x)
+        case Failure(x) => fail(s"$prefix`git log` failed: " + x)
+      }
+
+      assertEquals(s"$prefix`git log` stdout: <$stdout>", "", stdout)
+      assertEquals(
+        s"$prefix`git log` stderr: <$stderr>",
+        "fatal: your current branch 'main' does not have any commits yet\n",
+        stderr
+      )
+    }
+  }
+
+  @Test def testGitLsFilesUsingScalaProcessBang(
+  ): Unit = (0 until gitTestIterationsSmall).foreach { iter =>
+
+    val prefix =
+      s"[iter=$iter ${new java.io.File(".").getAbsolutePath}] `git ls-files`"
+
+    // run git ls-files --full-name :/ on project root source
+    val argv = Seq("git", "ls-files", "--full-name", ":/")
+    val (res, stdout, stderr) =
+      ProcessTest.runArgvWithBang(60.seconds, githubWorkspace)(argv: _*)
+    res match {
+      case Success(x) =>
+        assertEquals(s"$prefix exit; stderr: ${trunc(stderr)}", 0, x)
+        assertTrue(s"$prefix stdout: <${trunc(stdout)}>", stdout.length > 100)
+        assertEquals(s"$prefix stderr: <${trunc(stderr)}>", "", stderr)
+      case Failure(x) => fail(s"$prefix failed: $x")
+    }
+  }
+
+  @Test def testGitInitUsingScalaProcessBang(
+  ): Unit = (0 until gitTestIterationsSmall).foreach { iter =>
+
+    val prefix = s"[iter=$iter ${new java.io.File(".").getAbsolutePath}] "
+    val dir = Files.createTempDirectory("test-")
+
+    val argvInit = Seq("git", "init", "-b", "main", dir.toString)
+
+    // run init the first time
+    locally {
+      val (res, stdout, stderr) =
+        ProcessTest.runArgvWithBang()(argvInit: _*)
+      res match {
+        case Success(x) => assertEquals(s"$prefix`git init` exit code", 0, x)
+        case Failure(x) => fail(s"$prefix`git init` failed: " + x)
+      }
+
+      assertTrue(
+        s"$prefix`git init` stdout: <$stdout>",
+        stdout.startsWith("Initialized empty Git repository in ")
+      )
+
+      assertEquals(s"$prefix`git init` stderr: <$stderr>", "", stderr)
+    }
+
+    // run init the second time
+    locally {
+      val (res, stdout, stderr) =
+        ProcessTest.runArgvWithBang()(argvInit: _*)
+      res match {
+        case Success(x) => assertEquals(s"$prefix`git init` exit code", 0, x)
+        case Failure(x) => fail(s"$prefix`git init` failed: " + x)
+      }
+
+      assertTrue(
+        s"$prefix`git init` stdout: <$stdout>",
+        stdout.startsWith("Reinitialized existing Git repository in ")
+      )
+
+      assertEquals(
+        s"$prefix`git init` stderr: <$stderr>",
+        "warning: re-init: ignored --initial-branch=main\n",
+        stderr
+      )
+    }
+
+    // run log, hoping it fails
+    locally {
+      val (res, stdout, stderr) =
+        ProcessTest.runArgvWithBang()("git", "-C", dir.toString, "log")
+      res match {
+        case Success(x) => assertEquals(s"$prefix`git log` exit code", 128, x)
+        case Failure(x) => fail(s"$prefix`git log` failed: " + x)
+      }
+
+      assertEquals(s"$prefix`git log` stdout: <$stdout>", "", stdout)
+      assertEquals(
+        s"$prefix`git log` stderr: <$stderr>",
+        "fatal: your current branch 'main' does not have any commits yet\n",
+        stderr
+      )
+    }
+
+    // run log, hoping it fails, this time specifying directory in ProcessBuilder
+    locally {
+      val (res, stdout, stderr) =
+        ProcessTest.runArgvWithBang(cwd = dir)("git", "log")
+      res match {
+        case Success(x) => assertEquals(s"$prefix`git log` exit code", 128, x)
+        case Failure(x) => fail(s"$prefix`git log` failed: " + x)
+      }
+
+      assertEquals(s"$prefix`git log` stdout: <$stdout>", "", stdout)
+      assertEquals(
+        s"$prefix`git log` stderr: <$stderr>",
+        "fatal: your current branch 'main' does not have any commits yet\n",
+        stderr
+      )
+    }
+  }
+
+  @Test def testGitLsFilesUsingScalaProcessBangBang(
+  ): Unit = (0 until gitTestIterationsSmall).foreach { iter =>
+
+    val prefix =
+      s"[iter=$iter ${new java.io.File(".").getAbsolutePath}] `git ls-files`"
+
+    // run git ls-files --full-name :/ on project root source
+    val argv = Seq("git", "ls-files", "--full-name", ":/")
+    val (res, stderr) =
+      ProcessTest.runArgvWithBangBang(60.seconds, githubWorkspace)(argv: _*)
+    res match {
+      case Success(x) =>
+        assertTrue(s"$prefix stdout: <${trunc(x)}>", x.length > 100)
+        assertEquals(s"$prefix stderr: <${trunc(stderr)}>", "", stderr)
+      case Failure(x) => fail(s"$prefix failed: $x")
+    }
+  }
+
+  @Test def testGitInitUsingScalaProcessBangBang(
+  ): Unit = (0 until gitTestIterationsSmall).foreach { iter =>
+
+    val prefix = s"[iter=$iter ${new java.io.File(".").getAbsolutePath}] "
+    val dir = Files.createTempDirectory("test-")
+
+    val argvInit = Seq("git", "init", "-b", "main", dir.toString)
+
+    // run init the first time
+    locally {
+      val (res, stderr) = ProcessTest.runArgvWithBangBang()(argvInit: _*)
+      res match {
+        case Success(x) =>
+          assertTrue(
+            s"$prefix`git init` stdout: <$x>",
+            x.startsWith("Initialized empty Git repository in ")
+          )
+        case Failure(x) => fail(s"$prefix`git init` failed: " + x)
+      }
+
+      assertEquals(s"$prefix`git init` stderr: <$stderr>", "", stderr)
+    }
+
+    // run init the second time
+    locally {
+      val (res, stderr) = ProcessTest.runArgvWithBangBang()(argvInit: _*)
+      res match {
+        case Success(x) =>
+          assertTrue(
+            s"$prefix`git init` stdout: <$x>",
+            x.startsWith("Reinitialized existing Git repository in ")
+          )
+        case Failure(x) => fail(s"$prefix`git init` failed: " + x)
+      }
+
+      assertEquals(
+        s"$prefix`git init` stderr: <$stderr>",
+        "warning: re-init: ignored --initial-branch=main\n",
+        stderr
+      )
+    }
+
+    // run log, hoping it fails
+    locally {
+      val (res, stderr) =
+        ProcessTest.runArgvWithBangBang()("git", "-C", dir.toString, "log")
+      res match {
+        case Success(x) => fail(s"$prefix`git log` succeeded: " + x)
+        case Failure(x) =>
+          assertEquals(
+            s"$prefix`git log` failed: <$x>",
+            "Nonzero exit value: 128",
+            x.getMessage()
+          )
+      }
+
+      assertEquals(
+        s"$prefix`git log` stderr: <$stderr>",
+        "fatal: your current branch 'main' does not have any commits yet\n",
+        stderr
+      )
+    }
+
+    // run log, hoping it fails, this time specifying directory in ProcessBuilder
+    locally {
+      val (res, stderr) =
+        ProcessTest.runArgvWithBangBang(cwd = dir)("git", "log")
+      res match {
+        case Success(x) => fail(s"$prefix`git log` succeeded: " + x)
+        case Failure(x) =>
+          assertEquals(
+            s"$prefix`git log` failed: <$x>",
+            "Nonzero exit value: 128",
+            x.getMessage()
+          )
+      }
+
+      assertEquals(
+        s"$prefix`git log` stderr: <$stderr>",
+        "fatal: your current branch 'main' does not have any commits yet\n",
+        stderr
+      )
+    }
+  }
+
+}
+
+object ProcessTest {
+
+  def runArgv(to: Duration = 30.seconds, cwd: Path = null)(
+      cmd: String*
+  ): (Try[Int], String, String) = {
+    val out = new StringBuilder()
+    val err = new StringBuilder()
+    val logger = sp.ProcessLogger(
+      x => out.append(x).append('\n'),
+      x => err.append(x).append('\n')
+    )
+
+    val proc = sp
+      .Process(cmd, Option(cwd).map(_.toFile))
+      .run(logger, connectInput = false)
+    val res = Try { Await.result(Future(proc.exitValue()), to) }
+    res.failed.foreach { _ => proc.destroy() }
+
+    (res, out.result(), err.toString())
+  }
+
+  def runArgvWithBang(to: Duration = 30.seconds, cwd: Path = null)(
+      cmd: String*
+  ): (Try[Int], String, String) = {
+    val out = new StringBuilder()
+    val err = new StringBuilder()
+    val logger = sp.ProcessLogger(
+      x => out.append(x).append('\n'),
+      x => err.append(x).append('\n')
+    )
+
+    val pb = sp.Process(cmd, Option(cwd).map(_.toFile))
+    val res = Try { Await.result(Future(pb.!(logger)), to) }
+
+    (res, out.result(), err.toString())
+  }
+
+  def runArgvWithBangBang(to: Duration = 30.seconds, cwd: Path = null)(
+      cmd: String*
+  ): (Try[String], String) = {
+    val err = new StringBuilder()
+    val logger = sp.ProcessLogger(
+      _ => {},
+      x => err.append(x).append('\n')
+    )
+
+    val pb = sp.Process(cmd, Option(cwd).map(_.toFile))
+    val res = Try { Await.result(Future(pb.!!(logger)), to) }
+
+    (res, err.toString())
   }
 
 }

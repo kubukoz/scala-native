@@ -1,8 +1,6 @@
 package scala.scalanative
 package sbtplugin
 
-import ScalaNativePluginInternal._
-
 import sbt._
 
 object ScalaNativePlugin extends AutoPlugin {
@@ -11,7 +9,9 @@ object ScalaNativePlugin extends AutoPlugin {
   object autoImport {
 
     val ScalaNativeCrossVersion = sbtplugin.ScalaNativeCrossVersion
+    val ScalaNativePlatform: String = sbtplugin.ScalaNativePlatform.current
 
+    private[sbtplugin] val nativeOrgName = "org.scala-native"
     val nativeVersion = nir.Versions.current
 
     def scalalibVersion(scalaVersion: String, nativeVersion: String): String =

@@ -1,10 +1,128 @@
 #ifndef SCALANATIVE_USING_CPP_EXCEPTIONS
 
 #include <stdlib.h>
+#include "pd_exit.h"
 #include <stdio.h>
 #include <stdbool.h>
 #include "string_constants.h"
+
+#ifdef TARGET_PLAYDATE
+
+// On Playdate (bare-metal ARM), we use setjmp/longjmp for exception handling.
+// Local try/catch (throw in same function as catch) uses direct jumps
+// (optimized in Lower.scala). Cross-function exceptions use an SJLJ handler
+// chain: callers with try/catch push a frame via setjmp, and scalanative_throw
+// longjmps to the nearest handler.
+
+#include <setjmp.h>
+
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
+
+typedef void *Exception;
+
+// SJLJ exception handler chain.
+// Each try/catch site pushes a frame before the call and pops it after.
+typedef struct SjljFrame {
+    jmp_buf env;
+    Exception exception;
+    struct SjljFrame *prev;
+} SjljFrame;
+
+static SjljFrame *sjlj_top = NULL;
+
+// Size of SjljFrame for stack allocation by the compiler.
+// The compiler stackallocs this many bytes for each try/catch site.
+size_t scalanative_eh_sjlj_frame_size(void) {
+    return sizeof(SjljFrame);
+}
+
+// Initialize and push an SJLJ frame. `storage` must point to at least
+// sizeof(SjljFrame) bytes (typically stack-allocated by the compiler).
+// Returns pointer to the jmp_buf within the frame.
+void *scalanative_eh_sjlj_push(void *storage) {
+    SjljFrame *frame = (SjljFrame *)storage;
+    frame->exception = (Exception)0;
+    frame->prev = sjlj_top;
+    sjlj_top = frame;
+    return (void *)&frame->env;
+}
+
+// Pop the top SJLJ frame (does not free — caller manages storage).
+void scalanative_eh_sjlj_pop(void) {
+    if (sjlj_top != NULL) {
+        sjlj_top = sjlj_top->prev;
+    }
+}
+
+// Get the exception from the top SJLJ frame (after longjmp).
+Exception scalanative_eh_sjlj_get_exception(void) {
+    if (sjlj_top != NULL) {
+        return sjlj_top->exception;
+    }
+    return (Exception)0;
+}
+
+size_t scalanative_Throwable_sizeOfExceptionWrapper() {
+    // On Playdate we use SJLJ — no _Unwind_Exception wrapper needed.
+    // Return 0 so the Throwable constructor skips the BlobArray allocation,
+    // which avoids GC pressure for cats-effect's TracingEvent.StackTrace
+    // (created on every flatMap/map when debugMode is on).
+    return 0;
+}
+
+Exception scalanative_catch(void *unwindException) {
+    // Should never be called — local catch uses direct jumps,
+    // cross-function catch uses SJLJ.
+    #ifdef PD_DEBUG
+    pd_log_error("%s scalanative_catch called unexpectedly\n", snFatalErrorPrefix);
+    #endif
+    abort();
+    return (Exception)0;
+}
+
+__attribute__((noreturn))
+void scalanative_throw(Exception obj) {
+    // If there's an SJLJ handler on the chain, longjmp to it.
+    if (sjlj_top != NULL) {
+        sjlj_top->exception = obj;
+        longjmp(sjlj_top->env, 1);
+        __builtin_unreachable();
+    }
+    // No handler — truly unhandled exception.
+    #ifdef PD_DEBUG
+    pd_log_error("%s Unhandled exception (no catch handler)\n", snFatalErrorPrefix);
+    #endif
+    extern void scalanative_Throwable_showStackTrace(Exception exception);
+    scalanative_Throwable_showStackTrace(obj);
+    abort();
+}
+
+int scalanative_personality(int version, int actions,
+                            long long exception_class,
+                            void *unwindException,
+                            void *context) {
+    // Should never be called without a real unwinder.
+    #ifdef PD_DEBUG
+    pd_log_error("%s scalanative_personality called unexpectedly\n", snFatalErrorPrefix);
+    #endif
+    abort();
+    return 0;
+}
+
+#else // !TARGET_PLAYDATE
+
 #include "unwind.h"
+
+#if defined(__SCALANATIVE_DELIMCC)
+#include "delimcc.h"
+#include <setjmp.h>
+#endif
+
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
 
 // gets the ExceptionWrapper from the _Unwind_Exception which is at the end of
 // it. +1 goes to the end of the struct since it adds with the size of
@@ -15,6 +133,15 @@
 
 typedef void *Exception;
 typedef void (*OnCatchHandler)(Exception);
+
+/*
+ * Continuation exception escape: when _Unwind_RaiseException returns
+ * _URC_END_OF_STACK (no handler found in the resumed stack), we longjmp to
+ * the resumer (in delimcc.c) instead of aborting. delimcc.c sets
+ * scalanative_continuation_exception_handler before resume and clears it after
+ * longjmp or normal return. Local try/catch inside the continuation body still
+ * runs (unwinding finds them first); we only escape when no handler was found.
+ */
 typedef struct ExceptionWrapper {
     Exception obj;
     _Unwind_Exception unwindException;
@@ -266,20 +393,42 @@ __attribute__((noreturn)) void scalanative_throw(Exception obj) {
     _Unwind_Reason_Code code = _Unwind_RaiseException(unwindException);
 
     if (code == _URC_END_OF_STACK) {
+#if defined(__SCALANATIVE_DELIMCC)
+        /* If we're inside a resumed continuation, escape to the resumer instead
+         * of aborting. Unwinding already ran and found no handler (or could not
+         * traverse the copied stack); local try/catch in the continuation body
+         * would have been found first if present. */
+        ContinuationExceptionHandler ceh =
+            scalanative_continuation_exception_handler();
+        if (ceh.env != NULL && ceh.exception_slot != NULL) {
+            jmp_buf *env = ceh.env;
+            *ceh.exception_slot = obj;
+            scalanative_continuation_exception_handler_clear();
+            // Do not run exception cleanup; we're transferring to the resumer.
+            longjmp(*env, 1);
+            __builtin_unreachable();
+        }
+#endif
         generic_exception_cleanup(code, &exceptionWrapper->unwindException);
-        fprintf(stderr,
+        #ifdef PD_DEBUG
+        pd_log_error(
                 "%s Failed to throw exception, not found "
                 "a valid catch handler for exception when unwinding execution "
                 "stack.\n",
                 snFatalErrorPrefix);
+        #endif
         scalanative_Throwable_showStackTrace(obj);
         abort();
     }
     scalanative_Throwable_showStackTrace(obj);
-    fprintf(stderr,
+    #ifdef PD_DEBUG
+    pd_log_error(
             "%s Unhandled exception: "
             "_Unwind_RaiseException returned %d\n",
             snFatalErrorPrefix, code);
+    #endif
     abort();
 }
-#endif
+
+#endif // TARGET_PLAYDATE
+#endif // SCALANATIVE_USING_CPP_EXCEPTIONS

@@ -1,8 +1,8 @@
 package scala.scalanative
 package runtime
 
-import scalanative.unsafe._
 import scala.scalanative.annotation.alwaysinline
+import scalanative.unsafe._
 
 /** The Boehm GC conservative garbage collector
  *
@@ -161,4 +161,15 @@ object GC {
    */
   @name("scalanative_GC_remove_roots")
   def removeRoots(addressLow: CVoidPtr, addressHigh: CVoidPtr): Unit = extern
+
+  @extern object Boehm {
+    @name("scalanative_GC_weak_ref_slot_create")
+    private[runtime] def weakRefSlotCreate(referent: RawPtr): RawPtr = extern
+
+    @name("scalanative_GC_weak_ref_slot_get")
+    private[runtime] def weakRefSlotGet(slot: RawPtr): RawPtr = extern
+
+    @name("scalanative_GC_weak_ref_slot_clear")
+    private[runtime] def weakRefSlotClear(slot: RawPtr): Unit = extern
+  }
 }

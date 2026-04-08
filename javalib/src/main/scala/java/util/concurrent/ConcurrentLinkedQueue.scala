@@ -6,29 +6,24 @@
 
 package java.util.concurrent
 
-import java.lang.invoke.MethodHandles
-import java.lang.invoke.VarHandle
-import java.util._
-import java.util.NoSuchElementException
-import java.util.Objects
-import java.util.Spliterator
-import java.util.Spliterators
-import java.util.function.Consumer
-import java.util.function.Predicate
 import java.io.{ObjectInputStream, ObjectOutputStream}
+import java.lang.invoke.{MethodHandles, VarHandle}
+import java.util._
+import java.util.function.{Consumer, Predicate}
 
-import scala.scalanative.unsafe._
-import scala.scalanative.runtime.fromRawPtr
-import scala.scalanative.runtime.Intrinsics.classFieldRawPtr
-import scala.scalanative.libc.stdatomic._
-import scala.scalanative.libc.stdatomic.memory_order.memory_order_release
 import scala.scalanative.annotation.alwaysinline
-import scala.scalanative.libc.stdatomic.memory_order.memory_order_relaxed
+import scala.scalanative.libc.stdatomic._
+import scala.scalanative.libc.stdatomic.memory_order.{
+  memory_order_relaxed, memory_order_release
+}
+import scala.scalanative.runtime.Intrinsics.classFieldRawPtr
+import scala.scalanative.runtime.fromRawPtr
+import scala.scalanative.unsafe._
 
 @SerialVersionUID(196745693267521676L)
 object ConcurrentLinkedQueue {
 
-  final private[concurrent] class Node[E <: AnyRef] private[concurrent]
+  private[concurrent] final class Node[E <: AnyRef] private[concurrent]
   /** Constructs a dead dummy node. */
   {
     @volatile private[concurrent] var item: E = _
@@ -100,13 +95,13 @@ class ConcurrentLinkedQueue[E <: AnyRef]
 
   override def add(e: E): Boolean = offer(e)
 
-  final private[concurrent] def updateHead(h: Node[E], p: Node[E]): Unit = {
+  private[concurrent] final def updateHead(h: Node[E], p: Node[E]): Unit = {
     // assert h != null && p != null && (h == p || h.item == null);
     if ((h ne p) && this.HEAD.compareExchangeStrong(h, p))
       h.NEXT.store(h, memory_order_release)
   }
 
-  final private[concurrent] def succ(p: Node[E]) = {
+  private[concurrent] final def succ(p: Node[E]) = {
     p.next match {
       case `p`  => head
       case next => next
@@ -565,7 +560,7 @@ class ConcurrentLinkedQueue[E <: AnyRef]
 
   }
 
-  final private[concurrent] class CLQSpliterator extends Spliterator[E] {
+  private[concurrent] final class CLQSpliterator extends Spliterator[E] {
     private[concurrent] var current: Node[E] = _ // current node
     private[concurrent] var batch = 0 // batch size for splits
     private[concurrent] var exhausted = false // true when no more nodes

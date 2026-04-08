@@ -1,22 +1,25 @@
 package org.scalanative.testsuite.javalib.lang
 
-import java.util.concurrent.TimeUnit
 import java.io._
-import java.nio.file._
+import java.lang.ProcessBuilder
 import java.nio.charset.StandardCharsets
+import java.nio.file._
+import java.util.concurrent.TimeUnit
 
-import scala.io.Source
-
-import org.junit._
-import org.junit.Assert._
-import org.junit.Assume._
-import org.junit.Ignore
-
-import org.scalanative.testsuite.utils.Platform, Platform._
-import scala.scalanative.junit.utils.AssumesHelper._
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent._
 import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext.Implicits.global
+import scala.io.Source
+
+import org.junit.Assert._
+import org.junit.Assume._
+import org.junit._
+
+import org.scalanative.testsuite.utils.Platform
+
+import scala.scalanative.junit.utils.AssumesHelper._
+
+import Platform._
 
 object ProcessTestOnJDK9 {
   @BeforeClass
@@ -65,6 +68,9 @@ class ProcessTestOnJDK9 {
 
   // copy from ProcessTest
   private def processForDestruction(): Process = {
+    /* Ensure child process stays alive long enough to generate
+     * either info() or be 'destroy'ed.
+     */
     val proc = processForCommand("ping", "-c", "2", "-i", "10", "127.0.0.1")
       .start()
     proc.getInputStream().read()
@@ -114,14 +120,15 @@ class ProcessTestOnJDK9 {
     val proc = processForDestruction()
     val handle = proc.toHandle()
 
-    assertTrue(handle.destroy())
+    assertTrue("destroy()", handle.destroy())
 
     // Throws on timeout
     assertFalse(
       "process should have been terminated",
-      handle.onExit().get(500, TimeUnit.MILLISECONDS).isAlive()
+      handle.onExit().get(2, TimeUnit.SECONDS).isAlive()
     )
     assertEquals(
+      "exitValue",
       // SIGTERM, use unix signal 'excess 128' convention on non-Windows.
       if (isWindows) 1 else 0x80 + 15,
       proc.exitValue
@@ -132,18 +139,46 @@ class ProcessTestOnJDK9 {
     val proc = processForDestruction()
     val handle = proc.toHandle()
 
-    assertTrue(handle.destroyForcibly())
+    assertTrue("destroyForcibly()", handle.destroyForcibly())
 
     // Throws on timeout
     assertFalse(
       "process should have been terminated",
-      handle.onExit().get(500, TimeUnit.MILLISECONDS).isAlive()
+      handle.onExit().get(2, TimeUnit.SECONDS).isAlive()
     )
     assertEquals(
+      "exitValue",
       // SIGKILL, use unix signal 'excess 128' convention on non-Windows.
       if (isWindows) 1 else 0x80 + 9,
       proc.exitValue
     )
+  }
+
+  private def runPingWith(redirect: ProcessBuilder.Redirect): String = {
+    // Child sends one ping packet to IPv4 localhost; then returns the output.
+    val countOption = if (Platform.isWindows) "-n" else "-c"
+    val argv = Seq("ping", countOption, "1", "127.0.0.1")
+
+    val proc: Process =
+      processForCommand(argv: _*).redirectOutput(redirect).start()
+
+    val stdout =
+      new String(proc.getInputStream.readAllBytes(), StandardCharsets.UTF_8)
+
+    proc.waitFor(5, TimeUnit.SECONDS) // Report any unexpected exit latency.
+    stdout
+  }
+
+  @Test def redirectPIPE(): Unit = {
+    val stdout = runPingWith(ProcessBuilder.Redirect.PIPE)
+    val expected =
+      if (Platform.isWindows) "\r\nPinging 127.0.0.1 " else "PING 127.0.0.1 "
+    assertEquals("ping stdout", expected, stdout.take(expected.length))
+  }
+
+  @Test def redirectDISCARD(): Unit = {
+    val stdout = runPingWith(ProcessBuilder.Redirect.DISCARD)
+    assertEquals("ping stdout", "", stdout)
   }
 
 }

@@ -4,9 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 #include "LargeAllocator.h"
+#include "shared/Log.h"
 #include "immix_commix/utils/MathUtils.h"
 #include "Object.h"
-#include "immix_commix/Log.h"
 #include "immix/State.h"
 #include "immix_commix/headers/ObjectHeader.h"
 
@@ -234,6 +234,9 @@ word_t *LargeAllocator_Alloc(Heap *heap, uint32_t size) {
     Heap_Grow(heap, pow2increment);
 
     object = LargeAllocator_tryAlloc(largeAllocator, size);
+    if (object == NULL) {
+        GC_LOG_ERROR("LargeAllocator_Alloc: OOM for size=%u", size);
+    }
 
     goto done;
 }

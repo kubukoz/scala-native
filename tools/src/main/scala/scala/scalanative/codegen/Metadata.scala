@@ -2,7 +2,8 @@ package scala.scalanative
 package codegen
 
 import scala.collection.mutable
-import scalanative.linker.{Trait, Class, ReachabilityAnalysis}
+
+import scalanative.linker.{Class, ReachabilityAnalysis, Trait}
 
 private[scalanative] class Metadata(
     val analysis: ReachabilityAnalysis.Result,
@@ -10,7 +11,7 @@ private[scalanative] class Metadata(
     proxies: Seq[nir.Defn]
 )(implicit val platform: PlatformInfo) {
   def config: build.NativeConfig = buildConfig.compilerConfig
-  implicit private def self: Metadata = this
+  private implicit def self: Metadata = this
 
   final val usesLockWords = platform.isMultithreadingEnabled
   val lockWordType = if (usesLockWords) Some(nir.Type.Ptr) else None

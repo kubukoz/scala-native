@@ -1,47 +1,35 @@
 package java.nio.file
 
 import java.io._
-
-import java.{lang => jl}
 import java.lang.Iterable
-
+import java.nio.channels.SeekableByteChannel
 import java.nio.charset.{Charset, StandardCharsets}
-import java.nio.channels.{FileChannel, SeekableByteChannel}
-
-import java.nio.file.attribute._
-import java.nio.file.attribute.PosixFilePermission._
-
 import java.nio.file.StandardCopyOption.{COPY_ATTRIBUTES, REPLACE_EXISTING}
-
+import java.nio.file.attribute.PosixFilePermission._
+import java.nio.file.attribute._
+import java.util.WindowsHelperMethods._
 import java.util._
 import java.util.function.{BiPredicate, Consumer, Supplier}
 import java.util.stream.{Stream, StreamSupport}
+import java.{lang => jl}
 
-import scalanative.unsigned._
-import scalanative.unsafe._
-import scalanative.libc._
-
-import scalanative.posix.dirent._
-import scalanative.posix.direntOps._
-
-import scalanative.posix.errno.errno // avoid libc conflict in import errno._
-import scalanative.posix.errno._
-
-import scalanative.posix.{fcntl, limits, unistd}
-import scalanative.posix.sys.stat
-
+import scalanative.libc.{errno => _, _}
 import scalanative.meta.LinktimeInfo.isWindows
-
 import scalanative.nio.fs.FileHelpers
 import scalanative.nio.fs.unix.UnixException
-
-import scalanative.windows._
+import scalanative.posix.dirent._
+import scalanative.posix.direntOps._
+import scalanative.posix.errno._
+import scalanative.posix.sys.stat
+import scalanative.posix.{fcntl, limits, unistd}
+import scalanative.unsafe._
+import scalanative.unsigned._
+import scalanative.windows.ErrorHandlingApi._
+import scalanative.windows.FileApiExt._
 import scalanative.windows.WinBaseApi._
 import scalanative.windows.WinBaseApiExt._
-import scalanative.windows.FileApiExt._
-import scalanative.windows.ErrorHandlingApi._
+import scalanative.windows._
 import scalanative.windows.winnt.AccessRights._
-import java.util.WindowsHelperMethods._
 
 object Files {
   private final val emptyPath = Paths.get("", Array.empty)
@@ -124,7 +112,7 @@ object Files {
       Zone.acquire { implicit z =>
 
         /* Requirement:
-         * 
+         *
          *   Files.copy(Path, Path, Options) on the JVM ensures that, on
          *   success, the PosixPermissions of the source, limited by the
          *   process umask, have been copied to the target.
@@ -136,18 +124,18 @@ object Files {
          */
 
         /* Design Notes:
-         * 
+         *
          *   - Use POSIX I/O to handle the corner case where a file exists but
          *     the user does not have write access: r--x------ & kin.
-         * 
+         *
          *     JVM handles this case, Scala Native must also.
-         * 
+         *
          *     Most of Scala Native javalib Files.scala, File_Helpers.scala,
          *     java.nio.*, and java.io.* use a non-atomic sequence of steps:
          *     create the file, then set indicated attributes. Any subsequent
          *     write to the file fails because the file permissions have been
          *     set user no-write.
-         * 
+         *
          *     POSIX fcntl.open() is defined so that it can open and create
          *     a new file for write if the indicated directory permissions
          *     allow. Code can use the fd returned to write to the file as long
@@ -158,14 +146,14 @@ object Files {
          *     condition checking is delegated to the operating system
          *     under the expectation that in most cases the operation will
          *     succeed.
-         * 
+         *
          *   - Some, but probably not all, rare and somewhat astonishing corner
          *     conditions exist when the REPLACE_EXISTING option is present:
-         * 
+         *
          *     - Any kind of IOException, including but not limited to:
          *           - source file can not be read
          *       Action: target file is deleted.
-         * 
+         *
          *     - target file exists but does not have write permission,
          *       e.g. r-xr-xr-x.
          *       Action: copy proceeds but inode number changes.
@@ -174,7 +162,7 @@ object Files {
          *     development days of modifying files in-place.  This
          *     leaves a pretty wide window for misadventure, particularly
          *     if more than one thread or process is accessing the file.
-         * 
+         *
          *     Many contemporary applications create a temporary intermediate
          *     file, copy the source contents to the temporary,
          *     set permissions on the temporary, and then, finally, if the
@@ -186,7 +174,7 @@ object Files {
          *     a file with a temporary name. The obvious library calls
          *     each have their own drawbacks. A "create-until-success" loop
          *     also has its own pain points: more than an afternoon's work.
-         * 
+         *
          *     Oh, give me a good ship, a fair wind, and a few clever
          *     secondary school students!
          */
@@ -247,10 +235,10 @@ object Files {
             /* Handle what should be a vanishingly rare but possible
              * corner case where cTarget exists but is not user writable;
              * r-xr-xr-x, --xr-xr-x, and kin. O_TRUNC will fail in those cases.
-             * 
+             *
              * unlink() is a directory operation. If the permissions on that
              * directory permit, the operation should succeed.
-             * 
+             *
              * Of course, if two or more threads/processes are accessing the
              * same file without explicit synchronization, there are always
              * timing issues, since the file unlink & subsequent creation
@@ -259,7 +247,7 @@ object Files {
             unistd.unlink(cTarget) // Handle error later.
             openTarget(cTarget, replaceExisting = false, cPerms)
           } else {
-            val msg = fromCString(string.strerror(errno))
+            val msg = LibcExt.strError()
             throw new IOException(
               s"error opening target path '${cTarget}': ${msg}"
             )
@@ -285,7 +273,7 @@ object Files {
             val nRead = unistd.read(inFd, buffer, limit.toCSize)
 
             if (nRead < 0) {
-              val msg = fromCString(string.strerror(errno))
+              val msg = LibcExt.strError()
               throw new IOException(
                 s"error reading copy source file: ${msg}"
               )
@@ -297,7 +285,7 @@ object Files {
               while ((nRemaining > 0) && errno == 0) {
                 val nWritten = unistd.write(outFd, buffer, nRemaining.toCSize)
                 if (nWritten < 0) {
-                  val msg = fromCString(string.strerror(errno))
+                  val msg = LibcExt.strError()
                   throw new IOException(
                     s"error writing copy target file: ${msg}"
                   )
@@ -331,7 +319,7 @@ object Files {
           val inFd = fcntl.open(cSource, fcntl.O_RDONLY, 0.toUInt)
 
           if (inFd == -1) {
-            val msg = fromCString(string.strerror(errno))
+            val msg = LibcExt.strError()
             throw new IOException(
               s"error opening source path '${absSource}': ${msg}"
             )
@@ -487,7 +475,7 @@ object Files {
               null
             )
           else
-            throw new IOException(fromCString(string.strerror(e)))
+            throw new IOException(LibcExt.strError(e))
         }
 
       }
@@ -1084,7 +1072,7 @@ object Files {
       _options: Array[OpenOption]
   ): SeekableByteChannel = {
     val options = new HashSet[OpenOption]()
-    _options.foreach(options.add _)
+    _options.foreach(options.add)
     newByteChannel(path, options, Array.empty)
   }
 
@@ -1171,7 +1159,7 @@ object Files {
         val fd = fcntl.open(pathCString, fcntl.O_RDONLY, 0.toUInt)
 
         if (fd == -1) {
-          val msg = fromCString(string.strerror(errno))
+          val msg = LibcExt.strError()
           throw new IOException(s"error opening path '${path}': ${msg}")
         }
 

@@ -6,18 +6,17 @@
 
 package org.scalanative.testsuite.javalib.util.concurrent
 
-import java.util.concurrent.TimeUnit._
 import java.util
 import java.util._
+import java.util.concurrent.TimeUnit._
 import java.util.concurrent._
 import java.util.concurrent.atomic._
-
 import java.util.stream.Stream
 
-import org.junit._
-import org.junit.Assert._
-
 import scala.util.control.Breaks._
+
+import org.junit.Assert._
+import org.junit._
 
 import org.scalanative.testsuite.utils.Platform
 
@@ -84,11 +83,11 @@ class ScheduledExecutorSubclassTest extends JSR166Test {
     override protected def decorateTask[V](
         r: Runnable,
         task: RunnableScheduledFuture[V]
-    ) = new CustomTask[V](task)
+    ): RunnableScheduledFuture[V] = new CustomTask[V](task)
     override protected def decorateTask[V](
         c: Callable[V],
         task: RunnableScheduledFuture[V]
-    ) = new CustomTask[V](task)
+    ): RunnableScheduledFuture[V] = new CustomTask[V](task)
   }
 
   /** execute successfully executes a runnable

@@ -8,12 +8,17 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "../pd_exit.h"
 #include <stdbool.h>
 #include <string.h>
 #include "string_constants.h"
 
 #ifdef __APPLE__
 #include <sys/sysctl.h>
+#endif
+
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
 #endif
 
 bool scalanative_platform_is_freebsd() {
@@ -124,6 +129,18 @@ void scalanative_set_os_props(void (*add_prop)(const char *, const char *)) {
     add_prop("os.name", "Windows (Unknown version)");
 #elif defined(__APPLE__)
     add_prop("os.name", "Mac OS X");
+    // Use kern.osproductversion to get the macOS product version (e.g. "15.4")
+    // matching JVM behavior, instead of the Darwin kernel version from uname.
+    {
+        char version[32];
+        size_t version_len = sizeof(version);
+        if (sysctlbyname("kern.osproductversion", version, &version_len, NULL,
+                         0) == 0) {
+            add_prop("os.version", version);
+        }
+    }
+#elif defined(TARGET_PLAYDATE)
+    add_prop("os.name", "playdate");
 #else
     struct utsname name;
     if (uname(&name) == 0) {
@@ -142,6 +159,8 @@ void scalanative_set_os_props(void (*add_prop)(const char *, const char *)) {
     arch = "aarch64";
 #endif // Windows
 
+#elif defined(TARGET_PLAYDATE)
+    arch = "armv7";
 #else // on Unix
     struct utsname buffer;
     if (uname(&buffer) >= 0) {
@@ -159,6 +178,10 @@ void scalanative_set_os_props(void (*add_prop)(const char *, const char *)) {
             arch = "amd64";
         }
 #endif
+        // On JVM all arm64 architectures are reported as the formal aarch64
+        if (strcmp("arm64", arch) == 0) {
+            arch = "aarch64";
+        }
     }
 #endif
     add_prop("os.arch", arch);
@@ -177,10 +200,12 @@ size_t scalanative_page_size() {
         pageSize = (size_t)sysconf(_SC_PAGE_SIZE);
 #endif
         if (pageSize <= 0) {
-            fprintf(stderr,
+            #ifdef PD_DEBUG
+            pd_log_error(
                     "%s Unable to determine "
                     "platform page size\n",
                     snFatalErrorPrefix);
+            #endif
             abort();
         }
     }

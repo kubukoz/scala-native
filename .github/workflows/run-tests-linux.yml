@@ -25,11 +25,10 @@ jobs:
       matrix:
         scala: [2.12, 2.13, 3]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/linux-setup-env
         with:
           scala-version: ${{matrix.scala}}
-          java-version: 8
 
       - name: Test tools
         run: sbt "test-tools ${{ matrix.scala }}; toolsBenchmarks${{env.project-version}}/Jmh/compile"
@@ -39,11 +38,10 @@ jobs:
     if: github.event_name == 'pull_request' || ((github.event_name == 'schedule' || github.event_name == 'workflow_call') && github.repository == 'scala-native/scala-native')
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/linux-setup-env
         with:
           scala-version: 3
-          java-version: 8
 
       - name: Compile everything
         # Publish 2.13.latest artifacts locally first, these are required by scalalib3
@@ -52,7 +50,6 @@ jobs:
     
   test-scala-cross-build:
     runs-on: ubuntu-22.04
-    if: ((github.event_name == 'schedule' || github.event_name == 'workflow_call')  && github.repository == 'scala-native/scala-native') || (github.event_name == 'pull_request' && !contains(github.event.pull_request.body, '[skip ci]') && contains(github.event.pull_request.body, '[test-extended]'))
     env:
       ENABLE_EXPERIMENTAL_COMPILER: true
     strategy:
@@ -60,14 +57,14 @@ jobs:
       matrix:
         scala: [2.12, 2.13, 3, 3-next]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/linux-setup-env
         with:
           scala-version: ${{matrix.scala}}
-          java-version: 8
 
-      - name: Test cross compilation of compiler plugins
-        run: sbt "+nscplugin${{ env.project-version }}/test; +junitPlugin${{ env.project-version }}/compile; +scalalib${{ env.project-version }}/compile"
+      # scalalib/Test/compile would force building both compiler plugins as well
+      - name: Test cross compilation of compiler plugins and stdlib
+        run: sbt "+${{ startsWith(matrix.scala, '3') && 'scala3lib' || 'scalalib' }}${{ env.project-version }}/Test/compile"
 
   test-runtime:
     name: Test runtime
@@ -81,7 +78,7 @@ jobs:
       matrix:
         scala: [3, 2.13, 2.12, 3-next]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/linux-setup-env
         with:
           scala-version: ${{matrix.scala}}
@@ -133,7 +130,7 @@ jobs:
           #   lto: full
           #   gc: commix
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/linux-setup-env
         with:
           scala-version: ${{matrix.scala}}
@@ -164,7 +161,7 @@ jobs:
         scala: [3]
         build-mode: [debug]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/linux-setup-env
         with:
           scala-version: ${{matrix.scala}}
@@ -188,9 +185,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scala: [3]
+        scala: [2.12, 3]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/linux-setup-env
         with:
           scala-version: ${{matrix.scala}}
@@ -213,12 +210,11 @@ jobs:
         scala: [3]
         llvm: [14, 15, 16, 17, 18, 19] # Last 3 stable versions + available future versions
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/linux-setup-env
         with:
           scala-version: ${{matrix.scala}}
           llvm-version: ${{ matrix.llvm }}
-          java-version: 8
 
       - name: Run tests
         timeout-minutes: 45
@@ -237,15 +233,14 @@ jobs:
       matrix:
         scala: [2.13]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/linux-setup-env
         with:
           scala-version: ${{matrix.scala}}
-          java-version: 11
 
         # Make sure that Scala partest denylisted tests contain only valid test names
       - name: Setup Scala-cli
-        uses: VirtusLab/scala-cli-setup@v1.9
+        uses: VirtusLab/scala-cli-setup@v1.12
 
       - name: Check partest disabled tests list
         # No partests support for Scala 3
@@ -258,7 +253,6 @@ jobs:
       - uses: ./.github/actions/linux-setup-env
         with:
           scala-version: ${{matrix.scala}}
-          java-version: 11
 
         # Running all partests would take ~2h for each Scala version, run only single test of each kind
         # to make sure that infrastructure works correctly.

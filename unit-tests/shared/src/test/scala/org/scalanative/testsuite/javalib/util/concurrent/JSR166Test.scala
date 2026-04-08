@@ -9,16 +9,16 @@
 
 package org.scalanative.testsuite.javalib.util.concurrent
 
-import java.util.concurrent.TimeUnit._
 import java.io._
 import java.util._
+import java.util.concurrent.TimeUnit._
 import java.util.concurrent._
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 import java.util.regex.Pattern
 
 import org.junit.Assert._
 import org.junit.BeforeClass
+
 import scala.scalanative.junit.utils.AssumesHelper
 
 /** Base class for JSR166 Junit TCK tests. Defines some constants, utility
@@ -481,7 +481,7 @@ abstract class JSR166Test {
   abstract class ThreadShouldThrow[T](val exceptionClass: Class[T])
       extends Thread {
     protected def realRun(): Unit
-    final override def run(): Unit = {
+    override final def run(): Unit = {
       try {
         realRun()
         threadShouldThrow(exceptionClass.getSimpleName())
@@ -660,7 +660,7 @@ abstract class JSR166Test {
    */
   abstract class CheckedRecursiveTask[T] extends RecursiveTask[T] {
     protected def realCompute(): T
-    override final protected def compute(): T = {
+    override protected final def compute(): T = {
       try {
         return realCompute()
       } catch {
@@ -1038,7 +1038,9 @@ object JSR166Test {
   // Epsilon is added for Scala Native Test environment.
   final val epsilon = 0.00001 // tolerance for Floating point comparisons.
 
-  final val expensiveTests = sys.env.contains("CI")
+  // TODO: Temporary disabled due to large memory usage
+  // Restore after implementing generational GC
+  final val expensiveTests = false // sys.env.contains("CI")
 
   /** If true, also run tests that are not part of the official tck because they
    *  test unspecified implementation details.

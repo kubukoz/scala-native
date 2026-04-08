@@ -1,29 +1,27 @@
 package java.net
 
-import scala.scalanative.unsigned._
-import scala.scalanative.unsafe._
-import scalanative.libc.string.memcpy
+import java.io.{FileDescriptor, IOException, InputStream, OutputStream}
+
+import scala.scalanative.libc.LibcExt
+import scala.scalanative.meta.LinktimeInfo.isWindows
 import scala.scalanative.posix.arpa.inet
-// Import posix name errno as variable, not class or type.
-import scala.scalanative.posix.{errno => posixErrno}, posixErrno._
-import scala.scalanative.posix.netinet.in
 import scala.scalanative.posix.netinet.inOps._
-import scala.scalanative.posix.netinet.tcp
-import scala.scalanative.posix.netdb._
-import scala.scalanative.posix.netdbOps._
-import scala.scalanative.posix.string.strerror
+import scala.scalanative.posix.netinet.{in, tcp}
 import scala.scalanative.posix.sys.ioctl._
 import scala.scalanative.posix.sys.socket
+import scala.scalanative.posix.sys.socket.{SHUT_RD, SHUT_RDWR, SHUT_WR}
 import scala.scalanative.posix.sys.socketOps._
 import scala.scalanative.posix.sys.time._
 import scala.scalanative.posix.sys.timeOps._
-import scala.scalanative.posix.unistd
-
-import scala.scalanative.meta.LinktimeInfo.isWindows
-import java.io.{FileDescriptor, IOException, OutputStream, InputStream}
-import scala.scalanative.windows._
+// Import posix name errno as variable, not class or type.
+import scala.scalanative.posix.{errno => posixErrno, unistd}
+import scala.scalanative.unsafe._
+import scala.scalanative.unsigned._
 import scala.scalanative.windows.WinSocketApi._
 import scala.scalanative.windows.WinSocketApiExt._
+import scala.scalanative.windows._
+
+import posixErrno._
 
 private[net] abstract class AbstractPlainSocketImpl extends SocketImpl {
   import AbstractPlainSocketImpl._
@@ -44,7 +42,7 @@ private[net] abstract class AbstractPlainSocketImpl extends SocketImpl {
 
   override def getInetAddress: InetAddress = address
   override def getFileDescriptor: FileDescriptor = fd
-  final protected var isClosed: Boolean =
+  protected final var isClosed: Boolean =
     fd == InvalidSocketDescriptor
 
   private def throwIfClosed(methodName: String): Unit = {
@@ -283,8 +281,21 @@ private[net] abstract class AbstractPlainSocketImpl extends SocketImpl {
 
   override def close(): Unit = {
     if (!isClosed) {
-      if (isWindows) WinSocketApi.closeSocket(fd.handle)
-      else unistd.close(fd.fd)
+      if (isWindows) {
+        WinSocketApi.closeSocket(fd.handle)
+      } else {
+        /* The OS fd at this point may be quiescent or in use by another thread in a blocking syscall.
+         * Shutting it down is a best-effort attempt to interrupt such operations and signal closure.
+         * We intentionally ignore the return value of `shutdown()` since the fd's exact state is unknown
+         * and success/failure is not actionable here.
+         */
+        try {
+          shutdownBoth()
+        } catch {
+          case _: SocketException => ()
+        }
+        unistd.close(fd.fd)
+      }
       fd = InvalidSocketDescriptor
       isClosed = true
     }
@@ -310,19 +321,34 @@ private[net] abstract class AbstractPlainSocketImpl extends SocketImpl {
     new SocketInputStream(this)
   }
 
-  override def shutdownOutput(): Unit = {
-    socket.shutdown(fd.fd, 1) match {
-      case 0 => shutOutput = true
-      case _ =>
-        throw new SocketException("Error while shutting down socket's output")
-    }
+  override def shutdownOutput(): Unit = shutdown(SHUT_WR) {
+    shutOutput = true
   }
 
-  override def shutdownInput(): Unit = {
-    socket.shutdown(fd.fd, 0) match {
-      case 0 => shutInput = true
+  override def shutdownInput(): Unit = shutdown(SHUT_RD) {
+    shutInput = true
+  }
+
+  override def shutdownBoth(): Unit = shutdown(SHUT_RDWR) {
+    shutInput = true
+    shutOutput = true
+  }
+
+  private def shutdown(how: CInt)(onSuccess: => Unit): Unit = {
+    require(
+      how == SHUT_RD || how == SHUT_WR || how == SHUT_RDWR,
+      s"Invalid shutdown mode $how. Allowed: SHUT_RD, SHUT_WR, SHUT_RDWR."
+    )
+    socket.shutdown(fd.fd, how) match {
+      case 0 => onSuccess
       case _ =>
-        throw new SocketException("Error while shutting down socket's input")
+        val side =
+          if (how == SHUT_RD) "input"
+          else if (how == SHUT_WR) "output"
+          else "input and output"
+        throw new SocketException(
+          s"Error while shutting down socket's $side: ${LibcExt.strError()}"
+        )
     }
   }
 

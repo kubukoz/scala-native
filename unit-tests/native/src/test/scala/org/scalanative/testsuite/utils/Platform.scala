@@ -3,7 +3,6 @@ package org.scalanative.testsuite.utils
 // See also the scala.scalanative.runtime.Platform package.
 
 import scala.scalanative.buildinfo.ScalaNativeBuildInfo
-
 import scala.scalanative.runtime
 
 object Platform {
@@ -62,4 +61,6 @@ object Platform {
   final val isMultithreadingEnabled =
     scala.scalanative.meta.LinktimeInfo.isMultithreadingEnabled
 
+  final val isWeakReferenceSupported =
+    scala.scalanative.meta.LinktimeInfo.isWeakReferenceSupported
 }

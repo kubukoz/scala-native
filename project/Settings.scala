@@ -1,23 +1,29 @@
 package build
 
-import sbt._
 import sbt.Keys._
+import sbt._
 import sbt.nio.Keys.fileTreeView
-import com.typesafe.tools.mima.core._
-import com.typesafe.tools.mima.plugin.MimaPlugin.autoImport._
-import com.jsuereth.sbtpgp.PgpKeys.publishSigned
-import scala.scalanative.sbtplugin.ScalaNativePlugin.autoImport._
-import org.portablescala.sbtplatformdeps.PlatformDepsPlugin.autoImport._
-
-import sbtbuildinfo.BuildInfoPlugin.autoImport._
-import ScriptedPlugin.autoImport._
-import com.jsuereth.sbtpgp.PgpKeys
-
-import scala.collection.mutable
-import MyScalaNativePlugin.isGeneratingForIDE
 
 import java.io.File
 import java.util.Locale
+
+import scala.collection.mutable
+
+import com.jsuereth.sbtpgp.PgpKeys
+import com.jsuereth.sbtpgp.PgpKeys.publishSigned
+import com.typesafe.tools.mima.core._
+import com.typesafe.tools.mima.plugin.MimaPlugin.autoImport._
+import org.portablescala.sbtplatformdeps.PlatformDepsPlugin.autoImport._
+
+// Hack warning: special object mimicking build-info plugin outputs, defined in project/ScalaNativeBuildInfo
+import scala.scalanative.ScalaNativeBuildInfo
+import scala.scalanative.sbtplugin.ScalaNativePlugin.autoImport._
+
+import build.ScalaVersions.sbt2Version
+import sbtbuildinfo.BuildInfoPlugin.autoImport._
+
+import MyScalaNativePlugin.isGeneratingForIDE
+import ScriptedPlugin.autoImport._
 
 object Settings {
   lazy val fetchScalaSource = taskKey[File](
@@ -35,6 +41,8 @@ object Settings {
 
   // JDK version we are running with
   lazy val thisBuildSettings = Def.settings(
+    organization := "org.scala-native",
+    version := ScalaNativeBuildInfo.version,
     Global / javaVersion := {
       val fullVersion = System.getProperty("java.version")
       val v = fullVersion.stripPrefix("1.").takeWhile(_.isDigit).toInt
@@ -52,10 +60,10 @@ object Settings {
         Files.createDirectories(prePush.getParent)
         Files.write(
           prePush,
-          """#!/bin/sh
-          |set -eux
-          |CHECK_MODIFIED_ONLY=1 ./scripts/check-lint.sh
-          |""".stripMargin.getBytes()
+          """|#!/bin/sh
+             |set -eux
+             |CHECK_MODIFIED_ONLY=1 ./scripts/check-lint.sh
+             |""".stripMargin.getBytes()
         )
         prePush.toFile.setExecutable(true)
       }
@@ -73,58 +81,85 @@ object Settings {
   }
 
   lazy val commonSettings = Def.settings(
-    organization := "org.scala-native",
     name := projectName(thisProject.value.id),
-    version := nativeVersion,
     scalacOptions ++= Seq(
       "-deprecation",
       "-unchecked",
-      "-feature",
-      "-Xfatal-warnings",
-      "-encoding",
-      "utf8"
-    ),
+      "-feature"
+    ) ++ CrossVersion
+      .partialVersion(scalaVersion.value)
+      .fold(Seq.empty[String]) {
+        // -Xfatal-warnings is deprecated, but -Werror is not available in older Scala versions
+        case (2, _) =>
+          Seq("-Xfatal-warnings", "-encoding", "utf8", "-Xsource:3")
+        case _ =>
+          Seq("-Werror", "-encoding:utf8")
+      },
     javaReleaseSettings,
     mimaSettings,
     docsSettings,
-    scalacOptions ++= ignoredScalaDeprecations(scalaVersion.value)
+    scalacOptions ++= ignoredScalaDeprecations(scalaVersion.value),
+    resolvers += Resolver.scalaNightlyRepository
   )
 
-  val javacSourceFlags = Seq("-source", "1.8")
+  def targetJDKVersion(scalaVersion: String) =
+    CrossVersion.partialVersion(scalaVersion) match {
+      case Some((3, minor)) if minor >= 8 => 17
+      case _                              => 8
+    }
+  // Target version as a string, for javac -target and -source flags - jdk 8 compatible
+  def targetJDKVersionString(jdkVersion: Int) =
+    jdkVersion match {
+      case 8       => "1.8"
+      case version => version.toString
+    }
+
   def javaReleaseSettings = {
     def patchVersion(prefix: String, scalaVersion: String): Int =
       scalaVersion.stripPrefix(prefix).takeWhile(_.isDigit).toInt
     def canUseRelease(scalaVersion: String) = CrossVersion
       .partialVersion(scalaVersion)
       .fold(false) {
+        case (2, 12) => patchVersion("2.12.", scalaVersion) > 16
         case (2, 13) => patchVersion("2.13.", scalaVersion) > 8
-        case (2, _)  => false
-        case (3, 1)  => patchVersion("3.1.", scalaVersion) > 1
-        case (3, _)  => true
+        case (3, _)  => true // since 3.1.2
       }
-    val scalacReleaseFlag = "-release:8"
 
     Def.settings(
-      scalacOptions += {
-        if (canUseRelease(scalaVersion.value)) scalacReleaseFlag
-        else if (scalaVersion.value.startsWith("3.")) "-Xtarget:8"
-        else "-target:jvm-1.8"
+      Compile / scalacOptions += {
+        val jdkVersion = targetJDKVersion(scalaVersion.value)
+        if (canUseRelease(scalaVersion.value)) s"-release:$jdkVersion"
+        else s"-target:jvm-${targetJDKVersionString(jdkVersion)}"
       },
-      javacOptions ++= {
+      Compile / javacOptions ++= {
+        val jdkVersion = targetJDKVersion(scalaVersion.value)
         if (canUseRelease(scalaVersion.value)) Nil
-        else javacSourceFlags
+        else {
+          val version = targetJDKVersionString(jdkVersion)
+          List("-source", version, "-target", version)
+        }
       },
-      // Remove -source flags from tests to allow for multi-jdk version compliance tests
-      Test / javacOptions --= javacSourceFlags,
-      Test / scalacOptions -= scalacReleaseFlag
+      noJavaReleaseSettings(Test)
     )
   }
-  def noJavaReleaseSettings = Def.settings(
-    scalacOptions ~= { prev =>
-      val disabledScalacOptions = Seq("-target:", "-Xtarget", "-release:")
-      prev.filterNot(opt => disabledScalacOptions.exists(opt.startsWith))
+
+  def isScalacJDKTargetOption(scalacOption: String) = {}
+
+  def noJavaReleaseSettings(scope: Configuration) = Def.settings(
+    scope / scalacOptions ~= {
+      _.filterNot { opt =>
+        Seq("-target", "-Xtarget", "-release").exists(opt.contains)
+      }
     },
-    javacOptions --= javacSourceFlags
+    scope / javacOptions := {
+      val prev = javacOptions.value
+      val targetVersion =
+        targetJDKVersionString(targetJDKVersion(scalaVersion.value))
+      prev.filterNot { opt =>
+        opt == targetVersion ||
+        Seq("-source", "-target").exists(opt.contains)
+      }
+    }
   )
 
   // Docs and API settings
@@ -134,6 +169,8 @@ object Settings {
     Def.settings(
       autoAPIMappings := true,
       exportJars := true, // required so ScalaDoc linking works
+      // Don't fail on Scaladoc warnings (e.g., unresolved links to Java classes)
+      Compile / doc / scalacOptions --= Seq("-Werror", "-Xfatal-warnings"),
       Compile / doc / scalacOptions --= scalaVersionsDependendent(
         scalaVersion.value
       )(Seq.empty[String]) {
@@ -316,23 +353,6 @@ object Settings {
     publish / skip := true
   )
 
-  // Build Info
-  lazy val buildInfoJVMSettings = Def.settings(
-    buildInfoPackage := "scala.scalanative.buildinfo",
-    buildInfoObject := "ScalaNativeBuildInfo",
-    buildInfoKeys := Seq[BuildInfoKey](
-      version,
-      sbtVersion,
-      scalaVersion
-    )
-  )
-
-  lazy val buildInfoSettings = Def.settings(
-    buildInfoJVMSettings,
-    buildInfoKeys +=
-      "nativeScalaVersion" -> scalaVersion.value
-  )
-
   // Tests
   lazy val testsCommonSettings = Def.settings(
     scalacOptions -= "-deprecation",
@@ -343,7 +363,7 @@ object Settings {
           // Scala 3, becouse null.isInstanceOf[String] warning cannot be supressed
           scalaVersion.value.startsWith("3.") ||
           // Scala Native - due to specific warnings for unsafe ops in IssuesTest
-          !moduleName.value.contains("jvm")) Seq("-Xfatal-warnings")
+          !moduleName.value.contains("jvm")) Seq("-Werror", "-Xfatal-warnings")
       else Nil
     },
     Test / testOptions ++= Seq(
@@ -373,10 +393,10 @@ object Settings {
   lazy val disabledTestsSettings = {
     def testsTaskUnsupported[T] = Def.task[T] {
       throw new MessageOnlyException(
-        s"""Usage of this task in ${(thisProject / name).value} project is not supported in this build.
-             |To run tests use explicit syntax containing name of project: <project_name>/<task>.
-             |You can also use one of predefined aliases: test-all, test-tools, test-runtime, test-scripted.
-             |""".stripMargin
+        s"""|Usage of this task in ${(thisProject / name).value} project is not supported in this build.
+            |To run tests use explicit syntax containing name of project: <project_name>/<task>.
+            |You can also use one of predefined aliases: test-all, test-tools, test-runtime, test-scripted.
+            |""".stripMargin
       )
     }
 
@@ -606,25 +626,38 @@ object Settings {
     publishSettings(None),
     mavenPublishSettings,
     exportJars := true,
-    scalacOptions --= Seq("-deprecation", "-Xfatal-warnings"),
+    scalacOptions --= Seq("-Xfatal-warnings", "-Werror"),
     scalacOptions ++= ignoredScalaDeprecations(scalaVersion.value),
     disableMimaSettings
   )
 
   lazy val sbtPluginSettings = Def.settings(
-    commonSettings,
     toolSettings,
     publishSettings(None),
     sbtPlugin := true,
-    sbtVersion := ScalaVersions.sbt10Version,
-    scalaVersion := ScalaVersions.sbt10ScalaVersion,
+    (pluginCrossBuild / sbtVersion) := {
+      scalaBinaryVersion.value match {
+        case "2.12" => ScalaVersions.sbt10Version
+        case "3"    => ScalaVersions.sbt2Version
+      }
+    },
+    sbtVersion := (pluginCrossBuild / sbtVersion).value,
+    sbtBinaryVersion := CrossVersion.binarySbtVersion(sbtVersion.value),
+    mimaPreviousArtifacts := {
+      val sbtV = (pluginCrossBuild / sbtBinaryVersion).value
+      val scalaV = (update / scalaBinaryVersion).value
+      mimaPreviousArtifacts.value.map { dependency =>
+        sbt.Defaults.sbtPluginExtra(dependency, sbtV, scalaV)
+      }
+    },
     scriptedLaunchOpts := {
       scriptedLaunchOpts.value ++
         Seq(
           "-Xmx1024M",
           "-Dplugin.version=" + version.value,
-          // Default scala.version, can be overriden in test-scrippted command
-          "-Dscala.version=" + ScalaVersions.scala212,
+          "-Dscala.version=" + scalaVersion.value,
+          "-Dscala213.version=" + ScalaVersions.scala213,
+          "-Dscala3.version=" + ScalaVersions.scriptedTestsScala3Version,
           "-Dfile.encoding=UTF-8" // Windows uses Cp1250 as default
         ) ++
         ivyPaths.value.ivyHome.map(home => s"-Dsbt.ivy.home=$home").toSeq
@@ -689,7 +722,7 @@ object Settings {
   )
   lazy val commonJavalibSettings = Def.settings(
     recompileAllOrNothingSettings,
-    noJavaReleaseSettings, // we don't emit classfiles
+    noJavaReleaseSettings(Compile), // we don't emit classfiles
     Compile / scalacOptions ++= scalaNativeCompilerOptions(
       "genStaticForwardersForNonTopLevelObjects"
     ),
@@ -721,9 +754,19 @@ object Settings {
     dirs.toSeq // most specific shadow less specific
   }
 
-  def commonScalalibSettings(libraryName: String): Seq[Setting[_]] = {
+  def usesSelfContainedStdlib(scalaVersion: String): Boolean =
+    CrossVersion.partialVersion(scalaVersion) match {
+      // Scala 3.8+ uses self-contained stdlib, previously it was using Scala 2.13 stdlib
+      case Some((3, minor)) => minor >= 8
+      case _                => true // all Scala 2 stdlibs are self-contained
+    }
+
+  def commonScalalibSettings(
+      scalaStdLibraryName: String,
+      shouldAddDependencyForVersion: String => Boolean = { _ => true }
+  ): Seq[Setting[_]] = {
     Def.settings(
-      version := scalalibVersion(scalaVersion.value, nativeVersion),
+      version := scalalibVersion(scalaVersion.value, version.value),
       mavenPublishSettings,
       disabledDocsSettings,
       recompileAllOrNothingSettings,
@@ -736,7 +779,11 @@ object Settings {
       // By intent, the Scala Native code below is as identical as feasible.
       // Scala Native build.sbt uses a slightly different baseDirectory
       // than Scala.js. See commented starting with "SN Port:" below.
-      libraryDependencies += "org.scala-lang" % libraryName % scalaVersion.value,
+      libraryDependencies ++= {
+        if (shouldAddDependencyForVersion(scalaVersion.value))
+          Some("org.scala-lang" % scalaStdLibraryName % scalaVersion.value)
+        else None
+      },
       fetchScalaSource / artifactPath :=
         baseDirectory.value.getParentFile / "target" / "scalaSources" / scalaVersion.value,
       // Create nir.SourceFile relative to Scala sources dir instead of root dir
@@ -745,7 +792,13 @@ object Settings {
         scalaNativeCompilerOptions(
           s"positionRelativizationPaths:${crossTarget.value / "patched"};${(fetchScalaSource / artifactPath).value}"
         ),
-      scalacOptions --= Seq("-deprecation", "-Xfatal-warnings"),
+      // Foreign sources, ignore all warnings and don't try to use custom -source version
+      scalacOptions --= Seq(
+        "-deprecation",
+        "-Werror",
+        "-Xfatal-warnings",
+        "-Xsource:3"
+      ),
       // Scala.js original comment modified to clarify issue is Scala.js.
       /* Work around for https://github.com/scala-js/scala-js/issues/2649
        * We would like to always use `update`, but
@@ -784,17 +837,21 @@ object Settings {
         }
         lazy val scalaLibSourcesJar = lm
           .retrieve(
-            "org.scala-lang" % libraryName % scalaVersion.value classifier "sources",
+            "org.scala-lang" % scalaStdLibraryName % version classifier "sources",
             scalaModuleInfo = None,
             retrieveDirectory = cacheDir,
             log = s.log
           )
-          .map(_.find(_.name.endsWith(s"$libraryName-$version-sources.jar")))
+          .map(
+            _.find(
+              _.name.endsWith(s"${scalaStdLibraryName}-$version-sources.jar")
+            )
+          )
           .toOption
           .flatten
           .getOrElse {
             throw new Exception(
-              s"Could not fetch $libraryName sources for version $version"
+              s"Could not fetch ${scalaStdLibraryName} sources for version $version"
             )
           }
 
@@ -813,7 +870,7 @@ object Settings {
         trgDir
       },
       Compile / unmanagedSourceDirectories := scalaVersionDirectories(
-        baseDirectory.value.getParentFile(),
+        (ThisBuild / baseDirectory).value / "scalalib",
         "overrides",
         scalaVersion.value
       ),
@@ -839,9 +896,9 @@ object Settings {
         def listFilesInOrder(patterns: Glob*) =
           patterns.flatMap(fileTree.list(_))
 
-          /* Exclude files coming from Scala's `library-aux` directory, as they are not
-           * meant to be compiled. They are part of the source jar since Scala 2.13.14.
-           */
+        /* Exclude files coming from Scala's `library-aux` directory, as they are not
+         * meant to be compiled. They are part of the source jar since Scala 2.13.14.
+         */
         val ignoredSourceFiles = Set(
           "Any.scala",
           "AnyRef.scala",
@@ -885,6 +942,12 @@ object Settings {
 
           def tryApplyPatch(sourceName: String): Option[File] = {
             val scalaSourcePath = scalaSrcDir / sourceName
+            if (!scalaSourcePath.exists()) {
+              s.log.warn(
+                s"Not found matching source file $sourceName for patch in Scala ${scalaVersion.value} sources, skipped"
+              )
+              return None
+            }
             val scalaSourceCopyPath = scalaSrcDir / (sourceName + ".copy")
             val outputFile = crossTarget.value / "patched" / sourceName
             val outputDir = outputFile.getParentFile
@@ -901,17 +964,29 @@ object Settings {
             try {
               import scala.sys.process._
               copy(scalaSourcePath, scalaSourceCopyPath)
+              var hasErrors = false
               Process(
                 command = Seq(
                   "git",
                   "apply",
+                  "--reject",
                   "--whitespace=fix",
                   "--recount",
                   sourcePath.toAbsolutePath().toString()
                 ),
                 cwd = scalaSrcDir
-              ) !! s.log
-
+              ).!!(
+                ProcessLogger(
+                  stdout => (),
+                  stderr => {
+                    if (stderr.contains("error")) {
+                      hasErrors = true
+                    }
+                    if (hasErrors) s.log.warn(stderr)
+                    else s.log.debug(stderr)
+                  }
+                )
+              )
               copy(scalaSourcePath, outputFile)
               Some(outputFile)
             } catch {
@@ -972,7 +1047,7 @@ object Settings {
       Tests.Argument(TestFrameworks.JUnit, "-a", "-s"),
       Tests.Filter(_.endsWith("Assertions"))
     ),
-    Test / scalacOptions --= Seq("-deprecation", "-Xfatal-warnings"),
+    Test / scalacOptions --= Seq("-deprecation", "-Werror", "-Xfatal-warnings"),
     Test / scalacOptions += "-deprecation:false"
   )
 

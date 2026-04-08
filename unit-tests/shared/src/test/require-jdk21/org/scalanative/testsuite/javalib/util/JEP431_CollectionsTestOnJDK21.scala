@@ -11,21 +11,15 @@ package org.scalanative.testsuite.javalib.util
  * JEP431_ArrayListTestOnJDK21.scala
  */
 
-import org.junit.Test
+import java.util.{
+  ArrayDeque, ArrayList, Arrays, Collections, LinkedHashMap, List, Map, TreeMap,
+  TreeSet
+}
+
 import org.junit.Assert._
+import org.junit.Test
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
-
-/* Keep import environment minimal. Import only the classes we want &
- * knowingly use.
- * Fewer chances for hidden and/or unintended interactions.
- */
-
-import java.util.{Arrays, ArrayList, List}
-import java.util.Collections
-import java.util.ArrayDeque
-import java.util.{LinkedHashMap, Map, TreeMap}
-import java.util.TreeSet
 
 class JEP431_CollectionsTestOnJDK21 {
   // format: off
@@ -358,7 +352,7 @@ class JEP431_CollectionsTestOnJDK21 {
 
     /* SequencedSet overrides the strict reference equality of
      * Collections.equals() to provide content equality.
-     * 
+     *
      * Reference equality is allowed but not required and not JVM 24 practice.
      */
 

@@ -31,19 +31,15 @@ package java.util.concurrent
  */
 
 import java.util
-
-import java.util.Objects
-import java.util.Iterator
-import java.util.{Spliterator, Spliterators}
-
 import java.util.function.Consumer
+import java.util.{Iterator, Objects, Spliterator, Spliterators}
 
-import scala.scalanative.unsafe._
-import scala.scalanative.runtime.fromRawPtr
-import scala.scalanative.runtime.Intrinsics.classFieldRawPtr
-import scala.scalanative.libc.stdatomic.{AtomicRef, PtrToAtomicRef}
 import scala.scalanative.annotation.alwaysinline
 import scala.scalanative.libc.stdatomic.memory_order.memory_order_relaxed
+import scala.scalanative.libc.stdatomic.{AtomicRef, PtrToAtomicRef}
+import scala.scalanative.runtime.Intrinsics.classFieldRawPtr
+import scala.scalanative.runtime.fromRawPtr
+import scala.scalanative.unsafe._
 
 /** An unbounded concurrent {@linkplain Deque deque} based on linked nodes.
  *  Concurrent insertion, removal, and access operations execute safely across
@@ -94,7 +90,7 @@ object ConcurrentLinkedDeque {
   private val NEXT_TERMINATOR: Node[AnyRef] = new Node[AnyRef](null)
   NEXT_TERMINATOR.prev = NEXT_TERMINATOR
 
-  final private[concurrent] class Node[E <: AnyRef] private[concurrent] {
+  private[concurrent] final class Node[E <: AnyRef] private[concurrent] {
     // default constructor for NEXT_TERMINATOR, PREV_TERMINATOR
     @volatile private[concurrent] var prev: Node[E] = null
     @volatile private[concurrent] var item: E = null.asInstanceOf[E]
@@ -158,7 +154,7 @@ object ConcurrentLinkedDeque {
     private[concurrent] val MAX_BATCH = 1 << 25 // max batch array size;
   }
 
-  final private[concurrent] class CLDSpliterator[
+  private[concurrent] final class CLDSpliterator[
       E <: AnyRef
   ] private[concurrent] (
       private[concurrent]
@@ -586,7 +582,7 @@ class ConcurrentLinkedDeque[E <: AnyRef]
    *  eliminate slack, only that head will point to a node that was active while
    *  this method was running.
    */
-  final private def updateHead(): Unit = {
+  private final def updateHead(): Unit = {
     // Either head already points to an active node, or we keep
     // trying to cas it to the first node until it does.
 
@@ -614,7 +610,7 @@ class ConcurrentLinkedDeque[E <: AnyRef]
     }
   }
 
-  final private def updateTail(): Unit = {
+  private final def updateTail(): Unit = {
     // Either tail already points to an active node, or we keep
     // trying to cas it to the last node until it does.
 
@@ -772,7 +768,7 @@ class ConcurrentLinkedDeque[E <: AnyRef]
    *  self, which will only be true if traversing with a stale pointer that is
    *  now off the list.
    */
-  final private[concurrent] def succ(p: Node[E]) = {
+  private[concurrent] final def succ(p: Node[E]) = {
     // TODO: should we skip deleted nodes here?
     val q = p.next
     if (p eq q) first
@@ -783,7 +779,7 @@ class ConcurrentLinkedDeque[E <: AnyRef]
    *  to self, which will only be true if traversing with a stale pointer that
    *  is now off the list.
    */
-  final private[concurrent] def pred(p: Node[E]): Node[E] = {
+  private[concurrent] final def pred(p: Node[E]): Node[E] = {
     val q = p.prev
     if (p eq q) last
     else q
@@ -1422,7 +1418,7 @@ class ConcurrentLinkedDeque[E <: AnyRef]
   override def descendingIterator(): Iterator[E] =
     new DescendingItr
 
-  abstract private class AbstractItr() extends Iterator[E] {
+  private abstract class AbstractItr() extends Iterator[E] {
 
     /** Next node to return item for.
      */
@@ -1520,7 +1516,7 @@ class ConcurrentLinkedDeque[E <: AnyRef]
    *    a {@code Spliterator} over the elements in this deque
    *  @since 1.8
    */
-  override def spliterator() = new CLDSpliterator[E](this)
+  override def spliterator(): Spliterator[E] = new CLDSpliterator[E](this)
 
   private def casHead(cmp: Node[E], `val`: Node[E]): Boolean =
     HEAD.compareExchangeStrong(cmp, `val`)

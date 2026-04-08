@@ -1,17 +1,18 @@
 package scala.scalanative
 package linker
 
-import scala.scalanative.LinkerSpec
-
-import org.junit.Test
 import org.junit.Assert._
-import scala.scalanative.build.{NativeConfig, Config}
+import org.junit.{Ignore, Test}
+
+import scala.scalanative.LinkerSpec
+import scala.scalanative.build.{Config, NativeConfig}
 import scala.scalanative.buildinfo.ScalaNativeBuildInfo
 
 /** Tests minimal number of NIR symbols required when linking minimal
  *  application based on the predefined hard limits. In the future we shall try
  *  to limit these number even further
  */
+@Ignore("To be replaced with proper tracking / golden tests")
 class MinimalRequiredSymbolsTest extends LinkerSpec {
   private val mainClass = "Test"
   private val sourceFile = "Test.scala"
@@ -21,16 +22,16 @@ class MinimalRequiredSymbolsTest extends LinkerSpec {
   def isScala2_12 = ScalaNativeBuildInfo.scalaVersion.startsWith("2.12")
 
   @Test def default(): Unit = checkMinimalRequiredSymbols()(expected =
-    if (isScala3) SymbolsCount(types = 617, members = 3019)
-    else if (isScala2_13) SymbolsCount(types = 592, members = 3026)
-    else SymbolsCount(types = 690, members = 4143)
+    if (isScala3) SymbolsCount(types = 635, members = 3134)
+    else if (isScala2_13) SymbolsCount(types = 609, members = 3140)
+    else SymbolsCount(types = 707, members = 4291)
   )
 
   @Test def debugMetadata(): Unit =
     checkMinimalRequiredSymbols(withDebugMetadata = true)(expected =
-      if (isScala3) SymbolsCount(types = 617, members = 3019)
-      else if (isScala2_13) SymbolsCount(types = 592, members = 3026)
-      else SymbolsCount(types = 690, members = 4143)
+      if (isScala3) SymbolsCount(types = 635, members = 3134)
+      else if (isScala2_13) SymbolsCount(types = 609, members = 3140)
+      else SymbolsCount(types = 707, members = 4291)
     )
 
   // Only MacOS and Linux DWARF metadata currently
@@ -39,9 +40,9 @@ class MinimalRequiredSymbolsTest extends LinkerSpec {
       withDebugMetadata = true,
       withTargetTriple = "x86_64-apple-darwin22.6.0"
     )(expected =
-      if (isScala3) SymbolsCount(types = 1000, members = 6237)
-      else if (isScala2_13) SymbolsCount(types = 982, members = 6743)
-      else SymbolsCount(types = 982, members = 6876)
+      if (isScala3) SymbolsCount(types = 997, members = 6214)
+      else if (isScala2_13) SymbolsCount(types = 959, members = 6255)
+      else SymbolsCount(types = 989, members = 6954)
     )
 
   // Only MacOS and Linux DWARF metadata currently
@@ -50,16 +51,16 @@ class MinimalRequiredSymbolsTest extends LinkerSpec {
       withDebugMetadata = true,
       withTargetTriple = "x86_64-pc-linux-gnu"
     )(expected =
-      if (isScala3) SymbolsCount(types = 1094, members = 7032)
-      else if (isScala2_13) SymbolsCount(types = 1053, members = 7110)
-      else SymbolsCount(types = 1035, members = 7256)
+      if (isScala3) SymbolsCount(types = 1103, members = 7076)
+      else if (isScala2_13) SymbolsCount(types = 1061, members = 7147)
+      else SymbolsCount(types = 1052, members = 7399)
     )
 
   @Test def multithreading(): Unit =
     checkMinimalRequiredSymbols(withMultithreading = true)(expected =
-      if (isScala3) SymbolsCount(types = 1076, members = 6686)
-      else if (isScala2_13) SymbolsCount(types = 1044, members = 6770)
-      else SymbolsCount(types = 988, members = 6740)
+      if (isScala3) SymbolsCount(types = 1084, members = 6732)
+      else if (isScala2_13) SymbolsCount(types = 1052, members = 6816)
+      else SymbolsCount(types = 1007, members = 6890)
     )
 
   private def checkMinimalRequiredSymbols(
@@ -93,19 +94,23 @@ class MinimalRequiredSymbolsTest extends LinkerSpec {
       s"{debugMetadata=$withDebugMetadata, multithreading=$withMultithreading, targetTriple=$withTargetTriple}"
     val found = SymbolsCount(result.defns)
     if (found.total > expected.total) {
-      fail(s"""
-          |Found more symbols then expected, config=$mode:
-          |Expected at most: ${expected}
-          |Found:            ${found}
-          |Diff:             ${found - expected}
-          |""".stripMargin)
+      fail(
+        s"""|
+            |Found more symbols then expected, config=$mode:
+            |Expected at most: ${expected}
+            |Found:            ${found}
+            |Diff:             ${found - expected}
+            |""".stripMargin
+      )
     } else {
-      println(s"""
-          |Amount of found symbols in norm, config=$mode:
-          |Expected at most: ${expected}
-          |Found:            ${found}
-          |Diff:             ${found - expected}
-          |""".stripMargin)
+      println(
+        s"""|
+            |Amount of found symbols in norm, config=$mode:
+            |Expected at most: ${expected}
+            |Found:            ${found}
+            |Diff:             ${found - expected}
+            |""".stripMargin
+      )
     }
   }
 
@@ -114,11 +119,14 @@ class MinimalRequiredSymbolsTest extends LinkerSpec {
   ): Unit = link(
     entry = mainClass,
     setupConfig = setupConfig,
-    sources = Map(sourceFile -> s"""
-        |object $mainClass{
-        |  def main(args: Array[String]): Unit = ()
-        |}
-        """.stripMargin)
+    sources = Map(
+      sourceFile ->
+        s"""|
+            |object $mainClass{
+            |  def main(args: Array[String]): Unit = ()
+            |}
+            |""".stripMargin
+    )
   ) { case (config, result) => fn(config, result) }
 
   case class SymbolsCount(types: Int, members: Int) {

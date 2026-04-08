@@ -212,6 +212,56 @@ unsigned long scalanative_atomic_fetch_or_explicit_ulong(_Atomic(unsigned long)*
 unsigned long scalanative_atomic_fetch_xor_ulong(_Atomic(unsigned long)* atm, unsigned long val) { return atomic_fetch_xor(atm, val);}
 unsigned long scalanative_atomic_fetch_xor_explicit_ulong(_Atomic(unsigned long)* atm, unsigned long val, memory_order memoryOrder) { return atomic_fetch_xor_explicit(atm, val, memoryOrder);}
 
+#ifdef TARGET_PLAYDATE
+// Playdate: single-threaded, no libatomic — cast away _Atomic to avoid __atomic_* builtins for 64-bit types
+#define PD_LL(atm) ((volatile long long*)(atm))
+#define PD_ULL(atm) ((volatile unsigned long long*)(atm))
+void scalanative_atomic_init_llong(_Atomic(long long)* atm, long long init_value) { *PD_LL(atm) = init_value;}
+long long scalanative_atomic_load_llong(_Atomic(long long)* atm) { return *PD_LL(atm);}
+long long scalanative_atomic_load_explicit_llong(_Atomic(long long)* atm, memory_order memoryOrder) { (void)memoryOrder; return *PD_LL(atm);}
+void scalanative_atomic_store_llong(_Atomic(long long)* atm, long long val) { *PD_LL(atm) = val;}
+void scalanative_atomic_store_explicit_llong(_Atomic(long long)* atm, long long val, memory_order memoryOrder) { (void)memoryOrder; *PD_LL(atm) = val;}
+long long scalanative_atomic_exchange_llong(_Atomic(long long)* atm, long long val) { long long old = *PD_LL(atm); *PD_LL(atm) = val; return old;}
+long long scalanative_atomic_exchange_explicit_llong(_Atomic(long long)* atm, long long val, memory_order memoryOrder) { (void)memoryOrder; long long old = *PD_LL(atm); *PD_LL(atm) = val; return old;}
+bool scalanative_atomic_compare_exchange_strong_llong(_Atomic(long long)* atm, long long* expected, long long desired) { if (*PD_LL(atm) == *expected) { *PD_LL(atm) = desired; return true; } *expected = *PD_LL(atm); return false;}
+bool scalanative_atomic_compare_exchange_strong_explicit_llong(_Atomic(long long)* atm, long long* expected, long long desired, memory_order onSucc, memory_order onFail) { (void)onSucc; (void)onFail; return scalanative_atomic_compare_exchange_strong_llong(atm, expected, desired);}
+bool scalanative_atomic_compare_exchange_weak_llong(_Atomic(long long)* atm, long long* expected, long long desired) { return scalanative_atomic_compare_exchange_strong_llong(atm, expected, desired);}
+bool scalanative_atomic_compare_exchange_weak_explicit_llong(_Atomic(long long)* atm, long long* expected, long long desired, memory_order onSucc, memory_order onFail) { (void)onSucc; (void)onFail; return scalanative_atomic_compare_exchange_strong_llong(atm, expected, desired);}
+long long scalanative_atomic_fetch_add_llong(_Atomic(long long)* atm, long long val) { long long old = *PD_LL(atm); *PD_LL(atm) += val; return old;}
+long long scalanative_atomic_fetch_add_explicit_llong(_Atomic(long long)* atm, long long val, memory_order memoryOrder) { (void)memoryOrder; long long old = *PD_LL(atm); *PD_LL(atm) += val; return old;}
+long long scalanative_atomic_fetch_sub_llong(_Atomic(long long)* atm, long long val) { long long old = *PD_LL(atm); *PD_LL(atm) -= val; return old;}
+long long scalanative_atomic_fetch_sub_explicit_llong(_Atomic(long long)* atm, long long val, memory_order memoryOrder) { (void)memoryOrder; long long old = *PD_LL(atm); *PD_LL(atm) -= val; return old;}
+long long scalanative_atomic_fetch_and_llong(_Atomic(long long)* atm, long long val) { long long old = *PD_LL(atm); *PD_LL(atm) &= val; return old;}
+long long scalanative_atomic_fetch_and_explicit_llong(_Atomic(long long)* atm, long long val, memory_order memoryOrder) { (void)memoryOrder; long long old = *PD_LL(atm); *PD_LL(atm) &= val; return old;}
+long long scalanative_atomic_fetch_or_llong(_Atomic(long long)* atm, long long val) { long long old = *PD_LL(atm); *PD_LL(atm) |= val; return old;}
+long long scalanative_atomic_fetch_or_explicit_llong(_Atomic(long long)* atm, long long val, memory_order memoryOrder) { (void)memoryOrder; long long old = *PD_LL(atm); *PD_LL(atm) |= val; return old;}
+long long scalanative_atomic_fetch_xor_llong(_Atomic(long long)* atm, long long val) { long long old = *PD_LL(atm); *PD_LL(atm) ^= val; return old;}
+long long scalanative_atomic_fetch_xor_explicit_llong(_Atomic(long long)* atm, long long val, memory_order memoryOrder) { (void)memoryOrder; long long old = *PD_LL(atm); *PD_LL(atm) ^= val; return old;}
+
+void scalanative_atomic_init_ullong(_Atomic(unsigned long long)* atm, unsigned long long init_value) { *PD_ULL(atm) = init_value;}
+unsigned long long scalanative_atomic_load_ullong(_Atomic(unsigned long long)* atm) { return *PD_ULL(atm);}
+unsigned long long scalanative_atomic_load_explicit_ullong(_Atomic(unsigned long long)* atm, memory_order memoryOrder) { (void)memoryOrder; return *PD_ULL(atm);}
+void scalanative_atomic_store_ullong(_Atomic(unsigned long long)* atm, unsigned long long val) { *PD_ULL(atm) = val;}
+void scalanative_atomic_store_explicit_ullong(_Atomic(unsigned long long)* atm, unsigned long long val, memory_order memoryOrder) { (void)memoryOrder; *PD_ULL(atm) = val;}
+unsigned long long scalanative_atomic_exchange_ullong(_Atomic(unsigned long long)* atm, unsigned long long val) { unsigned long long old = *PD_ULL(atm); *PD_ULL(atm) = val; return old;}
+unsigned long long scalanative_atomic_exchange_explicit_ullong(_Atomic(unsigned long long)* atm, unsigned long long val, memory_order memoryOrder) { (void)memoryOrder; unsigned long long old = *PD_ULL(atm); *PD_ULL(atm) = val; return old;}
+bool scalanative_atomic_compare_exchange_strong_ullong(_Atomic(unsigned long long)* atm, unsigned long long* expected, unsigned long long desired) { if (*PD_ULL(atm) == *expected) { *PD_ULL(atm) = desired; return true; } *expected = *PD_ULL(atm); return false;}
+bool scalanative_atomic_compare_exchange_strong_explicit_ullong(_Atomic(unsigned long long)* atm, unsigned long long* expected, unsigned long long desired, memory_order onSucc, memory_order onFail) { (void)onSucc; (void)onFail; return scalanative_atomic_compare_exchange_strong_ullong(atm, expected, desired);}
+bool scalanative_atomic_compare_exchange_weak_ullong(_Atomic(unsigned long long)* atm, unsigned long long* expected, unsigned long long desired) { return scalanative_atomic_compare_exchange_strong_ullong(atm, expected, desired);}
+bool scalanative_atomic_compare_exchange_weak_explicit_ullong(_Atomic(unsigned long long)* atm, unsigned long long* expected, unsigned long long desired, memory_order onSucc, memory_order onFail) { (void)onSucc; (void)onFail; return scalanative_atomic_compare_exchange_strong_ullong(atm, expected, desired);}
+unsigned long long scalanative_atomic_fetch_add_ullong(_Atomic(unsigned long long)* atm, unsigned long long val) { unsigned long long old = *PD_ULL(atm); *PD_ULL(atm) += val; return old;}
+unsigned long long scalanative_atomic_fetch_add_explicit_ullong(_Atomic(unsigned long long)* atm, unsigned long long val, memory_order memoryOrder) { (void)memoryOrder; unsigned long long old = *PD_ULL(atm); *PD_ULL(atm) += val; return old;}
+unsigned long long scalanative_atomic_fetch_sub_ullong(_Atomic(unsigned long long)* atm, unsigned long long val) { unsigned long long old = *PD_ULL(atm); *PD_ULL(atm) -= val; return old;}
+unsigned long long scalanative_atomic_fetch_sub_explicit_ullong(_Atomic(unsigned long long)* atm, unsigned long long val, memory_order memoryOrder) { (void)memoryOrder; unsigned long long old = *PD_ULL(atm); *PD_ULL(atm) -= val; return old;}
+unsigned long long scalanative_atomic_fetch_and_ullong(_Atomic(unsigned long long)* atm, unsigned long long val) { unsigned long long old = *PD_ULL(atm); *PD_ULL(atm) &= val; return old;}
+unsigned long long scalanative_atomic_fetch_and_explicit_ullong(_Atomic(unsigned long long)* atm, unsigned long long val, memory_order memoryOrder) { (void)memoryOrder; unsigned long long old = *PD_ULL(atm); *PD_ULL(atm) &= val; return old;}
+unsigned long long scalanative_atomic_fetch_or_ullong(_Atomic(unsigned long long)* atm, unsigned long long val) { unsigned long long old = *PD_ULL(atm); *PD_ULL(atm) |= val; return old;}
+unsigned long long scalanative_atomic_fetch_or_explicit_ullong(_Atomic(unsigned long long)* atm, unsigned long long val, memory_order memoryOrder) { (void)memoryOrder; unsigned long long old = *PD_ULL(atm); *PD_ULL(atm) |= val; return old;}
+unsigned long long scalanative_atomic_fetch_xor_ullong(_Atomic(unsigned long long)* atm, unsigned long long val) { unsigned long long old = *PD_ULL(atm); *PD_ULL(atm) ^= val; return old;}
+unsigned long long scalanative_atomic_fetch_xor_explicit_ullong(_Atomic(unsigned long long)* atm, unsigned long long val, memory_order memoryOrder) { (void)memoryOrder; unsigned long long old = *PD_ULL(atm); *PD_ULL(atm) ^= val; return old;}
+#undef PD_LL
+#undef PD_ULL
+#else
 void scalanative_atomic_init_llong(_Atomic(long long)* atm, long long init_value) { atomic_init(atm, init_value);}
 long long scalanative_atomic_load_llong(_Atomic(long long)* atm) { return atomic_load(atm);}
 long long scalanative_atomic_load_explicit_llong(_Atomic(long long)* atm, memory_order memoryOrder) { return atomic_load_explicit(atm, memoryOrder);}
@@ -255,6 +305,7 @@ unsigned long long scalanative_atomic_fetch_or_ullong(_Atomic(unsigned long long
 unsigned long long scalanative_atomic_fetch_or_explicit_ullong(_Atomic(unsigned long long)* atm, unsigned long long val, memory_order memoryOrder) { return atomic_fetch_or_explicit(atm, val, memoryOrder);}
 unsigned long long scalanative_atomic_fetch_xor_ullong(_Atomic(unsigned long long)* atm, unsigned long long val) { return atomic_fetch_xor(atm, val);}
 unsigned long long scalanative_atomic_fetch_xor_explicit_ullong(_Atomic(unsigned long long)* atm, unsigned long long val, memory_order memoryOrder) { return atomic_fetch_xor_explicit(atm, val, memoryOrder);}
+#endif // TARGET_PLAYDATE
 
 void scalanative_atomic_init_intptr(_Atomic(intptr_t)* atm, intptr_t init_value) { atomic_init(atm, init_value);}
 intptr_t scalanative_atomic_load_intptr(_Atomic(intptr_t)* atm) { return atomic_load(atm);}

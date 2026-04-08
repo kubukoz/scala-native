@@ -10,18 +10,17 @@ package java.util.concurrent
 import java.lang.Thread.UncaughtExceptionHandler
 import java.lang.invoke.VarHandle
 import java.util.concurrent.ForkJoinPool.WorkQueue.getAndClearSlot
-import java.util.{ArrayList, Collection, Collections, List, concurrent}
-import java.util.function.Predicate
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.locks.LockSupport
-import java.util.concurrent.locks.ReentrantLock
-import java.util.concurrent.locks.Condition
-import scala.scalanative.annotation._
-import scala.scalanative.unsafe._
-import scala.scalanative.libc.stdatomic.{AtomicInt, AtomicLongLong, AtomicRef}
-import scala.scalanative.runtime.{fromRawPtr, Intrinsics, ObjectArray}
+import java.util.concurrent.locks.{Condition, LockSupport, ReentrantLock}
+import java.util.function.Predicate
+import java.util.{ArrayList, Collection, Collections, List, concurrent}
 
+import scala.scalanative.annotation._
 import scala.scalanative.libc.stdatomic.memory_order._
+import scala.scalanative.libc.stdatomic.{AtomicInt, AtomicLongLong, AtomicRef}
+import scala.scalanative.runtime.{Intrinsics, ObjectArray, fromRawPtr}
+import scala.scalanative.unsafe._
+
 import ForkJoinPool._
 
 class ForkJoinPool private (
@@ -103,7 +102,7 @@ class ForkJoinPool private (
     false
   }
 
-  final private[concurrent] def nextWorkerThreadName(): String = {
+  private[concurrent] final def nextWorkerThreadName(): String = {
     val tid = incrementThreadIds() + 1
     val prefix = workerNamePrefix match {
       case null   => "ForkJoinPool.commonPool-worker-"
@@ -112,7 +111,7 @@ class ForkJoinPool private (
     prefix.concat(java.lang.Long.toString(tid))
   }
 
-  final private[concurrent] def registerWorker(w: WorkQueue): Unit = {
+  private[concurrent] final def registerWorker(w: WorkQueue): Unit = {
     ThreadLocalRandom.localInit()
     val seed = ThreadLocalRandom.getProbe()
     val lock = registrationLock
@@ -160,7 +159,7 @@ class ForkJoinPool private (
     }
   }
 
-  final private[concurrent] def deregisterWorker(
+  private[concurrent] final def deregisterWorker(
       wt: ForkJoinWorkerThread,
       ex: Throwable
   ): Unit = {
@@ -186,7 +185,7 @@ class ForkJoinPool private (
         val n = if (qs != null) qs.length else 0
         val i = cfg & (n - 1)
         if (n > 0 && (qs(i) eq w))
-          qs(i) == null
+          qs(i) = null
         stealCount += ns // accumulate steals
         lock.unlock()
       }
@@ -209,7 +208,7 @@ class ForkJoinPool private (
   /*
    * Tries to create or release a worker if too few are running.
    */
-  final private[concurrent] def signalWork(): Unit = {
+  private[concurrent] final def signalWork(): Unit = {
     var c: Long = ctl
     val pc = parallelism
     val qs = queues
@@ -313,7 +312,7 @@ class ForkJoinPool private (
     false // unreachable
   }
 
-  final private[concurrent] def runWorker(w: WorkQueue): Unit = {
+  private[concurrent] final def runWorker(w: WorkQueue): Unit = {
     if (w != null) { // skip on failed init
 
       var r: Int = w.stackPred
@@ -520,11 +519,11 @@ class ForkJoinPool private (
       )
   }
 
-  final private[concurrent] def uncompensate(): Unit = {
+  private[concurrent] final def uncompensate(): Unit = {
     getAndAddCtl(RC_UNIT)
   }
 
-  final private[concurrent] def helpJoin(
+  private[concurrent] final def helpJoin(
       task: ForkJoinTask[_],
       w: WorkQueue,
       timed: Boolean
@@ -615,7 +614,7 @@ class ForkJoinPool private (
     -1 // unreachable
   }
 
-  final private[concurrent] def helpComplete(
+  private[concurrent] final def helpComplete(
       task: ForkJoinTask[_],
       w: WorkQueue,
       owned: Boolean,
@@ -834,7 +833,7 @@ class ForkJoinPool private (
     -1 // unreachable
   }
 
-  final private[concurrent] def nextTaskFor(w: WorkQueue): ForkJoinTask[_] = {
+  private[concurrent] final def nextTaskFor(w: WorkQueue): ForkJoinTask[_] = {
     var t: ForkJoinTask[_] = null.asInstanceOf[ForkJoinTask[_]]
     if (w == null || { t = w.nextLocalTask(); t == null })
       t = pollScan(false)
@@ -843,7 +842,7 @@ class ForkJoinPool private (
 
   // External operations
 
-  final private[concurrent] def submissionQueue(
+  private[concurrent] final def submissionQueue(
       isSubmit: Boolean
   ): WorkQueue = {
     val lock = registrationLock
@@ -1473,7 +1472,7 @@ object ForkJoinPool {
       new ForkJoinWorkerThread(null, pool, true, false)
   }
 
-  final private[concurrent] class DefaultCommonPoolForkJoinWorkerThreadFactory
+  private[concurrent] final class DefaultCommonPoolForkJoinWorkerThreadFactory
       extends ForkJoinWorkerThreadFactory {
 
     override final def newThread(pool: ForkJoinPool): ForkJoinWorkerThread = {
@@ -1841,7 +1840,7 @@ object ForkJoinPool {
       0
     }
 
-    final private[concurrent] def helpComplete(
+    private[concurrent] final def helpComplete(
         task: ForkJoinTask[_],
         owned: Boolean,
         _limit: Int
@@ -1991,7 +1990,7 @@ object ForkJoinPool {
   @alwaysinline private def getAndAddPoolIds(x: Int): Int =
     poolIds.getAndAdd(x)
 
-  final private[concurrent] def helpQuiescePool(
+  private[concurrent] final def helpQuiescePool(
       pool: ForkJoinPool,
       nanos: Long,
       interruptible: Boolean
@@ -2060,13 +2059,13 @@ object ForkJoinPool {
 
   // Task to hold results from InvokeAnyTasks
   @SerialVersionUID(2838392045355241008L)
-  final private[concurrent] class InvokeAnyRoot[E](
+  private[concurrent] final class InvokeAnyRoot[E](
       n: Int,
       val pool: ForkJoinPool
   ) extends ForkJoinTask[E] {
     @volatile private[concurrent] var result: E = _
-    final private[concurrent] val count: AtomicInteger = new AtomicInteger(n)
-    final private[concurrent] def tryComplete(c: Callable[E]): Unit = { // called by InvokeAnyTasks
+    private[concurrent] final val count: AtomicInteger = new AtomicInteger(n)
+    private[concurrent] final def tryComplete(c: Callable[E]): Unit = { // called by InvokeAnyTasks
       var ex: Throwable = null
       var failed: Boolean = false
       if (c == null || Thread.interrupted() ||
@@ -2096,7 +2095,7 @@ object ForkJoinPool {
 
 // Variant of AdaptedInterruptibleCallable with results in InvokeAnyRoot
   @SerialVersionUID(2838392045355241008L)
-  final private[concurrent] class InvokeAnyTask[E](
+  private[concurrent] final class InvokeAnyTask[E](
       root: InvokeAnyRoot[E],
       callable: Callable[E]
   ) extends ForkJoinTask[E] {

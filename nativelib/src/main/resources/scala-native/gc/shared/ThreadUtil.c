@@ -2,6 +2,20 @@
 #include <stdio.h>
 #include <limits.h>
 
+#if !(defined SCALANATIVE_GC_COMMIX ||                                         \
+      defined SCALANATIVE_MULTITHREADING_ENABLED)
+
+// If neither multithreading nor Commix GC is enabled, there's no concurrency
+// so we don't need to involve actual mutexes.
+
+INLINE
+bool mutex_init(mutex_t *ref) { return true; }
+
+INLINE bool mutex_lock(mutex_t *ref) { return true; }
+
+INLINE bool mutex_unlock(mutex_t *ref) { return true; }
+#else
+
 INLINE
 bool thread_create(thread_t *ref, routine_fn routine, void *data) {
 #ifdef _WIN32
@@ -52,10 +66,7 @@ bool mutex_init(mutex_t *ref) {
     *ref = CreateMutex(NULL, FALSE, NULL);
     return *ref != NULL;
 #else
-    pthread_mutexattr_t attr;
-    pthread_mutexattr_init(&attr);
-    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-    return pthread_mutex_init(ref, &attr) == 0;
+    return true;
 #endif
 }
 
@@ -64,7 +75,7 @@ bool mutex_lock(mutex_t *ref) {
 #ifdef _WIN32
     return WaitForSingleObject(*ref, INFINITE) == WAIT_OBJECT_0;
 #else
-    return pthread_mutex_lock(ref) == 0;
+    return true;
 #endif
 }
 
@@ -73,7 +84,7 @@ bool mutex_tryLock(mutex_t *ref) {
 #ifdef _WIN32
     return WaitForSingleObject(*ref, 0) == WAIT_OBJECT_0;
 #else
-    return pthread_mutex_trylock(ref) == 0;
+    return true;
 #endif
 }
 
@@ -82,7 +93,7 @@ bool mutex_unlock(mutex_t *ref) {
 #ifdef _WIN32
     return ReleaseMutex(*ref);
 #else
-    return pthread_mutex_unlock(ref) == 0;
+    return true;
 #endif
 }
 
@@ -160,3 +171,6 @@ bool rwlock_unlockRead(rwlock_t *ref) {
     return pthread_rwlock_unlock(ref) == 0;
 #endif
 }
+
+#endif
+//(defined SCALANATIVE_GC_COMMIX || defined SCALANATIVE_MULTITHREADING_ENABLED)

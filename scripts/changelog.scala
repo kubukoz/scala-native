@@ -2,22 +2,21 @@
 //> using dep org.kohsuke:github-api:1.330
 //> using toolkit latest
 
-import scala.collection.mutable.ListBuffer
-import scala.collection.JavaConverters._
-import scala.collection.mutable
-
-import org.kohsuke.github.GitHubBuilder
-
 import java.text.SimpleDateFormat
 import java.util.Date
+
+import scala.collection.JavaConverters._
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
+
+import org.kohsuke.github.GitHubBuilder
 
 val defaultToken = sys.env.get("GITHUB_TOKEN")
 
 @main
 def main(
     firstTag: String,
-    lastTag: String,
-    githubToken: String
+    lastTag: String
 ) = {
   val author = os.proc(List("git", "config", "user.name")).call().out.trim()
   val commits = os
@@ -48,7 +47,7 @@ def main(
   )
 
   val token =
-    Option(githubToken).filter(_.nonEmpty).orElse(defaultToken).getOrElse {
+    defaultToken.getOrElse {
       throw new Exception("No github API token was specified")
     }
 
@@ -120,9 +119,9 @@ def template(
       |
       | Scala Binary Version | Supported Scala Versions |
       | -------------------- | ------------------------ |
-      | 2.12 | 2.12.14 ... 2.12.20 |
-      | 2.13 | 2.13.8 ... 2.13.15 |
-      | 3    | 3.1.2 ... 3.1.3<br>3.2.0 ... 3.2.2<br>3.3.0 ... 3.3.4<br>3.4.0 ... 3.4.3<br>3.5.0 ... 3.5.2 |
+      | 2.12 | 2.12.17 ... 2.12.21 |
+      | 2.13 | 2.13.9 ... 2.13.18 |
+      | 3    | 3.1.2 ... 3.1.3<br>3.2.0 ... 3.2.2<br>3.3.0 ... 3.3.7 LTS<br>3.4.0 ... 3.4.3<br>3.5.0 ... 3.5.2<br>3.6.2 ... 3.6.4<br>3.7.0 ... 3.7.4<br>3.8.0 ... 3.8.1 |
       |
       |> Upon release of new Scala version (stable, or Scala 3 RC) version dependent artifacts would be published without a new release.
       |

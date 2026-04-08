@@ -1,24 +1,23 @@
 package java.lang
 
-import java.lang.impl._
 import java.lang.Thread._
-import java.util.concurrent.locks.LockSupport
-import java.util.concurrent.ThreadFactory
+import java.lang.impl._
 import java.time.Duration
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.locks.LockSupport
 
-import scala.scalanative.meta.LinktimeInfo.{isWindows, isMultithreadingEnabled}
+import scala.concurrent.duration._
 
 import scala.scalanative.annotation.alwaysinline
-import scala.scalanative.runtime.Intrinsics._
-import scala.scalanative.runtime.{fromRawPtr, NativeThread}
-import scala.scalanative.runtime.NativeThread.{State => _, _}
-import scala.scalanative.runtime.NativeThread.State._
-import scala.scalanative.libc.stdatomic.{AtomicLongLong, atomic_thread_fence}
-import scala.scalanative.libc.stdatomic.memory_order._
-import scala.scalanative.runtime.UnsupportedFeature
-import scala.scalanative.runtime.javalib.Proxy
-import scala.concurrent.duration._
 import scala.scalanative.concurrent.NativeExecutionContext
+import scala.scalanative.libc.stdatomic.memory_order._
+import scala.scalanative.libc.stdatomic.{AtomicLongLong, atomic_thread_fence}
+import scala.scalanative.meta.LinktimeInfo.{isMultithreadingEnabled, isWindows}
+import scala.scalanative.runtime.Intrinsics._
+import scala.scalanative.runtime.NativeThread.State._
+import scala.scalanative.runtime.NativeThread.{State => _, _}
+import scala.scalanative.runtime.javalib.Proxy
+import scala.scalanative.runtime.{NativeThread, UnsupportedFeature, fromRawPtr}
 
 class Thread private[lang] (
     @volatile private var name: String,
@@ -314,7 +313,7 @@ class Thread private[lang] (
     if (throwable == null)
       throw new NullPointerException("The argument is null!")
     if (isAlive()) {
-      if (Thread.currentThread() == MainThread) throw throwable
+      if (Thread.currentThread() eq MainThread) throw throwable
       else throw new UnsupportedOperationException()
     }
   }
@@ -549,11 +548,14 @@ object Thread {
   def getAllStackTraces(): java.util.Map[Thread, Array[StackTraceElement]] =
     throw new UnsupportedOperationException()
 
-  @volatile private var defaultExceptionHandler: UncaughtExceptionHandler = _
+  // Defined in object so that Thread itself remains a constant module not requiring initialization
+  private object Handlers {
+    @volatile var defaultExceptionHandler: UncaughtExceptionHandler = _
+  }
   def getDefaultUncaughtExceptionHandler(): UncaughtExceptionHandler =
-    defaultExceptionHandler
+    Handlers.defaultExceptionHandler
   def setDefaultUncaughtExceptionHandler(eh: UncaughtExceptionHandler): Unit =
-    defaultExceptionHandler = eh
+    Handlers.defaultExceptionHandler = eh
 
   def holdsLock(obj: Object): scala.Boolean = NativeThread.holdsLock(obj)
 
@@ -634,7 +636,7 @@ object Thread {
 
   // Counter used to generate thread's ID, 0 resevered for main
   sealed abstract class Numbering {
-    final protected var cursor = 1L
+    protected final var cursor = 1L
     @inline def cursorRef = new AtomicLongLong(
       fromRawPtr(classFieldRawPtr(this, "cursor"))
     )

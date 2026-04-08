@@ -11,6 +11,7 @@ Compile / unmanagedSourceDirectories ++= {
   ).flatMap { dir =>
     Seq(
       root / s"$dir/src/main/scala",
+      root / s"$dir/src/main/scala-sbt-1.0",
       root / s"$dir/jvm/src/main/scala"
     )
   }
@@ -20,10 +21,10 @@ addSbtPlugin("org.portable-scala" % "sbt-platform-deps" % "1.0.2")
 addSbtPlugin("com.typesafe" % "sbt-mima-plugin" % "1.1.4")
 addSbtPlugin("com.eed3si9n" % "sbt-buildinfo" % "0.13.1")
 addSbtPlugin("com.github.sbt" % "sbt-pgp" % "2.3.1")
-addSbtPlugin("pl.project13.scala" % "sbt-jmh" % "0.4.7")
+addSbtPlugin("pl.project13.scala" % "sbt-jmh" % "0.4.8")
 
 libraryDependencies += "org.eclipse.jgit" % "org.eclipse.jgit.pgm" % "5.13.3.202401111512-r"
-libraryDependencies += "me.bechberger" % "ap-loader-all" % "4.1-10"
+libraryDependencies += "me.bechberger" % "ap-loader-all" % "4.2-10"
 
 // scalacOptions used to bootstrap to sbt prompt.
 // In particular, no "-Xfatal-warnings"

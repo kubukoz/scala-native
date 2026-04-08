@@ -1,10 +1,13 @@
 package scala.scalanative.runtime
 
-import scala.scalanative.meta.LinktimeInfo.isMultithreadingEnabled
+import java.util.Arrays
+
 import scala.collection.mutable
+
+import scala.scalanative.meta.LinktimeInfo
+import scala.scalanative.meta.LinktimeInfo.isMultithreadingEnabled
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
-import scala.scalanative.meta.LinktimeInfo
 
 private[runtime] object StackTrace {
   @noinline def stackTraceIterator(): Iterator[StackTraceElement] = {
@@ -24,7 +27,7 @@ private[runtime] object StackTrace {
           Intrinsics.castRawSizeToLongUnsigned(Intrinsics.loadRawSize(ip))
         tlContext.cache.getOrElseUpdate(
           addr,
-          makeStackTraceElement(cursor, addr)
+          makeStackTraceElement(addr)
         )
       }
     }
@@ -34,40 +37,138 @@ private[runtime] object StackTrace {
       }
   }
 
+  private[runtime] type InstructionPointer = Long
+  @noinline private[runtime] def currentRawStackTrace()
+      : scala.Array[InstructionPointer] = {
+    def emptyStackTrace = scala.Array.emptyLongArray
+
+    val thread = NativeThread.currentNativeThread
+    if (null eq thread)
+      return emptyStackTrace
+
+    if (thread.isFillingStackTrace)
+      return emptyStackTrace
+
+    if (LinktimeInfo.asanEnabled)
+      return emptyStackTrace
+
+    implicit val tlContext: Context = ThreadLocalContext.get()
+    val context = tlContext.unwindContext
+    if (unwind.get_context(context) < 0)
+      return emptyStackTrace
+
+    val cursor = tlContext.unwindCursor
+    if (unwind.init_local(cursor, context) < 0)
+      return emptyStackTrace
+    val ip = tlContext.ip
+    try {
+      thread.isFillingStackTrace = true
+
+      val buffer = scala.Array.newBuilder[Long]
+      buffer.sizeHint(32) // at least
+
+      // JVM limit stack trace to 1024 entries
+      var frames = 0
+      while (unwind.step(cursor) > 0 && frames < 1024) {
+        frames += 1
+        if (unwind.get_reg(cursor, unwind.UNW_REG_IP, ip) == 0) {
+          buffer += Intrinsics.castRawSizeToLongUnsigned(
+            Intrinsics.loadRawSize(ip)
+          )
+        }
+      }
+      buffer.result()
+    } finally {
+      thread.isFillingStackTrace = false
+    }
+
+  }
+  private[runtime] def materializeStackTrace(
+      raw: scala.Array[Long]
+  ): scala.Array[StackTraceElement] = {
+    def emptyStackTrace = scala.Array.emptyObjectArray
+      .asInstanceOf[scala.Array[StackTraceElement]]
+    if (raw.isEmpty)
+      return scala.Array(
+        new StackTraceElement("<unknown>", "<unknown>", null, -1)
+      )
+
+    implicit val tlContext: Context = ThreadLocalContext.get()
+    val buffer = scala.Array.newBuilder[StackTraceElement]
+    buffer.sizeHint(raw.length)
+
+    var ipIdx = 0
+    while (ipIdx < raw.length) {
+      val addr = raw(ipIdx)
+
+      /* Creates a stack trace element. Finding a name of the symbol for
+       * current function is expensive, so we cache stack trace elements
+       * based on current instruction pointer.
+       */
+      val elem = tlContext.cache.getOrElseUpdate(
+        addr,
+        makeStackTraceElement(addr)
+      )
+      buffer += elem
+
+      // Stack trace cleanup
+      if (ipIdx < 4) {
+        if (elem.getClassName.startsWith("scala.scalanative.runtime.")) {
+          val shouldClear =
+            (elem.getClassName == "scala.scalanative.runtime.Throwable" && {
+              elem.getMethodName == "fillInStackTrace" || elem.getMethodName == "<init>"
+            })
+          if (shouldClear) buffer.clear()
+        }
+      }
+      ipIdx += 1
+    }
+
+    buffer.result()
+  }
+
+  // Used only on Windows where we are forced to use the exactly the same context/cursor
   @noinline def currentStackTrace(): scala.Array[StackTraceElement] = {
+    def emptyStackTrace = scala.Array.emptyObjectArray
+      .asInstanceOf[scala.Array[StackTraceElement]]
     // Used to prevent filling stacktraces inside `currentStackTrace` which might lead to infinite loop
     val thread = NativeThread.currentNativeThread
-    if (thread.isFillingStackTrace) scala.Array.empty
-    else if (LinktimeInfo.asanEnabled) scala.Array.empty
-    else {
-      implicit val tlContext: Context = ThreadLocalContext.get()
-      val cursor = tlContext.unwindCursor
-      val context = tlContext.unwindContext
-      val ip = tlContext.ip
-      try {
-        thread.isFillingStackTrace = true
-        val buffer = scala.Array.newBuilder[StackTraceElement]
-        if (unwind.get_context(context) < 0)
-          return scala.Array.empty
-        if (unwind.init_local(cursor, context) < 0)
-          return scala.Array.empty
-        // JVM limit stack trace to 1024 entries
-        var frames = 0
-        while (unwind.step(cursor) > 0 && frames < 1024) {
-          frames += 1
-          if (unwind.get_reg(cursor, unwind.UNW_REG_IP, ip) == 0) {
-            val addr =
-              Intrinsics.castRawSizeToLongUnsigned(Intrinsics.loadRawSize(ip))
-            /* Creates a stack trace element in given unwind context. Finding a
-             *  name of the symbol for current function is expensive, so we cache
-             *  stack trace elements based on current instruction pointer.
-             */
-            val elem = tlContext.cache.getOrElseUpdate(
-              addr,
-              makeStackTraceElement(cursor, addr)
-            )
-            buffer += elem
+    if (null eq thread)
+      return emptyStackTrace
+    if (thread.isFillingStackTrace)
+      return emptyStackTrace
+    if (LinktimeInfo.asanEnabled)
+      return emptyStackTrace
 
+    implicit val tlContext: Context = ThreadLocalContext.get()
+    val cursor = tlContext.unwindCursor
+    val context = tlContext.unwindContext
+    val ip = tlContext.ip
+    try {
+      thread.isFillingStackTrace = true
+      val buffer = scala.Array.newBuilder[StackTraceElement]
+      if (unwind.get_context(context) < 0)
+        return emptyStackTrace
+      if (unwind.init_local(cursor, context) < 0)
+        return emptyStackTrace
+      // JVM limit stack trace to 1024 entries
+      var frames = 0
+      while (unwind.step(cursor) > 0 && frames < 1024) {
+        frames += 1
+        if (unwind.get_reg(cursor, unwind.UNW_REG_IP, ip) == 0) {
+          val addr =
+            Intrinsics.castRawSizeToLongUnsigned(Intrinsics.loadRawSize(ip))
+          /* Creates a stack trace element. Finding a name of the symbol for
+           * current function is expensive, so we cache stack trace elements
+           * based on current instruction pointer.
+           */
+          val elem = tlContext.cache.getOrElseUpdate(
+            addr,
+            makeStackTraceElement(addr)
+          )
+          buffer += elem
+
+          if (frames < 4) {
             if (elem.getClassName.startsWith("scala.scalanative.runtime.")) {
               val shouldClear =
                 (elem.getClassName == "scala.scalanative.runtime.StackTrace$" && elem.getMethodName == "currentStackTrace") ||
@@ -78,11 +179,11 @@ private[runtime] object StackTrace {
             }
           }
         }
-
-        buffer.result()
-      } finally {
-        thread.isFillingStackTrace = false
       }
+
+      buffer.result()
+    } finally {
+      thread.isFillingStackTrace = false
     }
   }
 
@@ -93,7 +194,6 @@ private[runtime] object StackTrace {
       LinktimeInfo.sourceLevelDebuging.generateFunctionSourcePositions
 
   private def makeStackTraceElement(
-      cursor: CVoidPtr,
       ip: Long
   )(implicit tlContext: Context): StackTraceElement = {
 
@@ -122,8 +222,11 @@ private[runtime] object StackTrace {
       import Context._
       val symbol = tlContext.freshSymbolBuffer
       val offset = Intrinsics.stackalloc[Long]()
-      unwind.get_proc_name(
-        cursor,
+      // Use address-based lookup instead of cursor-based.
+      // This is required for materializeStackTrace where the cursor
+      // is not at the correct stack frame position.
+      unwind.get_proc_name_by_ip(
+        Intrinsics.castLongToRawSize(ip),
         symbol,
         Intrinsics.castIntToRawSize(SymbolMaxLength),
         offset

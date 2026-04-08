@@ -4,12 +4,11 @@ import java.io._
 
 import scala.util.Try
 
-import org.junit.After
-import org.junit.Before
-import org.junit.Test
 import org.junit.Assert._
+import org.junit.{After, Before, Test}
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
+
 import scala.scalanative.junit.utils.AssumesHelper._
 
 class RandomAccessFileTest {
@@ -153,6 +152,10 @@ class RandomAccessFileTest {
         new RandomAccessFile(roFile, "rw")
       )
     } finally {
+      assertTrue(
+        "Could not set file read-write before delete()",
+        roFile.setWritable(true) // Windows requires writable
+      )
       assertTrue("Could not delete read-only temporary file", roFile.delete())
     }
   }

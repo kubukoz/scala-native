@@ -2,6 +2,7 @@ package scala.scalanative
 package linker
 
 import java.nio.file.{Path, Paths}
+
 import scala.annotation.tailrec
 import scala.collection.mutable
 
@@ -237,7 +238,7 @@ private[linker] class Reach(
   private def preprocessDefn(defn: nir.Defn): nir.Defn = {
     defn match {
       case defn: nir.Defn.Define =>
-        (resolveLinktimeDefine _)
+        (resolveLinktimeDefine(_))
           .andThen(resolveDefineIntrinsics)
           .apply(defn)
 
@@ -1088,9 +1089,7 @@ private[linker] class Reach(
           methodName <- Seq("threads", "virtualThreads", "continuations")
         } yield {
           import scala.scalanative.codegen.Lower.{
-            throwUndefined,
-            throwUndefinedTy,
-            throwUndefinedVal
+            throwUndefined, throwUndefinedTy, throwUndefinedVal
           }
           implicit val scopeId: nir.ScopeId = nir.ScopeId.TopLevel
           nir.Defn.Define(

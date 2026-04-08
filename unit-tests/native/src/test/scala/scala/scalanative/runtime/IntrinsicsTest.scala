@@ -1,12 +1,13 @@
 package scala.scalanative.runtime
 
-import org.junit.Test
-import org.junit.Assert
-import org.junit.Assert._
-import scala.scalanative.meta.LinktimeInfo._
 import scala.language.implicitConversions
-import scala.scalanative.unsigned._
+
+import org.junit.Assert._
+import org.junit.{Assert, Test}
+
+import scala.scalanative.meta.LinktimeInfo._
 import scala.scalanative.unsafe._
+import scala.scalanative.unsigned._
 
 private object IntrinsicsTest {
   object sizeOfClassTypes {
@@ -266,6 +267,28 @@ class IntrinsicsTest {
 
     type C1 = CStruct3[S3, SC3, A4]
     assertEquals("c1", 4, alignmentOf[C1])
+  }
+
+  @Test def classFieldRawPtrDeepInheritance(): Unit = {
+    class A {
+      var a: Int = 42
+    }
+    class B extends A {
+      var b: Int = 52
+    }
+    class C extends B
+
+    val c = new C
+
+    val aPtr = fromRawPtr[Int](Intrinsics.classFieldRawPtr(c, "a"))
+    assertEquals(c.a, 42)
+    !aPtr = 10
+    assertEquals(c.a, 10)
+
+    val bPtr = fromRawPtr[Int](Intrinsics.classFieldRawPtr(c, "b"))
+    assertEquals(c.b, 52)
+    !bPtr = 20
+    assertEquals(c.b, 20)
   }
 
 }

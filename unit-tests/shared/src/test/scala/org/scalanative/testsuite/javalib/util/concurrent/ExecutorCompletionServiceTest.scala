@@ -9,12 +9,12 @@
 package org.scalanative.testsuite.javalib.util.concurrent
 
 import java.util._
-import java.util.concurrent._
 import java.util.concurrent.TimeUnit._
+import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicBoolean
 
-import org.junit.Test
 import org.junit.Assert._
+import org.junit.Test
 
 class ExecutorCompletionServiceTest extends JSR166Test {
   import JSR166Test._
@@ -203,7 +203,7 @@ class ExecutorCompletionServiceTest extends JSR166Test {
       TimeUnit.SECONDS,
       new ArrayBlockingQueue[Runnable](1)
     ) {
-      override protected def newTaskFor[T](c: Callable[T]) =
+      override protected def newTaskFor[T](c: Callable[T]): FutureTask[T] =
         new MyCallableFuture[T](c)
     }
 
@@ -242,7 +242,7 @@ class ExecutorCompletionServiceTest extends JSR166Test {
       override protected def newTaskFor[T](
           t: Runnable,
           r: T
-      ) = new MyRunnableFuture[T](t, r)
+      ): FutureTask[T] = new MyRunnableFuture[T](t, r)
     }
 
     val cs = new ExecutorCompletionService[String](e)

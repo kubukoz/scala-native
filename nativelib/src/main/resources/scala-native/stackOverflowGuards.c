@@ -1,3 +1,17 @@
+#if defined(TARGET_PLAYDATE)
+// Playdate: no MMU, no signals, no mprotect — stub everything out
+#include <stdbool.h>
+#include <stddef.h>
+#include "stackOverflowGuards.h"
+
+size_t scalanative_StackOverflowGuards_size() { return 0; }
+void scalanative_StackOverflowGuards_setup(bool isMainThread) { (void)isMainThread; }
+void scalanative_StackOverflowGuards_reset() {}
+void scalanative_StackOverflowGuards_check() {}
+void scalanative_StackOverflowGuards_close() {}
+
+#else // !TARGET_PLAYDATE
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -334,3 +348,5 @@ void scalanative_StackOverflowGuards_close() {
     }
 #endif
 }
+
+#endif // !TARGET_PLAYDATE

@@ -1,8 +1,17 @@
 // Unwind implementation used only on Posix compliant systems
 #if defined(__unix__) || defined(__unix) || defined(unix) ||                   \
     (defined(__APPLE__) && defined(__MACH__))
+
+// _GNU_SOURCE needed for dladdr/Dl_info on Linux (must be before any includes)
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include "../unwind.h"
 #include "libunwind/libunwind.h"
+#include <dlfcn.h>
+#include <string.h>
+#include "../../pd_exit.h"
 
 // The unwinding on NetBSD is unstable, they don't provide CFI
 // annotations for most of libc and other places, nor for the signal
@@ -57,4 +66,77 @@ int scalanative_unw_reg_ip() { return UNW_REG_IP; }
 size_t scalanative_unwind_sizeof_context() { return sizeof(unw_context_t); }
 size_t scalanative_unwind_sizeof_cursor() { return sizeof(unw_cursor_t); }
 
-#endif // Unix or Mac OS
+// Look up procedure name by instruction pointer address using dladdr.
+// This works without needing the cursor to be at the correct stack frame.
+// Returns 0 on success, negative value on error.
+int scalanative_unwind_get_proc_name_by_ip(size_t ip, char *buffer,
+                                           size_t length, size_t *offset) {
+#ifdef __NetBSD__
+    return UNW_EUNSPEC;
+#else
+    if (buffer == NULL || length == 0) {
+        return UNW_EINVAL;
+    }
+
+    Dl_info info;
+    if (dladdr((void *)ip, &info) == 0) {
+        // dladdr failed - no symbol found
+        buffer[0] = '\0';
+        return UNW_ENOINFO;
+    }
+
+    if (info.dli_sname == NULL) {
+        // Symbol address found but name not available
+        buffer[0] = '\0';
+        return UNW_ENOINFO;
+    }
+
+    // Copy symbol name to buffer
+    size_t name_len = strlen(info.dli_sname);
+    if (name_len >= length) {
+        // Name truncated
+        memcpy(buffer, info.dli_sname, length - 1);
+        buffer[length - 1] = '\0';
+    } else {
+        memcpy(buffer, info.dli_sname, name_len + 1);
+    }
+
+    // Calculate offset from symbol start
+    if (offset != NULL) {
+        *offset = ip - (size_t)info.dli_saddr;
+    }
+
+    return 0;
+#endif
+}
+
+#else
+
+#include "../unwind.h"
+#include <string.h>
+
+// Stubs for platforms without libunwind (e.g. Playdate).
+// Return error codes so callers gracefully fall back to empty stack traces.
+
+int scalanative_unwind_get_proc_name(void *cursor, char *buffer, size_t length,
+                                     void *offset) {
+    if (buffer != NULL && length > 0) buffer[0] = '\0';
+    return -1;
+}
+
+size_t scalanative_unwind_sizeof_context() { return 1; }
+size_t scalanative_unwind_sizeof_cursor() { return 1; }
+
+int scalanative_unwind_init_local(void *cursor, void *context) { return -1; }
+int scalanative_unwind_step(void *cursor) { return 0; }
+int scalanative_unw_reg_ip() { return 0; }
+int scalanative_unwind_get_reg(void *cursor, int regnum, size_t *valp) { return -1; }
+int scalanative_unwind_get_context(void *context) { return -1; }
+
+int scalanative_unwind_get_proc_name_by_ip(size_t ip, char *buffer,
+                                           size_t length, size_t *offset) {
+    if (buffer != NULL && length > 0) buffer[0] = '\0';
+    return -1;
+}
+
+#endif

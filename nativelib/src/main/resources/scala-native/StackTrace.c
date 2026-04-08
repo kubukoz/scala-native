@@ -16,8 +16,16 @@ static mutex_t *getStackTraceLock() {
     return &lock;
 }
 
+#ifdef PD_DEBUG
+extern void pd_log_error(char *str, ...);
+#endif
+
 void StackTrace_PrintStackTrace() {
-    void *cursor = malloc(scalanative_unwind_sizeof_cursor());
+    #ifdef PD_DEBUG
+    pd_log_error(
+        "Printing stack trace! If only we could actually use unwind though.");
+    #endif
+    /* void *cursor = malloc(scalanative_unwind_sizeof_cursor());
     void *context = malloc(scalanative_unwind_sizeof_context());
     scalanative_unwind_get_context(context);
     scalanative_unwind_init_local(cursor, context);
@@ -47,5 +55,5 @@ void StackTrace_PrintStackTrace() {
     }
     mutex_unlock(lock);
     free(cursor);
-    free(context);
+    free(context); */
 }

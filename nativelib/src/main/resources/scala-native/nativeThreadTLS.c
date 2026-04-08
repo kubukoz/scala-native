@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "pd_exit.h"
 #include <string.h>
 
 SN_ThreadLocal JavaThread currentThread = NULL;

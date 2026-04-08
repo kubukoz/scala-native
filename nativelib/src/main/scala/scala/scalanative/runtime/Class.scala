@@ -1,16 +1,18 @@
 package scala.scalanative.runtime
 
+import java.io.InputStream
+import java.lang.ClassLoader
 import java.lang.reflect.{Field, Method}
+import java.nio.file.Paths
+
 import scala.language.implicitConversions
 
 import scala.scalanative.annotation._
-import scala.scalanative.unsafe._
+import scala.scalanative.runtime.resource.{
+  EmbeddedResourceHelper, EmbeddedResourceInputStream
+}
 import scala.scalanative.runtime.{Array => RuntimeArray, _}
-import scala.scalanative.runtime.resource.EmbeddedResourceInputStream
-import scala.scalanative.runtime.resource.EmbeddedResourceHelper
-import java.io.InputStream
-import java.lang.ClassLoader
-import java.nio.file.Paths
+import scala.scalanative.unsafe._
 
 // Emitted as java.lang.Class
 private[runtime] final class _Class[A] {
@@ -228,6 +230,22 @@ private[runtime] object _Class {
       init: scala.Boolean,
       loader: ClassLoader
   ): Class[_] = forName(name)
+
+  /** @since JDK 22 */
+  def forPrimitiveName(primitiveName: String): Class[_] =
+    primitiveName match {
+      case "boolean" => java.lang.Boolean.TYPE
+      case "byte"    => java.lang.Byte.TYPE
+      case "char"    => java.lang.Character.TYPE
+      case "double"  => java.lang.Double.TYPE
+      case "float"   => java.lang.Float.TYPE
+      case "int"     => java.lang.Integer.TYPE
+      case "long"    => java.lang.Long.TYPE
+      case "short"   => java.lang.Short.TYPE
+      case "void"    => java.lang.Void.TYPE
+      case null      => throw new NullPointerException()
+      case _         => null
+    }
 }
 
 private object LinkedClassesRepository {

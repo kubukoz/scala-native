@@ -1,11 +1,13 @@
 package java.net
 
 import java.io.{FileDescriptor, IOException}
+
+import scala.annotation.tailrec
+
 import scala.scalanative.posix.sys.{socket => unixSocket}
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 import scala.scalanative.windows._
-import scala.annotation.tailrec
 
 private[net] class WindowsPlainSocketImpl extends AbstractPlainSocketImpl {
   import WinSocketApi._
@@ -25,13 +27,10 @@ private[net] class WindowsPlainSocketImpl extends AbstractPlainSocketImpl {
     if (socket == InvalidSocket) {
       throw new IOException(s"Couldn't create a socket: ${WSAGetLastError()}")
     }
-    fd = new FileDescriptor(
-      FileDescriptor.FileHandle(socket),
-      readOnly = false
-    )
+    fd = new FileDescriptor(socket, readOnly = false)
   }
 
-  final protected def tryPollOnConnect(timeout: Int): Unit = {
+  protected final def tryPollOnConnect(timeout: Int): Unit = {
     val hasTimeout = timeout > 0
     val deadline = if (hasTimeout) System.currentTimeMillis() + timeout else 0L
     val nAlloc = 1.toUInt

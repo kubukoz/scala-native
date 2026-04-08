@@ -9,25 +9,17 @@ package org.scalanative.testsuite.javalib.util.stream
  * Use ju.ArrayList surgically at the points of use.
  */
 
-import java.{lang => jl}
-
-import java.{util => ju}
-import java.util.Arrays
-import java.util.IntSummaryStatistics
-import java.util.OptionalInt
-import java.util.{Spliterator, Spliterators}
-
-import java.util.concurrent.{CountDownLatch, TimeUnit}
 import java.util.concurrent.CountDownLatch._
-
-import java.util.function.{IntConsumer, IntFunction, IntSupplier}
-import java.util.function.Supplier
-
+import java.util.concurrent.{CountDownLatch, TimeUnit}
+import java.util.function.{IntConsumer, IntFunction, IntSupplier, Supplier}
 import java.util.stream._
+import java.util.{
+  Arrays, IntSummaryStatistics, OptionalInt, Spliterator, Spliterators
+}
+import java.{lang => jl, util => ju}
 
-import org.junit.Test
 import org.junit.Assert._
-import org.junit.Ignore
+import org.junit.{Ignore, Test}
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
 
@@ -405,7 +397,7 @@ class IntStreamTest {
     assertFalse("stream should be empty", it.hasNext())
   }
 
-  @Test def doubleStreamGenerate(): Unit = {
+  @Test def intStreamGenerate(): Unit = {
     val nElements = 5
     val data = new Array[Int](nElements)
     data(0) = 0
@@ -878,6 +870,23 @@ class IntStreamTest {
     assertTrue("expectedSet has remaining elements", expectedSet.isEmpty())
   }
 
+  // Issue #4743
+  @Test def intStreamDistinct_Characteristics(): Unit = {
+
+    val is = IntStream.of(
+      55, 0, 44, -11, -11, 44, -22, -22, 33, 44
+    )
+
+    val spliter = is.distinct().spliterator()
+
+    // No DISTINCT, inconsistent with Stream#distinct
+    StreamTestHelpers.verifyCharacteristics(
+      spliter,
+      Seq(Spliterator.ORDERED), // must be present
+      Seq(Spliterator.SIZED, Spliterator.SUBSIZED) // must be absent
+    )
+  }
+
   @Test def intStreamFindAny_Null(): Unit = {
     val s = IntStream.of(null.asInstanceOf[Int])
     // Int nulls get seen as 0
@@ -940,6 +949,21 @@ class IntStreamTest {
 
     val s1 = s0.filter(e => e < 1000)
     assertEquals(s"unexpected element count", expectedCount, s1.count())
+  }
+
+  // Issue #4742 - see also primary reproduction in IntStreamTestOnJDK16
+  @Test def intStreamFilter_Characteristics(): Unit = {
+    val expectedCount = 2
+
+    val is = IntStream.of(55, 44, -11, 0, -22, 33)
+
+    val spliter = is.filter((d: scala.Int) => d < 0).spliterator()
+
+    StreamTestHelpers.verifyCharacteristics(
+      spliter,
+      Seq(Spliterator.ORDERED), // must be present
+      Seq(Spliterator.SIZED, Spliterator.SUBSIZED) // must be absent
+    )
   }
 
   @Test def intStreamForeachOrdered(): Unit = {
@@ -1044,8 +1068,8 @@ class IntStreamTest {
     // JVM 8 expects 0x11 (decimal 17), JVM >= 17 expects 0x4051 (Dec 16465)
     val expectedSAllLimitedCharacteristics =
       Spliterator.ORDERED | Spliterator.DISTINCT // 0x11
-      // Drop SIZED, SUBSIZED, CONCURRENT, IMMUTABLE, & NONNULL.
-      // SORTED was not there to drop.
+    // Drop SIZED, SUBSIZED, CONCURRENT, IMMUTABLE, & NONNULL.
+    // SORTED was not there to drop.
 
     assertEquals(
       "Unexpected characteristics for all characteristics stream",

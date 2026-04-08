@@ -1,11 +1,14 @@
 package org.scalanative.testsuite.posixlib
 package sys
 
-import scalanative.unsafe._
-import scalanative.unsigned._
+import org.junit.Assert._
+import org.junit.Assume._
+import org.junit.{BeforeClass, Test}
+
+import org.scalanative.testsuite.posixlib.sys.SocketTestHelpers._
 
 import scalanative.libc.string.memcmp
-
+import scalanative.meta.LinktimeInfo.isWindows
 import scalanative.posix.arpa.inet.inet_addr
 import scalanative.posix.errno.errno
 import scalanative.posix.netinet.in._
@@ -13,15 +16,8 @@ import scalanative.posix.netinet.inOps._
 import scalanative.posix.sys.socket._
 import scalanative.posix.sys.uio._
 import scalanative.posix.sys.uioOps._
-
-import org.scalanative.testsuite.posixlib.sys.SocketTestHelpers._
-
-import scalanative.meta.LinktimeInfo.isWindows
-
-import org.junit.Test
-import org.junit.Assert._
-import org.junit.Assume._
-import org.junit.BeforeClass
+import scalanative.unsafe._
+import scalanative.unsigned._
 
 object UioTest {
 
@@ -76,53 +72,53 @@ class UioTest {
    */
 
   private final val poemHeader =
-    """   | 
-          |Emily Dickinson, 1890 -- Public Domain
-          |XXVII.
-          |
-          |THE CHARIOT.
-          |
-          |""".stripMargin
+    """|   | 
+       |Emily Dickinson, 1890 -- Public Domain
+       |XXVII.
+       |
+       |THE CHARIOT.
+       |
+       |""".stripMargin
 
   private final val verse1 =
-    """   |Because I could not stop for Death,
-          |He kindly stopped for me;
-          |The carriage held but just ourselves
-          |And Immortality.
-          | 
-          |""".stripMargin
+    """|   |Because I could not stop for Death,
+       |He kindly stopped for me;
+       |The carriage held but just ourselves
+       |And Immortality.
+       | 
+       |""".stripMargin
 
   private final val verse2 =
-    """   |We slowly drove, he knew no haste,
-          |And I had put away
-          |My labor, and my leisure too,
-          |For his civility.
-          |
-          |""".stripMargin
+    """|   |We slowly drove, he knew no haste,
+       |And I had put away
+       |My labor, and my leisure too,
+       |For his civility.
+       |
+       |""".stripMargin
 
   private final val verse3 =
-    """   |We passed the school where children played,
-          |Their lessons scarcely done;
-          |We passed the fields of gazing grain,
-          |We passed the setting sun.
-          |
-          |""".stripMargin
+    """|   |We passed the school where children played,
+       |Their lessons scarcely done;
+       |We passed the fields of gazing grain,
+       |We passed the setting sun.
+       |
+       |""".stripMargin
 
   private final val verse4 =
-    """   |We paused before a house that seemed
-          |A swelling of the ground;
-          |The roof was scarcely visible,
-          |The cornice but a mound.
-          |
-          |""".stripMargin
+    """|   |We paused before a house that seemed
+       |A swelling of the ground;
+       |The roof was scarcely visible,
+       |The cornice but a mound.
+       |
+       |""".stripMargin
 
   private final val verse5 =
-    """   |Since then 't is centuries; but each
-          |Feels shorter than the day
-          |I first surmised the horses' heads
-          |Were toward eternity.
-          |
-          |""".stripMargin
+    """|   |Since then 't is centuries; but each
+       |Feels shorter than the day
+       |I first surmised the horses' heads
+       |Were toward eternity.
+       |
+       |""".stripMargin
 
   @Test def writevReadvShouldPlayNicely(): Unit = Zone.acquire { implicit z =>
     // writev() should gather, readv() should scatter, the 2 should pass data.

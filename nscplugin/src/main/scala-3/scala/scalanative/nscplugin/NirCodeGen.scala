@@ -1,21 +1,20 @@
 package scala.scalanative
 package nscplugin
 
+import java.nio.channels.Channels
+
+import dotty.tools.dotc.ast.Trees._
+import dotty.tools.dotc.ast.tpd
+import dotty.tools.dotc.{CompilationUnit, core, report}
+import scala.collection.mutable
+import scala.language.implicitConversions
+
 import scala.scalanative.util
 import scalanative.nir.Defn.Define.DebugInfo
 import scalanative.nir.serialization.serializeBinary
 
-import dotty.tools.dotc.{CompilationUnit, report}
-import dotty.tools.dotc.ast.tpd
-import dotty.tools.dotc.ast.Trees._
-import dotty.tools.dotc.core
 import core.Contexts._
 import core.Symbols._
-
-import java.nio.channels.Channels
-
-import scala.collection.mutable
-import scala.language.implicitConversions
 
 class NirCodeGen(val settings: GenNIR.Settings)(using ctx: Context)
     extends NirGenStat
@@ -53,7 +52,7 @@ class NirCodeGen(val settings: GenNIR.Settings)(using ctx: Context)
     new util.ScopedVar[mutable.Set[DebugInfo.LexicalScope]]
   protected val curFreshScope = new util.ScopedVar[nir.Fresh]
   protected val curScopeId = new util.ScopedVar[nir.ScopeId]
-  implicit protected def getScopeId: nir.ScopeId = {
+  protected implicit def getScopeId: nir.ScopeId = {
     val res = curScopeId.get
     assert(res.id >= nir.ScopeId.TopLevel.id)
     res

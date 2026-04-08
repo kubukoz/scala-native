@@ -1,11 +1,12 @@
 // Ported from Scala.js commit: 060c3397 dated: 2021-02-09
 
 package scala.tools.partest.scalanative
-import java.nio.file.{Path, Paths}
 import java.io.File.pathSeparator
+import java.nio.file.{Path, Paths}
+
 import scalanative.build
 
-case class ScalaNativePartestOptions private (
+case class ScalaNativePartestOptions(
     testFilter: ScalaNativePartestOptions.TestFilter,
     nativeClasspath: Seq[Path],
     precompiledLibrariesPaths: Seq[Path],
@@ -26,16 +27,16 @@ case class ScalaNativePartestOptions private (
   )
 
   def show: String =
-    s"""Scala Native options are:
-       |- optimized:       $optimize
-       |- mode:            $buildMode
-       |- gc:              $gc
-       |- lto:             $lto
-       |- showDiff:        $showDiff
-       |- testFilter:      ${testFilter.descr}
-       |- precompile libs: $shouldPrecompileLibraries
-       |- parallel tests:  ${parallelism.getOrElse("default")}
-       |""".stripMargin
+    s"""|Scala Native options are:
+        |- optimized:       $optimize
+        |- mode:            $buildMode
+        |- gc:              $gc
+        |- lto:             $lto
+        |- showDiff:        $showDiff
+        |- testFilter:      ${testFilter.descr}
+        |- precompile libs: $shouldPrecompileLibraries
+        |- parallel tests:  ${parallelism.getOrElse("default")}
+        |""".stripMargin
 }
 
 object ScalaNativePartestOptions {

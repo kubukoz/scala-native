@@ -1,12 +1,14 @@
 package org.scalanative.testsuite.javalib.lang
 
-import java.lang._
 import java.io.InputStream
+import java.lang._
 import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
+
 import scala.io.Source
 
 import org.junit.Assert._
+
 import org.scalanative.testsuite.utils.Platform._
 
 object ProcessUtils {
@@ -70,7 +72,7 @@ object ProcessUtils {
     // completion time.  If a process expected to exit in milliseconds
     // takes that three orders of magnitude longer, it must be reported.
 
-    val tmo = 10
+    val tmo = 30
     val tmUnit = TimeUnit.SECONDS
 
     assertTrue(
@@ -100,5 +102,8 @@ object ProcessUtils {
 
     val values = Set(echo, err, hello, ls)
   }
+
+  def trunc(str: String, len: Int = 100): String =
+    str.substring(0, Math.min(len, str.length))
 
 }

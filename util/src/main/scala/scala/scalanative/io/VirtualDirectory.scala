@@ -4,9 +4,10 @@ package io
 import java.io.Writer
 import java.net.URI
 import java.nio.ByteBuffer
-import java.nio.file._
 import java.nio.channels._
+import java.nio.file._
 import java.util.HashMap
+
 import scalanative.util.{Scope, acquire, defer}
 
 sealed trait VirtualDirectory {
@@ -205,7 +206,7 @@ object VirtualDirectory {
     override def path: Path = Paths.get("")
     val uri: URI = URI.create("")
 
-    override def files = Seq.empty
+    override def files = Seq.empty[Path]
 
     override def read(path: Path): ByteBuffer =
       throw new UnsupportedOperationException(

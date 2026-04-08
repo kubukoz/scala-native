@@ -1,12 +1,14 @@
 package scala.scalanative
 package nir
 
+import scala.annotation.nowarn
 import scala.util.hashing.MurmurHash3
+
 import util.unreachable
 
 sealed abstract class Op {
   self: Product =>
-  override lazy val hashCode = MurmurHash3.productHash(self)
+  override lazy val hashCode = MurmurHash3.productHash(self): @nowarn
 
   final def resty: Type = this match {
     case Op.Call(Type.Function(_, ret), _, _) => ret

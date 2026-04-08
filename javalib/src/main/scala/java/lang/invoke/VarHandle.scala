@@ -1,11 +1,15 @@
 package java.lang.invoke
 
+import scala.scalanative.annotation._
 import scala.scalanative.libc.stdatomic._
 import scala.scalanative.libc.stdatomic.memory_order._
-import scala.scalanative.annotation._
 import scala.scalanative.meta.LinktimeInfo.isMultithreadingEnabled
 
-class VarHandle {}
+class VarHandle {
+  // Added needed to allow for compilation of javalib under Scala 3.8+ which uses VarHandle.compareAndSet in lazy vals. Not used at runtime
+  @stub()
+  final def compareAndSet(args: scala.Array[AnyRef]): Boolean = ???
+}
 
 object VarHandle {
   @alwaysinline

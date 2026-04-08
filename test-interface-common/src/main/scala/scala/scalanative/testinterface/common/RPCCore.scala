@@ -3,12 +3,13 @@ package scala.scalanative.testinterface.common
 // Ported from Scala.js
 
 import java.util.concurrent.atomic.AtomicLong
+
 import scala.concurrent._
-import scala.scalanative.testinterface.common.Serializer.{
-  deserialize,
-  serialize
-}
 import scala.util.{Failure, Success, Try}
+
+import scala.scalanative.testinterface.common.Serializer.{
+  deserialize, serialize
+}
 
 /** Core RPC dispatcher.
  *
@@ -41,7 +42,7 @@ private[testinterface] abstract class RPCCore()(implicit ec: ExecutionContext) {
     new java.util.concurrent.ConcurrentHashMap[OpCode, BoundEndpoint]
 
   /** Subclass should call this whenever a new message arrives */
-  final protected def handleMessage(msg: String): Unit = {
+  protected final def handleMessage(msg: String): Unit = {
     Serializer.withInputStream(msg) { in =>
       val opCode = in.readByte()
 

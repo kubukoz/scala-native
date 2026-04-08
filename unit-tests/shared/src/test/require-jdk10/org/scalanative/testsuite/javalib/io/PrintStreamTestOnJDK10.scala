@@ -3,8 +3,8 @@ package org.scalanative.testsuite.javalib.io
 import java.io.{File, OutputStream, PrintStream}
 import java.nio.charset.StandardCharsets
 
-import org.junit.Test
 import org.junit.Assert._
+import org.junit.Test
 
 import org.scalanative.testsuite.utils.AssertThrows.assertThrows
 import org.scalanative.testsuite.utils.Platform
@@ -18,7 +18,8 @@ class PrintStreamTestOnJDK10 {
    * More extensive tests could be written, given extended resources and time.
    */
 
-  final val secondComing = """
+  final val secondComing =
+    """|
                |""Things fall apart; the centre cannot hold;
                |Mere anarchy is loosed upon the world,
                """

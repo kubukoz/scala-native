@@ -1,26 +1,26 @@
 package java.lang.impl
 
+import java.{lang => jl}
+
 import scala.annotation._
+
 import scala.scalanative.annotation._
-
-import scala.scalanative.unsafe._
-import scala.scalanative.unsigned._
-import scala.scalanative.runtime._
-import scala.scalanative.runtime.Intrinsics.{elemRawPtr, classFieldRawPtr}
-import scala.scalanative.runtime.GC
+import scala.scalanative.libc.stdatomic._
+import scala.scalanative.libc.stdatomic.memory_order.memory_order_seq_cst
 import scala.scalanative.meta.LinktimeInfo._
-
+import scala.scalanative.posix.errno._
+import scala.scalanative.posix.poll._
+import scala.scalanative.posix.pthread._
+import scala.scalanative.posix.sched._
+import scala.scalanative.posix.schedOps._
 import scala.scalanative.posix.sys.types._
 import scala.scalanative.posix.time._
 import scala.scalanative.posix.timeOps._
-import scala.scalanative.posix.sched._
-import scala.scalanative.posix.schedOps._
-import scala.scalanative.posix.pthread._
-import scala.scalanative.posix.errno._
-import scala.scalanative.posix.poll._
 import scala.scalanative.posix.unistd._
-import scala.scalanative.libc.stdatomic._
-import scala.scalanative.libc.stdatomic.memory_order.memory_order_seq_cst
+import scala.scalanative.runtime.Intrinsics.{classFieldRawPtr, elemRawPtr}
+import scala.scalanative.runtime._
+import scala.scalanative.unsafe._
+import scala.scalanative.unsigned._
 
 private[java] class PosixThread(
     val thread: Thread,
@@ -123,8 +123,9 @@ private[java] class PosixThread(
     }
   }
 
-  override protected def park(
-      time: Long,
+  protected def park(
+      // BEWARE: Contract: ((time == 0) & !isAbsolute) means wait Infinite time
+      time: Long, // if isAbsolute millis else nanos.
       isAbsolute: Boolean
   ): Unit = if (isMultithreadingEnabled) {
     // fast-path check, return if can skip parking
@@ -193,12 +194,11 @@ private[java] class PosixThread(
     else sleepNonInterruptible(millis, 0)
 
   private def sleepInterruptible(_millis: Long): Unit = {
+    import scala.scalanative.posix.pollOps._
+
     var millis = _millis
     if (millis <= 0) return
     val deadline = System.currentTimeMillis() + millis
-
-    import scala.scalanative.posix.pollOps._
-    import scala.scalanative.posix.pollEvents._
 
     type PipeFDs = CArray[CInt, Nat._2]
     val pipefd = stackalloc[PipeFDs](1)
@@ -209,7 +209,7 @@ private[java] class PosixThread(
     if (!thread.isInterrupted()) try {
       val fds = stackalloc[struct_pollfd]()
       fds.fd = !pipefd.at(0)
-      fds.events = POLLIN
+      fds.events = POLLIN.toShort
 
       try
         while (millis > 0) {
@@ -239,9 +239,10 @@ private[java] class PosixThread(
           doSleep(remaining)
       }
     }
+
     val requestedTime = stackalloc[timespec]()
-    requestedTime.tv_sec = (millis / 1000).toSize
-    requestedTime.tv_nsec = ((millis % 1000) * 1e6.toInt + nanos).toSize
+    fillTimespec(requestedTime, millis, nanos)
+
     state = State.ParkedWaitingTimed
     doSleep(requestedTime)
     state = State.Running
@@ -307,68 +308,72 @@ private[java] class PosixThread(
     priority
   }
 
-  private def toAbsoluteTime(
-      abstime: Ptr[timespec],
-      _timeout: Long,
-      isAbsolute: Boolean
+  final val MillisInSecond = 1000L
+  final val NanosInMillisecond = 1000000L
+  final val NanosInSecond = 1000000000L
+
+  private def fillTimespec(
+      timespec: Ptr[timespec],
+      millis: Long, // Only two callers; each guarantees >= 0
+      nanos: Long // pre-condition: in range [0, NanosInSecond)
   ) = {
-    val timeout = if (_timeout < 0) 0 else _timeout
-    val clock =
-      if (isAbsolute || !PosixThread.usesClockMonotonicCondAttr) CLOCK_REALTIME
-      else CLOCK_MONOTONIC
-    val now = stackalloc[timespec]()
-    clock_gettime(clock, now)
-    if (isAbsolute) unpackAbsoluteTime(abstime, timeout, now.tv_sec.toLong)
-    else calculateRelativeTime(abstime, timeout, now)
+    timespec.tv_sec = (millis / MillisInSecond).toSize
+
+    val remainderNanos = (millis % MillisInSecond) * NanosInMillisecond
+    val sumNanos = remainderNanos + nanos
+
+    timespec.tv_nsec =
+      if (sumNanos < NanosInSecond) sumNanos.toSize
+      else {
+        timespec.tv_sec += 1 // never overflows
+        (sumNanos - NanosInSecond).toSize
+      }
   }
 
   private def calculateRelativeTime(
       abstime: Ptr[timespec],
-      timeout: Long,
-      now: Ptr[timespec]
+      timeout: Long // nanos, full Long range, caller checked >= 0
   ) = {
-    val maxSeconds = now.tv_sec.toLong + MaxSeconds
-    val seconds = timeout / NanonsInSecond
-    if (seconds > maxSeconds) {
-      abstime.tv_sec = maxSeconds.toSize
-      abstime.tv_nsec = 0
-    } else {
-      abstime.tv_sec = now.tv_sec + seconds.toSize
-      val nanos = now.tv_nsec + (timeout % NanonsInSecond)
-      abstime.tv_nsec =
-        if (nanos < NanonsInSecond) nanos.toSize
-        else {
-          abstime.tv_sec += 1
-          (nanos - NanonsInSecond).toSize
-        }
-    }
+
+    val seconds = timeout / NanosInSecond
+
+    val clock =
+      if (!PosixThread.usesClockMonotonicCondAttr) CLOCK_REALTIME
+      else CLOCK_MONOTONIC
+    val now = stackalloc[timespec]()
+
+    clock_gettime(clock, now)
+
+    /* tv_sec may overflow and saturate given sufficient nanos and
+     * 292,277,266,000 years or so from now.
+     */
+
+    val totalSeconds = now.tv_sec + seconds.toSize
+
+    abstime.tv_sec =
+      if (totalSeconds >= 0) totalSeconds
+      else jl.Long.MAX_VALUE.toSize // overflowed, so saturate
+
+    // result range: [0, 2 * NanosInSecond)
+    val totalNanos = now.tv_nsec + (timeout % NanosInSecond)
+
+    abstime.tv_nsec =
+      if (totalNanos < NanosInSecond) totalNanos.toSize
+      else {
+        abstime.tv_sec += 1 // can overflow in a few hundred billion years
+        (totalNanos - NanosInSecond).toSize
+      }
   }
 
-  @alwaysinline private def MillisInSecond = 1000
-  @alwaysinline private def NanosInMillisecond = 1000000
-  @alwaysinline private def NanonsInSecond = 1000000000
-  @alwaysinline private def MaxSeconds = 100000000
-
-  private def unpackAbsoluteTime(
+  private def toAbsoluteTime(
       abstime: Ptr[timespec],
-      deadline: Long,
-      nowSeconds: Long
+      timeout: Long, // if isAbsolute millis else nanos. Caller checked >= 0.
+      isAbsolute: Boolean
   ) = {
-    val maxSeconds = nowSeconds + MaxSeconds
-    val seconds = deadline / MillisInSecond
-    val millis = deadline % MillisInSecond
-
-    if (seconds >= maxSeconds) {
-      abstime.tv_sec = maxSeconds.toSize
-      abstime.tv_nsec = 0
-    } else {
-      abstime.tv_sec = seconds.toSize
-      abstime.tv_nsec = (millis * NanosInMillisecond).toSize
-    }
-
-    assert(abstime.tv_sec <= maxSeconds, "tvSec")
-    assert(abstime.tv_nsec <= NanonsInSecond, "tvNSec")
+    if (isAbsolute) fillTimespec(abstime, timeout, 0)
+    else calculateRelativeTime(abstime, timeout)
   }
+
 }
 
 private[lang] object PosixThread extends NativeThread.Companion {

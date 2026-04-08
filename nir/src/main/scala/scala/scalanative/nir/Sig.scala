@@ -15,14 +15,14 @@ final class Sig(val mangle: String) {
     }
   final def show: String =
     Show(this)
-  final override def equals(other: Any): Boolean =
+  override final def equals(other: Any): Boolean =
     (this eq other.asInstanceOf[AnyRef]) || (other match {
       case other: Sig => other.mangle == mangle
       case _          => false
     })
-  final override lazy val hashCode: Int =
+  override final lazy val hashCode: Int =
     mangle.##
-  final override def toString: String =
+  override final def toString: String =
     mangle
   final def unmangled: Sig.Unmangled = Unmangle.unmangleSig(mangle)
 
@@ -34,6 +34,7 @@ final class Sig(val mangle: String) {
   final def isExtern: Boolean = mangle(0) == 'C'
   final def isGenerated: Boolean = mangle(0) == 'G'
   final def isDuplicate: Boolean = mangle(0) == 'K'
+  private[scalanative] final def isTraitInit = mangle == "D6$init$uEO"
 
   final def isVirtual = !(isCtor || isClinit || isExtern)
   final def isPrivate: Boolean = privateIn.isDefined

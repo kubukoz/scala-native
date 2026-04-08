@@ -1,40 +1,35 @@
 package scala.scalanative
 package nscplugin
 
-import scala.language.implicitConversions
-import scala.annotation.{tailrec, switch}
-
-import dotty.tools.dotc.ast
-import ast.tpd._
-import dotty.tools.backend.ScalaPrimitivesOps._
-import dotty.tools.dotc.core
-import core.Contexts._
-import core.Symbols._
-import core.Names._
-import core.Types._
-import core.Constants._
-import core.StdNames._
-import core.Flags._
-import core.Denotations._
-import core.SymDenotations._
-import core.TypeErasure.ErasedValueType
-import core._
 import dotty.tools.FatalError
-import dotty.tools.dotc.report
-import dotty.tools.dotc.transform
-import dotty.tools.dotc.util.Spans.*
-import transform.{ValueClasses, Erasure}
+import dotty.tools.backend.ScalaPrimitivesOps._
 import dotty.tools.backend.jvm.DottyBackendInterface.symExtensions
-import scala.scalanative.nscplugin.CompilerCompat.SymUtilsCompat.*
-
-import scala.scalanative.nir.Defn.Define.DebugInfo
-import scala.scalanative.util.ScopedVar.scoped
-import scala.scalanative.util.unsupported
-import scala.scalanative.util.StringUtils
 import dotty.tools.dotc.ast.desugar
 import dotty.tools.dotc.util.Property
+import dotty.tools.dotc.util.Spans.*
+import dotty.tools.dotc.{ast, core, report, transform}
+import scala.annotation.{switch, tailrec}
+import scala.language.implicitConversions
+
+import scala.scalanative.nir.Defn.Define.DebugInfo
+import scala.scalanative.nscplugin.CompilerCompat.SymUtilsCompat.*
 import scala.scalanative.nscplugin.NirDefinitions.NonErasedType
-import scala.scalanative.util.unreachable
+import scala.scalanative.util.ScopedVar.scoped
+import scala.scalanative.util.{StringUtils, unreachable, unsupported}
+
+import ast.tpd._
+import core.Constants._
+import core.Contexts._
+import core.Denotations._
+import core.Flags._
+import core.Names._
+import core.StdNames._
+import core.SymDenotations._
+import core.Symbols._
+import core.TypeErasure.ErasedValueType
+import core.Types._
+import core._
+import transform.{Erasure, ValueClasses}
 
 trait NirGenExpr(using Context) {
   self: NirCodeGen =>
@@ -143,7 +138,13 @@ trait NirGenExpr(using Context) {
           if (nirPrimitives.isPrimitive(fun)) genApplyPrimitive(app)
           else if (Erasure.Boxing.isBox(sym)) genApplyBox(arg.tpe, arg)
           else if (Erasure.Boxing.isUnbox(sym)) genApplyUnbox(app.tpe, arg)
-          else genApplyMethod(sym, statically = false, qualifier, args)
+          else
+            genApplyMethod(
+              sym,
+              statically = sym.isClassConstructor,
+              qualifier,
+              args
+            )
       }
     }
 
@@ -258,7 +259,7 @@ trait NirGenExpr(using Context) {
         for
           (tree, idx) <- allCaptureValues.zipWithIndex
           tpe = tree match {
-            case This(iden) => genType(fun.symbol.owner)
+            case This(iden) => genType(fun.symbol.owner.info)
             case _          => genType(tree.tpe)
           }
           name = anonClassName.member(nir.Sig.Field(s"capture$idx"))
@@ -350,11 +351,11 @@ trait NirGenExpr(using Context) {
         val paramTypes = funSym.info.paramInfoss.flatten.drop(env.size)
         assert(
           sigTypes.size == paramTypes.size,
-          s"""Amount of parameters in NIR and AST differ: 
-            |NIR: ${sigTypes}
-            |AST: ${paramTypes}
-            |Env: ${env.map(_.tpe)}
-            |Sym: ${funSym.showFullName}""".stripMargin
+          s"""|Amount of parameters in NIR and AST differ:
+              |NIR: ${sigTypes}
+              |AST: ${paramTypes}
+              |Env: ${env.map(_.tpe)}
+              |Sym: ${funSym.showFullName}""".stripMargin
         )
 
         def genBody = {
@@ -478,11 +479,7 @@ trait NirGenExpr(using Context) {
     def genIf(tree: If): nir.Val = {
       given nir.SourcePosition = tree.span
       val If(cond, thenp, elsep) = tree
-      def isUnitType(tpe: Type) =
-        tpe =:= defn.UnitType || defn.isBoxedUnitClass(tpe.sym)
-      val retty =
-        if (isUnitType(thenp.tpe) || isUnitType(elsep.tpe)) nir.Type.Unit
-        else genType(tree.tpe)
+      val retty = genType(tree.tpe)
       genIf(retty, cond, thenp, elsep)
     }
 
@@ -829,7 +826,7 @@ trait NirGenExpr(using Context) {
           s"Cannot resolve `this` instance for ${tree}",
           tree.sourcePos
         )
-        nir.Val.Zero(genType(currentClass))
+        nir.Val.Zero(genType(currentClass.info))
     }
 
     def genTry(tree: Try): nir.Val = tree match {
@@ -1083,19 +1080,19 @@ trait NirGenExpr(using Context) {
       locally {
         given nir.SourcePosition = wd.span.endPos
         buf.label(exitLabel, Seq.empty)
-        if (cond == EmptyTree) nir.Val.Zero(genType(defn.NothingClass))
+        if (cond == EmptyTree) nir.Val.Zero(genRefType(defn.NothingType))
         else nir.Val.Unit
       }
     }
 
-    private def genApplyBox(st: SimpleType, argp: Tree)(using
+    private def genApplyBox(tpe: Type, argp: Tree)(using
         nir.SourcePosition
     ): nir.Val = {
       val value = genExpr(argp)
-      buf.box(genBoxType(st), value, unwind)
+      buf.box(genBoxType(tpe), value, unwind)
     }
 
-    private def genApplyUnbox(st: SimpleType, argp: Tree)(using
+    private def genApplyUnbox(tpe: Type, argp: Tree)(using
         nir.SourcePosition
     ): nir.Val = {
       val value = genExpr(argp)
@@ -1105,7 +1102,7 @@ trait NirGenExpr(using Context) {
           // purpose Scala compiler.
           value
         case _ =>
-          buf.unbox(genBoxType(st), value, unwind)
+          buf.unbox(genBoxType(tpe), value, unwind)
       }
     }
 
@@ -1116,7 +1113,7 @@ trait NirGenExpr(using Context) {
       val Apply(fun @ DesugaredSelect(receiver, _), args) = app: @unchecked
 
       val sym = app.symbol
-      val code = nirPrimitives.getPrimitive(app, receiver.tpe)
+      val code = nirPrimitives.getPrimitiveCompat(app, receiver.tpe)
       def arg = args.head
 
       (code: @switch) match {
@@ -1210,31 +1207,27 @@ trait NirGenExpr(using Context) {
       val Apply(fun @ Select(New(tpt), nme.CONSTRUCTOR), args) = app: @unchecked
       given nir.SourcePosition = app.span
 
-      fromType(tpt.tpe) match {
-        case st if st.sym.isStruct =>
-          genApplyNewStruct(st, args)
+      val tpe = tpt.typeOpt
+      val sym = tpe.typeSymbol
+      if sym.isStruct then genApplyNewStruct(tpe, args)
+      else if tpe.typeParams.isEmpty then {
+        val ctor = fun.symbol
+        assert(
+          ctor.isClassConstructor,
+          "'new' call to non-constructor: " + ctor.name
+        )
+        genApplyNew(
+          clssym = sym,
+          ctorsym = ctor,
+          args = args,
+          zone = app.getAttachment(SafeZoneInstance)
+        )
+      } else unsupported(s"unexpected new: $sym with targs ${tpe}")
 
-        case SimpleType(cls, Seq()) =>
-          val ctor = fun.symbol
-          assert(
-            ctor.isClassConstructor,
-            "'new' call to non-constructor: " + ctor.name
-          )
-
-          genApplyNew(
-            cls,
-            ctor,
-            args,
-            zone = app.getAttachment(SafeZoneInstance)
-          )
-
-        case SimpleType(sym, targs) =>
-          unsupported(s"unexpected new: $sym with targs $targs")
-      }
     }
 
-    private def genApplyNewStruct(st: SimpleType, argsp: Seq[Tree]): nir.Val = {
-      val ty = genType(st)
+    private def genApplyNewStruct(tpe: Type, argsp: Seq[Tree]): nir.Val = {
+      val ty = genType(tpe)
       val args = genSimpleArgs(argsp)
       var res: nir.Val = nir.Val.Zero(ty)
 
@@ -1348,34 +1341,36 @@ trait NirGenExpr(using Context) {
     }
 
     // Utils
-    private def boxValue(st: SimpleType, value: nir.Val)(using
+    private def boxValue(tpe: Type, value: nir.Val)(using
         nir.SourcePosition
     ): nir.Val = {
-      if (st.sym.isUnsignedType)
+      if (tpe.isUnsignedType)
         genApplyModuleMethod(
           defnNir.RuntimeBoxesModule,
-          defnNir.BoxUnsignedMethod(st.sym),
+          defnNir.BoxUnsignedMethod(tpe.typeSymbol),
           Seq(ValTree(value)())
         )
-      else if (genPrimCode(st) == 'O') value
-      else genApplyBox(st, ValTree(value)())
+      else if tpe =:= defn.UnitType then value
+      else if tpe.isPrimitiveValueType then genApplyBox(tpe, ValTree(value)())
+      else value
     }
 
-    private def unboxValue(st: SimpleType, partial: Boolean, value: nir.Val)(
-        using nir.SourcePosition
+    private def unboxValue(tpe: Type, partial: Boolean, value: nir.Val)(using
+        nir.SourcePosition
     ): nir.Val = {
-      if (st.sym.isUnsignedType) {
+      if (tpe.isUnsignedType) {
         // Results of asInstanceOfs are partially unboxed, meaning
         // that non-standard value types remain to be boxed.
         if (partial) value
         else
           genApplyModuleMethod(
             defnNir.RuntimeBoxesModule,
-            defnNir.UnboxUnsignedMethod(st.sym),
+            defnNir.UnboxUnsignedMethod(tpe.typeSymbol),
             Seq(ValTree(value)())
           )
-      } else if (genPrimCode(st) == 'O') value
-      else genApplyUnbox(st, ValTree(value)())
+      } else if tpe =:= defn.UnitType then value
+      else if tpe.isPrimitiveValueType then genApplyUnbox(tpe, ValTree(value)())
+      else value
     }
 
     private def genSimpleOp(
@@ -1591,10 +1586,10 @@ trait NirGenExpr(using Context) {
         case (ty1, ty2) if ty1 == ty2 =>
           ty1
 
-        case (nir.Type.Nothing, ty) =>
+        case (nir.Type.NothingType(_), ty) =>
           ty
 
-        case (ty, nir.Type.Nothing) =>
+        case (ty, nir.Type.NothingType(_)) =>
           ty
 
         case _ =>
@@ -1825,13 +1820,8 @@ trait NirGenExpr(using Context) {
       val nir.Type.Array(elemty, _) = genType(arrayp.tpe): @unchecked
       given nir.SourcePosition = app.span
 
-      def elemcode = genArrayCode(arrayp.tpe)
       val array = genExpr(arrayp)
-
-      if (code == ARRAY_CLONE)
-        val method = defnNir.RuntimeArray_clone(elemcode)
-        genApplyMethod(method, statically = true, array, argsp)
-      else if (isArrayGet(code))
+      if (isArrayGet(code))
         val idx = genExpr(argsp(0))
         buf.arrayload(elemty, array, idx, unwind)
       else if (isArraySet(code))
@@ -1855,7 +1845,7 @@ trait NirGenExpr(using Context) {
     def liftStringConcat(tree: Tree): List[Tree] = tree match {
       case tree @ Apply(fun @ DesugaredSelect(larg, method), rarg) =>
         if (nirPrimitives.isPrimitive(fun) &&
-            nirPrimitives.getPrimitive(tree, larg.tpe) == CONCAT)
+            nirPrimitives.getPrimitiveCompat(tree, larg.tpe) == CONCAT)
           liftStringConcat(larg) ::: rarg
         else
           tree :: Nil
@@ -1873,9 +1863,9 @@ trait NirGenExpr(using Context) {
       val argType =
         if (tpe <:< defn.StringType) nir.Rt.String
         else if (tpe <:< defnNir.jlStringBufferType)
-          genType(defnNir.jlStringBufferRef)
+          genType(defnNir.jlStringBufferType)
         else if (tpe <:< defnNir.jlCharSequenceType)
-          genType(defnNir.jlCharSequenceRef)
+          genType(defnNir.jlCharSequenceType)
         // Don't match for `Array(Char)`, even though StringBuilder has such an overload:
         // `"a" + Array('b')` should NOT be "ab", but "a[C@...".
         else if (tpe <:< defn.ObjectType) nir.Rt.Object
@@ -1947,9 +1937,9 @@ trait NirGenExpr(using Context) {
             .toList
           // Estimate capacity needed for the string builder
           val approxBuilderSize = concatArguments.view.map {
-            case Literal(Constant(s: String))              => s.length
-            case Literal(c: Constant) if c.isNonUnitAnyVal =>
-              String.valueOf(c).length
+            case Literal(Constant(s: String))       => s.length
+            case Literal(c: Constant) if c.isAnyVal =>
+              String.valueOf(c.value).length
             case _ => 0
           }.sum
 
@@ -2683,7 +2673,8 @@ trait NirGenExpr(using Context) {
       }
 
       val allFields =
-        classInfoSym.info.fields ++ classInfoSym.info.parents.flatMap(_.fields)
+        classInfo.baseClasses
+          .flatMap(baseSym => classInfo.baseType(baseSym).fields)
       allFields
         .collectFirst {
           case f if matchesName(f) =>
@@ -2840,7 +2831,7 @@ trait NirGenExpr(using Context) {
             /* buf.unboxValue does not handle Ref( Ptr | CArray | ... ) unboxing
              * That's why we're doing it directly */
             if (nir.Type.unbox.isDefinedAt(tpe)) buf.unbox(tpe, obj, unwind)
-            else buf.unboxValue(fromType(ty), partial = false, obj)
+            else buf.unboxValue(ty, partial = false, obj)
         }
       val argTypes = args.map(_.ty)
       val funcSig = nir.Type.Function(argTypes, unboxedRetType)
@@ -2860,15 +2851,14 @@ trait NirGenExpr(using Context) {
 
     private def genCFuncFromScalaFunction(app: Apply): nir.Val = {
       given pos: nir.SourcePosition = app.span
-      val paramTypes = app.getAttachment(NirDefinitions.NonErasedTypes) match
-        case None =>
+      val paramTypes =
+        app.getAttachment(NirDefinitions.NonErasedTypes).getOrElse {
           report.error(
             s"Failed to generate exact NIR types for $app, something is wrong with scala-native internals.",
             app.srcPos
           )
           Nil
-        case Some(paramTys) =>
-          paramTys.map(fromType)
+        }
 
       val fn :: _ = app.args: @unchecked
 
@@ -2910,7 +2900,7 @@ trait NirGenExpr(using Context) {
       }
 
       val fnRef = resolveFunction(fn)
-      val className = genTypeName(app.tpe.sym)
+      val className = genTypeName(app.tpe.typeSymbol)
 
       val ctorTy = nir.Type.Function(
         Seq(nir.Type.Ref(className), nir.Type.Ptr),
@@ -2933,7 +2923,7 @@ trait NirGenExpr(using Context) {
         funcName: nir.Global,
         funSym: Symbol,
         funTree: Closure,
-        evidences: List[SimpleType]
+        evidences: List[Type]
     )(using nir.SourcePosition): nir.Defn = {
       val attrs = nir.Attrs.None.withIsExtern(true)
 

@@ -1,6 +1,7 @@
 #if defined SCALANATIVE_DYLIB && !defined SCALANATIVE_NO_DYLIB_CTOR
 
 #include <stdlib.h>
+#include "pd_exit.h"
 #include <stdio.h>
 
 #define NO_DYLIB_CTOR_ENV "SCALANATIVE_NO_DYLIB_CTOR"
@@ -37,7 +38,7 @@ static void __attribute__((constructor)) __scala_native_init(void) {
     if (!getenv(NO_DYLIB_CTOR_ENV)) {
         if (0 != ScalaNativeInit()) {
             printf("Failed to initialize Scala Native");
-            exit(1);
+            exit(135);
         }
     }
 }

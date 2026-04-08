@@ -1,23 +1,23 @@
 package java.lang
 
-import scalanative.unsafe._
-import scalanative.unsigned._
-import scalanative.libc.string.memcmp
-
-import java.{lang => jl}
-import java.lang.constant.{Constable, ConstantDesc}
 import java.io.Serializable
+import java.lang.constant.{Constable, ConstantDesc}
 import java.nio._
 import java.nio.charset._
-import java.util._
-import java.util.Objects
 import java.util.ScalaOps._
+import java.util._
 import java.util.function.Consumer
 import java.util.regex._
 import java.util.{stream => jus}
+import java.{lang => jl}
 
 import scala.annotation.{switch, tailrec}
-import _String.{string2_string, _string2string}
+
+import scalanative.libc.string.memcmp
+import scalanative.unsafe._
+import scalanative.unsigned._
+
+import _String.{_string2string, string2_string}
 
 final class _String()
     extends Serializable
@@ -428,7 +428,7 @@ final class _String()
    *   By convention, caller has validated arguments, but strangely.
    *   beginIndex is usually guaranteed to be within 'this' but there is no
    *   such guarantee here.
-   * 
+   *
    *   For details, see note above indexOfImpl(str, fromIndex, toIndex).
    */
   private def indexOfImpl(ch: Int, beginIndex: Int, endIndex: Int): Int = {
@@ -483,7 +483,7 @@ final class _String()
    *   Beware & handle an empty 'this' or an empty slice range!
    *   beginIndex is usually guaranteed to be a valid index for this.value
    *   but there is no such guarantee here.
-   * 
+   *
    *   Especially note that when (this.count == 0) indexOf(str, 0, 0)
    *   fulfills the preconditions but 'this(beginIndex)' will throw.
    */
@@ -1679,23 +1679,25 @@ for (cp <- 0 to Character.MAX_CODE_POINT) {
 }
 
 object _String {
-  final val CASE_INSENSITIVE_ORDER: Comparator[_String] =
-    new CaseInsensitiveComparator()
-  private final val ascii = {
-    val ascii = new Array[Char](128)
-    var i = 0
-    while (i < ascii.length) {
-      ascii(i) = i.toChar
-      i += 1
-    }
-    ascii
-  }
+  final def CASE_INSENSITIVE_ORDER: Comparator[_String] =
+    CaseInsensitiveComparator
 
-  private class CaseInsensitiveComparator
+  private object CaseInsensitiveComparator
       extends Comparator[_String]
       with Serializable {
     def compare(o1: _String, o2: _String): Int =
       o1.compareToIgnoreCase(o2)
+  }
+
+  private object ASCII {
+    val chars: Array[Char] = new Array[Char](128)
+    locally {
+      var i = 0
+      while (i < chars.length) {
+        chars(i) = i.toChar
+        i += 1
+      }
+    }
   }
 
   def copyValueOf(data: Array[Char], start: Int, length: Int): _String =
@@ -1735,7 +1737,7 @@ object _String {
 
   def valueOf(value: Char): _String = {
     val s =
-      if (value < 128) new _String(value, 1, ascii)
+      if (value < 128) new _String(value, 1, ASCII.chars)
       else new _String(0, 1, Array(value))
     s.cachedHashCode = value
     s

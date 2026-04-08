@@ -2,33 +2,25 @@ package scala.scalanative
 package codegen
 package llvm
 
-import scala.scalanative.nir.Defn.Define.DebugInfo
-import scala.scalanative.util.ShowBuilder
 import scala.collection.mutable
-import scala.scalanative.util.unsupported
-
 import scala.language.implicitConversions
-import scala.scalanative.codegen.llvm.MetadataCodeGen.Writer.Specialized
-import scala.scalanative.util.unreachable
-import scala.scalanative.linker.{
-  ClassRef,
-  ArrayRef,
-  FieldRef,
-  ScopeRef,
-  TraitRef,
-  Method
-}
-import scala.scalanative.linker.ReachabilityAnalysis
-import scala.scalanative.util.ScopedVar
+
 import scala.scalanative.codegen.llvm.Metadata.conversions.optionWrapper
+import scala.scalanative.codegen.llvm.MetadataCodeGen.Writer.Specialized
+import scala.scalanative.linker.{
+  ArrayRef, ClassRef, FieldRef, Method, ReachabilityAnalysis, ScopeRef, TraitRef
+}
+import scala.scalanative.nir.Defn.Define.DebugInfo
 import scala.scalanative.nir.SourceFile.Relative
+import scala.scalanative.util.{ScopedVar, ShowBuilder, unreachable, unsupported}
 
 // scalafmt: { maxColumn = 100}
 private[codegen] trait MetadataCodeGen { self: AbstractCodeGen =>
-  import MetadataCodeGen._
-  import Metadata._
-  import Writer._
   import self.meta.platform
+
+  import Metadata._
+  import MetadataCodeGen._
+  import Writer._
 
   final val generateDebugMetadata = self.meta.config.sourceLevelDebuggingConfig.enabled
   final val generateLocalVariables =
@@ -609,8 +601,8 @@ private[codegen] object MetadataCodeGen {
   class DefnScopes(val defn: nir.Defn.Define, codeGen: AbstractCodeGen)(implicit
       metadataCtx: MetadataCodeGen.Context
   ) {
-    import codeGen._
     import Metadata._
+    import codeGen._
 
     private val scopes = mutable.Map.empty[nir.ScopeId, Metadata.Scope]
 
@@ -700,13 +692,13 @@ private[codegen] object MetadataCodeGen {
     }
   }
 
-  trait Writer[T <: Metadata] {
+  abstract class Writer[T <: Metadata] {
     final def sb(implicit ctx: Context): ShowBuilder = ctx.sb
     final def write(v: T)(implicit ctx: Context): Unit = writeMetadata(v, ctx)
     def writeMetadata(v: T, ctx: Context): Unit
   }
 
-  trait InternedWriter[T <: Metadata.Node] extends Writer[T] {
+  abstract class InternedWriter[T <: Metadata.Node] extends Writer[T] {
     import Writer._
     private def asssignedId(v: T)(implicit ctx: Context): Option[Metadata.Id] =
       v.assignedId.orElse(cache(v).get(v))
@@ -722,7 +714,7 @@ private[codegen] object MetadataCodeGen {
     def getOrAssignId(v: T)(implicit ctx: Context): Metadata.Id =
       asssignedId(v).getOrElse(assignId(v))
 
-    final private[MetadataCodeGen] def cache(v: T)(implicit ctx: Context): ctx.WriterCache[T] =
+    private[MetadataCodeGen] final def cache(v: T)(implicit ctx: Context): ctx.WriterCache[T] =
       ctx.writersCache
         .getOrElseUpdate(v.getClass(), mutable.Map.empty)
         .asInstanceOf[ctx.WriterCache[T]]
@@ -764,9 +756,9 @@ private[codegen] object MetadataCodeGen {
     }
   }
 
-  trait Dispatch[T <: Metadata.Node] extends InternedWriter[T] {
+  abstract class Dispatch[T <: Metadata.Node] extends InternedWriter[T] {
     import Writer.MetadataInternedWriterOps
-    final override def writeMetadata(v: T, ctx: Context): Unit = delegate(v).writeMetadata(v, ctx)
+    override final def writeMetadata(v: T, ctx: Context): Unit = delegate(v).writeMetadata(v, ctx)
 
     private def delegate(v: T): InternedWriter[T] = dispatch(v).asInstanceOf[InternedWriter[T]]
 
@@ -926,7 +918,7 @@ private[codegen] object MetadataCodeGen {
         }
       }
     }
-    trait Specialized[T <: Metadata.SpecializedNode] extends InternedWriter[T] {
+    abstract class Specialized[T <: Metadata.SpecializedNode] extends InternedWriter[T] {
       def writeFields(v: T): Specialized.Builder[T] => Unit
       override def writeMetadata(v: T, ctx: Context): Unit = {
         implicit def _ctx: Context = ctx

@@ -1,5 +1,7 @@
 import java.nio.file.{Path, Paths}
+
 import scala.sys.process.Process
+
 import scala.scalanative.build.Discover
 
 enablePlugins(ScalaNativePlugin)
@@ -20,7 +22,7 @@ nativeConfig ~= {
     .withBaseName("test")
 }
 
-val outExt = if (Platform.isWindows) "exe" else "out"
+val outExt = if (PlatformInfo.isWindows) "exe" else "out"
 lazy val testC = taskKey[Unit]("Build test application using SN library for C")
 testC := {
   sLog.value.info("Testing dynamic library from C")

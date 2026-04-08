@@ -1,9 +1,9 @@
 package java.util.stream
 
-import java.{util => ju}
 import java.util._
 import java.util.function._
 import java.util.stream.Collector._
+import java.{util => ju}
 
 private[stream] class StreamImpl[T](
     val pipeline: ArrayDeque[StreamImpl[T]]
@@ -265,13 +265,14 @@ private[stream] class StreamImpl[T](
 
     val seenElements = new ju.HashSet[T]()
 
-    // Some items may be dropped, so the estimated size is a high bound.
-    val estimatedSize = _spliter.estimateSize()
-
+    // Create an unsized spliterator with characteristics matching JVM.
     val spl =
       new Spliterators.AbstractSpliterator[T](
-        estimatedSize,
-        _spliter.characteristics()
+        Long.MaxValue,
+        Spliterators.maskOff(
+          _spliter.characteristics(),
+          Spliterators.sizedCharacteristicsMask | Spliterator.IMMUTABLE
+        ) | Spliterator.DISTINCT
       ) {
         def tryAdvance(action: Consumer[_ >: T]): Boolean = {
           var success = false
@@ -300,12 +301,16 @@ private[stream] class StreamImpl[T](
   def filter(pred: Predicate[_ >: T]): Stream[T] = {
     commenceOperation()
 
-    // Some items may be filtered out, so the estimated size is a high bound.
-    val estimatedSize = _spliter.estimateSize()
-
+    /* Create an unsized spliterator with characteristics matching JVM.
+     * JVM drops some upstream spliterator characteristics. IMMUTABLE
+     * is definitely dropped. Time will tell if others also need to be dropped.
+     */
     val spl = new Spliterators.AbstractSpliterator[T](
-      estimatedSize,
-      _spliter.characteristics()
+      Long.MaxValue,
+      Spliterators.maskOff(
+        _spliter.characteristics(),
+        Spliterators.sizedCharacteristicsMask | Spliterator.IMMUTABLE
+      )
     ) {
       def tryAdvance(action: Consumer[_ >: T]): Boolean = {
         var success = false

@@ -3,9 +3,11 @@ package build
 
 import java.io.File
 import java.nio.file.{Files, Path, Paths}
-import scala.util.Try
-import scala.sys.process._
+
 import scala.reflect.ClassTag
+import scala.sys.process._
+import scala.util.Try
+
 import scala.scalanative.build.IO.RichPath
 
 /** Utilities for discovery of command-line tools and settings required to build
@@ -126,7 +128,7 @@ object Discover {
       case version :: target :: _ => (version, target)
       case _                      =>
         throw new BuildException(
-          s"""Problem running '$cmdString'. Please check clang setup.
+          s"""|Problem running '$cmdString'. Please check clang setup.
               |Refer to ($docSetup)""".stripMargin
         )
     }
@@ -145,10 +147,12 @@ object Discover {
       )
     } catch {
       case t: Throwable =>
-        throw new BuildException(s"""Output from '$versionCommand' unexpected.
-                |Was expecting '... version n.n.n ...'.
-                |Got '$versionString'.
-                |Cause: ${t}""".stripMargin)
+        throw new BuildException(
+          s"""|Output from '$versionCommand' unexpected.
+              |Was expecting '... version n.n.n ...'.
+              |Got '$versionString'.
+              |Cause: ${t}""".stripMargin
+        )
     }
   }
 
@@ -160,9 +164,9 @@ object Discover {
 
     if (majorVersion < clangMinVersion) {
       throw new BuildException(
-        s"""Minimum version of clang is '$clangMinVersion'.
-             |Discovered version '$version'.
-             |Please refer to ($docSetup)""".stripMargin
+        s"""|Minimum version of clang is '$clangMinVersion'.
+            |Discovered version '$version'.
+            |Please refer to ($docSetup)""".stripMargin
       )
     }
   }
@@ -214,8 +218,8 @@ object Discover {
           .map(envPath => s"or via '$envPath' environment variable")
           .getOrElse("")
         throw new BuildException(
-          s"""'$binaryName' not found in PATH $envMessage.
-            |Please refer to ($docSetup)""".stripMargin
+          s"""|'$binaryName' not found in PATH $envMessage.
+              |Please refer to ($docSetup)""".stripMargin
         )
       }
     path

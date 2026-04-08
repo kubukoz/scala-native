@@ -3,10 +3,11 @@ package scala.scalanative
 package codegen
 
 import scala.collection.mutable
-import scalanative.util.{ScopedVar, unsupported}
-import scalanative.linker._
+
 import scalanative.interflow.UseDef.eliminateDeadCode
-import scalanative.nir.ControlFlow.{Graph, Block}
+import scalanative.linker._
+import scalanative.nir.ControlFlow.{Block, Graph}
+import scalanative.util.{ScopedVar, unsupported}
 
 private[scalanative] object Lower {
 
@@ -17,8 +18,7 @@ private[scalanative] object Lower {
 
   private final class Impl(implicit meta: Metadata, logger: build.Logger) extends nir.Transform {
     import meta._
-    import meta.config
-    import meta.layouts.{Rtti, ClassRtti, ArrayHeader, ITable}
+    import meta.layouts.{ArrayHeader, ClassRtti, ITable, Rtti}
 
     implicit val analysis: ReachabilityAnalysis.Result = meta.analysis
 
@@ -220,6 +220,17 @@ private[scalanative] object Lower {
 
       implicit var lastScopeId: nir.ScopeId = nir.ScopeId.TopLevel
       insts.tail.foreach {
+        case inst @ nir.Inst.Let(n, op, nir.Next.Unwind(excVal, handlerNext))
+            if platform.useSjljExceptions =>
+          // SJLJ exception handling: wrap the operation in setjmp/longjmp
+          // instead of using LLVM invoke/landingpad (no libunwind on Playdate).
+          // Set unwindHandler to None so generated code uses plain calls;
+          // any throw will go through scalanative_throw → longjmp → here.
+          ScopedVar.scoped(unwindHandler := None) {
+            lastScopeId = inst.scopeId
+            genSjljWrappedLet(buf, n, op, excVal, handlerNext)(inst.pos, inst.scopeId)
+          }
+
         case inst @ nir.Inst.Let(n, op, unwind) =>
           ScopedVar.scoped(
             unwindHandler := getUnwindHandler(unwind)(inst.pos)
@@ -317,12 +328,14 @@ private[scalanative] object Lower {
       catch {
         case scala.util.control.NonFatal(error) =>
           logger.synchronized {
-            logger.error(s"""Dead code elimnation failed: ${error.getMessage()}
-            |Original defn: 
-            |${currentDefn.get.show}
-            |Lowered instructions: 
-            |${loweredInsts.zipWithIndex.map { case (inst, idx) => s"${idx.toString().padTo(4, ' ')}| ${inst.show}" }.mkString("\n")}
-            |""".stripMargin)
+            logger.error(
+              s"""|Dead code elimnation failed: ${error.getMessage()}
+                  |Original defn: 
+                  |${currentDefn.get.show}
+                  |Lowered instructions: 
+                  |${loweredInsts.zipWithIndex.map { case (inst, idx) => s"${idx.toString().padTo(4, ' ')}| ${inst.show}" }.mkString("\n")}
+                  |""".stripMargin
+            )
           }
           throw error
       }
@@ -493,6 +506,50 @@ private[scalanative] object Lower {
             buf.unreachable(nir.Next.None)
           }
       }
+    }
+
+    def genSjljWrappedLet(
+        buf: nir.InstructionBuilder,
+        n: nir.Local,
+        op: nir.Op,
+        excVal: nir.Val.Local,
+        handlerNext: nir.Next
+    )(implicit srcPosition: nir.SourcePosition, scopeId: nir.ScopeId): Unit = {
+      val normalL = fresh()
+      val excL = fresh()
+      val mergeL = fresh()
+
+      // Save the stack pointer before allocating the SJLJ frame so we can
+      // restore it after the protected region — otherwise allocas inside
+      // loops accumulate and blow the (tiny) Playdate stack.
+      val savedSp = buf.call(stackSaveSig, stackSave, Seq.empty, nir.Next.None)
+
+      // Allocate SJLJ frame on stack and push it onto the handler chain
+      val frameStorage = buf.stackalloc(nir.Type.Byte, nir.Val.Int(sjljFrameSize), nir.Next.None)
+      val jmpBuf = buf.call(sjljPushSig, sjljPush, Seq(frameStorage), nir.Next.None)
+
+      // setjmp returns 0 on initial call, non-zero when longjmp fires
+      val sjResult = buf.call(setjmpSig, setjmp, Seq(jmpBuf), nir.Next.None)
+      val isException = buf.let(nir.Op.Comp(nir.Comp.Ine, nir.Type.Int, sjResult, nir.Val.Int(0)), nir.Next.None)
+      buf.branch(isException, nir.Next(excL), nir.Next(normalL))
+
+      // Normal path: execute the operation, pop the handler, continue
+      buf.label(normalL)
+      genLet(buf, n, op)
+      buf.call(sjljPopSig, sjljPop, Seq(), nir.Next.None)
+      buf.call(stackRestoreSig, stackRestore, Seq(savedSp), nir.Next.None)
+      buf.jump(nir.Next(mergeL))
+
+      // Exception path: retrieve exception, pop the handler, jump to catch
+      buf.label(excL)
+      val excPtr = buf.call(sjljGetExcSig, sjljGetExc, Seq(), nir.Next.None)
+      buf.call(sjljPopSig, sjljPop, Seq(), nir.Next.None)
+      buf.call(stackRestoreSig, stackRestore, Seq(savedSp), nir.Next.None)
+      // Cast Ptr to Throwable type expected by the handler
+      val excObj = buf.let(nir.Op.Copy(excPtr), nir.Next.None)
+      buf.jump(handlerNext.id, Seq(excObj))
+
+      buf.label(mergeL)
     }
 
     def genLet(
@@ -2156,6 +2213,37 @@ private[scalanative] object Lower {
   val throwSig = nir.Type.Function(Seq(nir.Type.Ptr), nir.Type.Nothing)
   val throw_ = nir.Val.Global(throwName, nir.Type.Ptr)
 
+  // SJLJ exception handling (Playdate)
+  val sjljPushName = extern("scalanative_eh_sjlj_push")
+  val sjljPushSig = nir.Type.Function(Seq(nir.Type.Ptr), nir.Type.Ptr)
+  val sjljPush = nir.Val.Global(sjljPushName, nir.Type.Ptr)
+
+  val sjljPopName = extern("scalanative_eh_sjlj_pop")
+  val sjljPopSig = nir.Type.Function(Seq(), nir.Type.Unit)
+  val sjljPop = nir.Val.Global(sjljPopName, nir.Type.Ptr)
+
+  val sjljGetExcName = extern("scalanative_eh_sjlj_get_exception")
+  val sjljGetExcSig = nir.Type.Function(Seq(), nir.Type.Ptr)
+  val sjljGetExc = nir.Val.Global(sjljGetExcName, nir.Type.Ptr)
+
+  val setjmpName = extern("setjmp")
+  val setjmpSig = nir.Type.Function(Seq(nir.Type.Ptr), nir.Type.Int)
+  val setjmp = nir.Val.Global(setjmpName, nir.Type.Ptr)
+
+  // llvm.stacksave/llvm.stackrestore — used to free SJLJ frame storage so
+  // try/catch sites inside loops don't accumulate stack on each iteration.
+  val stackSaveName = extern("llvm.stacksave")
+  val stackSaveSig = nir.Type.Function(Seq.empty, nir.Type.Ptr)
+  val stackSave = nir.Val.Global(stackSaveName, nir.Type.Ptr)
+
+  val stackRestoreName = extern("llvm.stackrestore")
+  val stackRestoreSig = nir.Type.Function(Seq(nir.Type.Ptr), nir.Type.Unit)
+  val stackRestore = nir.Val.Global(stackRestoreName, nir.Type.Ptr)
+
+  // Conservative upper bound for SjljFrame size (jmp_buf + exception + prev pointer).
+  // On ARM newlib: jmp_buf = 20 * long long = 160 bytes, + 2 pointers = 168 bytes.
+  val sjljFrameSize = 256
+
   def arrayHeapAllocOf(ty: nir.Type, arrayClassName: nir.Global.Top) = {
     val arrcls = nir.Type.Ref(arrayClassName)
     nir.Global.Member(
@@ -2403,6 +2491,12 @@ private[scalanative] object Lower {
     buf += externDecl(TraitDispatchSlowpathName, TraitDispatchSlowpathSig)
     buf += externDecl(CheckStackOverflowGuardsName, CheckStackOverflowGuardsSig)
     buf += externDecl(ClassHasTraitSlowpathName, ClassHasTraitSlowpathSig)
+    buf += externDecl(sjljPushName, sjljPushSig)
+    buf += externDecl(sjljPopName, sjljPopSig)
+    buf += externDecl(sjljGetExcName, sjljGetExcSig)
+    buf += externDecl(setjmpName, setjmpSig)
+    buf += externDecl(stackSaveName, stackSaveSig)
+    buf += externDecl(stackRestoreName, stackRestoreSig)
     buf.toSeq
   }
 

@@ -11,6 +11,7 @@
 #include "WeakReferences.h"
 #include "Settings.h"
 #include "shared/Parsing.h"
+#include "shared/Log.h"
 #include "shared/jmx.h"
 #ifdef SCALANATIVE_MULTITHREADING_ENABLED
 #include "immix_commix/Synchronizer.h"
@@ -18,12 +19,15 @@
 #include "MutatorThread.h"
 #include <stdatomic.h>
 #include "nativeThreadTLS.h"
+#include <assert.h>
 
 void scalanative_afterexit() { Stats_OnExit(heap.stats); }
 
 NOINLINE void scalanative_GC_init() {
     volatile word_t dummy = 0;
     dummy = (word_t)&dummy;
+    GC_Log_Init();
+    Settings_Init();
     Heap_Init(&heap, Settings_MinHeapSize(), Settings_MaxHeapSize());
     Stack_Init(&stack, INITIAL_STACK_SIZE);
     Stack_Init(&weakRefStack, INITIAL_STACK_SIZE);
@@ -47,6 +51,10 @@ INLINE void *scalanative_GC_alloc(Rtti *info, size_t size) {
     } else {
         alloc = (Object *)Allocator_Alloc(&heap, size);
     }
+    if (alloc == NULL) {
+        GC_LOG_ERROR("scalanative_GC_alloc: allocation returned NULL for size=%zu", size);
+        Heap_exitWithOutOfMemory("scalanative_GC_alloc returned NULL");
+    }
     alloc->rtti = info;
     return (void *)alloc;
 }
@@ -55,6 +63,10 @@ INLINE void *scalanative_GC_alloc_small(Rtti *info, size_t size) {
     size = MathUtils_RoundToNextMultiple(size, ALLOCATION_ALIGNMENT);
 
     Object *alloc = (Object *)Allocator_Alloc(&heap, size);
+    if (alloc == NULL) {
+        GC_LOG_ERROR("scalanative_GC_alloc_small: NULL for size=%zu", size);
+        Heap_exitWithOutOfMemory("scalanative_GC_alloc_small returned NULL");
+    }
     alloc->rtti = info;
     return (void *)alloc;
 }
@@ -63,6 +75,10 @@ INLINE void *scalanative_GC_alloc_large(Rtti *info, size_t size) {
     size = MathUtils_RoundToNextMultiple(size, ALLOCATION_ALIGNMENT);
 
     Object *alloc = (Object *)LargeAllocator_Alloc(&heap, size);
+    if (alloc == NULL) {
+        GC_LOG_ERROR("scalanative_GC_alloc_large: NULL for size=%zu", size);
+        Heap_exitWithOutOfMemory("scalanative_GC_alloc_large returned NULL");
+    }
     alloc->rtti = info;
     return (void *)alloc;
 }
@@ -77,6 +93,10 @@ INLINE void *scalanative_GC_alloc_array(Rtti *info, size_t length,
 }
 
 INLINE void scalanative_GC_collect() { Heap_Collect(&heap, &stack); }
+
+void scalanative_GC_setStackBottom(void *stackbottom) {
+    MutatorThread_setStackBottom((word_t **)stackbottom);
+}
 
 INLINE void scalanative_GC_set_weak_references_collected_callback(
     WeakReferencesCollectedCallback callback) {

@@ -3,17 +3,11 @@ package scala.scalanative.nio.fs.windows
 import java.io.File
 import java.net.URI
 import java.nio.file.{
-  FileSystem,
-  Files,
-  LinkOption,
-  NoSuchFileException,
-  Path,
-  ProviderMismatchException,
-  WatchEvent,
-  WatchKey,
-  WatchService
+  FileSystem, Files, LinkOption, NoSuchFileException, Path,
+  ProviderMismatchException, WatchEvent, WatchKey, WatchService
 }
 import java.util.Iterator
+
 import scalanative.annotation.alwaysinline
 
 class WindowsPath private[windows] (
@@ -48,7 +42,7 @@ class WindowsPath private[windows] (
   }
 
   @alwaysinline
-  final private def separator: String = fs.getSeparator()
+  private final def separator: String = fs.getSeparator()
 
   override def getFileSystem(): FileSystem = fs
 

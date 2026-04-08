@@ -2,14 +2,16 @@ package scala.scalanative
 package nscplugin
 
 import scala.tools.nsc.Global
+
 import scalanative.util.unreachable
 
 trait NirGenName[G <: Global with Singleton] {
   self: NirGenPhase[G] =>
 
-  import global.{Name => _, _}, definitions._
+  import global.definitions._
+  import global.{Name => _, _}
+
   import nirAddons.nirDefinitions._
-  import SimpleType.{fromSymbol, fromType}
 
   def genAnonName(owner: Symbol, anon: Symbol) =
     genName(owner).member(nir.Sig.Extern(anon.fullName.toString))
@@ -141,7 +143,7 @@ trait NirGenName[G <: Global with Singleton] {
 
     val tpe = sym.tpe.widen
     val paramTypes = tpe.params.toSeq.map(p => genType(p.info))
-    val retType = genType(fromType(sym.info.resultType))
+    val retType = genType(sym.info.resultType)
 
     val name = sym.name
     val sig = nir.Sig.Method(id, paramTypes :+ retType, scope)

@@ -9,7 +9,8 @@ private[scalanative] case class PlatformInfo(
     isMultithreadingEnabled: Boolean,
     useOpaquePointers: Boolean,
     useGCYieldPointTraps: Boolean,
-    useCxxExceptions: Boolean
+    useCxxExceptions: Boolean,
+    useSjljExceptions: Boolean
 ) {
   val sizeOfPtr = if (is32Bit) 4 else 8
   val sizeOfPtrBits = sizeOfPtr * 8
@@ -23,6 +24,9 @@ private[scalanative] object PlatformInfo {
     useOpaquePointers =
       Discover.features.opaquePointers(config.compilerConfig).isAvailable,
     useGCYieldPointTraps = config.useTrapBasedGCYieldPoints,
-    useCxxExceptions = config.usingCppExceptions
+    useCxxExceptions = config.usingCppExceptions,
+    useSjljExceptions = config.compilerConfig.compileOptions
+      .exists(_.contains("TARGET_PLAYDATE")) &&
+      config.compilerConfig.targetTriple.exists(_.contains("arm-none"))
   )
 }

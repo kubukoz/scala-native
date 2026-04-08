@@ -1,21 +1,19 @@
 package java.nio.file.attribute
 
-import java.{lang => jl}
-import java.{util => ju}
-import java.util.{HashMap, HashSet, Set}
-import java.util.concurrent.TimeUnit
-import java.nio.file.{LinkOption, Path, PosixException}
 import java.nio.file.attribute._
-
-import scalanative.unsigned._
-import scalanative.unsafe._
-
-import scalanative.posix._
+import java.nio.file.{LinkOption, Path, PosixException}
+import java.util.concurrent.TimeUnit
+import java.util.{HashMap, HashSet, Set}
+import java.{lang => jl, util => ju}
 
 // Import posix name errno as variable, not class or type.
-import scala.scalanative.posix.{errno => posixErrno}, posixErrno.errno
-
+import scala.scalanative.posix.{errno => posixErrno}
+import scalanative.posix._
 import scalanative.posix.sys.stat
+import scalanative.unsafe._
+import scalanative.unsigned._
+
+import posixErrno.errno
 
 final class PosixFileAttributeViewImpl(path: Path, options: Array[LinkOption])
     extends PosixFileAttributeView
@@ -174,11 +172,13 @@ final class PosixFileAttributeViewImpl(path: Path, options: Array[LinkOption])
         FileTime.from(st_mtime.toLong, TimeUnit.SECONDS)
       }
 
-      override def group() = PosixGroupPrincipal(st_gid)(None)
+      override def group(): PosixGroupPrincipal =
+        PosixGroupPrincipal(st_gid)(None)
 
-      override def owner() = PosixUserPrincipal(st_uid)(None)
+      override def owner(): PosixUserPrincipal =
+        PosixUserPrincipal(st_uid)(None)
 
-      override def permissions() = {
+      override def permissions(): ju.HashSet[PosixFilePermission] = {
         val set = new ju.HashSet[PosixFilePermission]
         PosixFileAttributeViewImpl.permMap.foreach {
           case (flag, value) =>

@@ -1,5 +1,5 @@
 /* Ported from Scala.js commit: 7569c24 dated: 2025-05-20
- * 
+ *
  * For reasons internal to Scala.js practice, the Scala.js file was
  * named MathTestOnJDK21.
  * "require-jdk21/org/scalajs/testsuite/javalib/lang/MathTestOnJDK21.scala
@@ -13,8 +13,8 @@ package org.scalanative.testsuite.javalib.lang
 import java.math.BigInteger
 import java.util.SplittableRandom
 
-import org.junit.Test
 import org.junit.Assert._
+import org.junit.Test
 
 class MathTestOnJDK18 {
 

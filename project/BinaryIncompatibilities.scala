@@ -22,6 +22,8 @@ object BinaryIncompatibilities {
     exclude[DirectMissingMethodProblem]("scala.scalanative.nir.Attrs.fromProduct"),
     exclude[IncompatibleResultTypeProblem]("scala.scalanative.nir.Attrs.unapply"),
     exclude[MissingTypesProblem]("scala.scalanative.nir.Attrs$"),
+    // since 0.4.10 - incorrectlly defined 
+    exclude[DirectMissingMethodProblem]("scala.scalanative.nir.Global#None.member"),
   )
 
   final val Tools: Filters = Seq(
@@ -38,7 +40,9 @@ object BinaryIncompatibilities {
       "scala.scalanative.build.NativeConfig*"
     ),
     exclude[ReversedMissingMethodProblem]("scala.scalanative.build.Config*"),
-    exclude[Problem]("scala.scalanative.build.Config*Impl*")
+    exclude[Problem]("scala.scalanative.build.Config*Impl*"),
+    // Should have never been public in the first place - contains local classpaths
+    exclude[MissingClassProblem]("scala.scalanative.buildinfo.ScalaNativeBuildInfo*"),
   )
 
   final val NativeLib = Seq(
@@ -51,13 +55,18 @@ object BinaryIncompatibilities {
     exclude[ReversedMissingMethodProblem]("scala.scalanative.runtime.NativeThread#Companion.defaultOSStackSize"),
     exclude[Problem]("scala.scalanative.runtime._Class.*"),
     exclude[Problem]("scala.scalanative.runtime.unwind.*"),
+    exclude[DirectMissingMethodProblem]("scala.scalanative.unsafe.package.toCWideStringImpl"),
   )
   final val CLib: Filters = Nil
 
   final val PosixLib: Filters = Seq(
+    exclude[DirectMissingMethodProblem]("scala.scalanative.posix.spawn.posix_spawn_file_actions_open"), // wrong name
     exclude[Problem]("scala.scalanative.posix.string.stroll"), // remove typo 
     exclude[Problem]("scala.scalanative.posix.string.stroll_l"), // remove typo
-    exclude[Problem]("scala.scalanative.posix.string.strcpy") // libc not CX
+    exclude[Problem]("scala.scalanative.posix.string.strcpy"), // libc not CX
+    exclude[Problem]("scala.scalanative.posix.termios*"), // maybe can be more specific
+    exclude[Problem]("scala.scalanative.posix.pollEvents"), // not Open Group
+    exclude[Problem]("scala.scalanative.posix.pollEvents$") // not Open Group
   )
 
   final val WindowsLib: Filters = Nil

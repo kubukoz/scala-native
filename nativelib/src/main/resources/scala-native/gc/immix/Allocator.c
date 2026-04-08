@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <memory.h>
 #include <assert.h>
+#include "shared/Log.h"
 
 bool Allocator_getNextLine(Allocator *allocator);
 bool Allocator_newBlock(Allocator *allocator);
@@ -230,10 +231,11 @@ NOINLINE word_t *Allocator_allocSlow(Allocator *allocator, Heap *heap,
 
         // A small object can always fit in a single free block
         // because it is no larger than 8K while the block is 32K.
-        if (Heap_isGrowingPossible(heap, 1))
+        if (Heap_isGrowingPossible(heap, 1)) {
             Heap_Grow(heap, 1);
-        else
+        } else {
             Heap_exitWithOutOfMemory("cannot allocate more objects");
+        }
     } while (true);
     return NULL; // unreachable
 }

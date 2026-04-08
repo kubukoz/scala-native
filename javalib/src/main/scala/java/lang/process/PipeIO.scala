@@ -3,12 +3,10 @@ package java.lang.process
 import java.io._
 
 import scala.scalanative.annotation.stub
-import scala.scalanative.posix.sys.ioctl._
 import scala.scalanative.meta.LinktimeInfo.isWindows
-
+import scala.scalanative.posix.sys.ioctl._
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
-
 import scala.scalanative.windows.DWord
 import scala.scalanative.windows.NamedPipeApi.PeekNamedPipe
 
@@ -31,28 +29,6 @@ import scala.scalanative.windows.NamedPipeApi.PeekNamedPipe
  *   "it made sense at the time". Still, one can recognize that the entire
  *   Scala Native implementation of "java.lang.process" offers abundant
  *   opportunities for improvement.
- *
- *   - read(b, o, l) behavior: "de jure" and "de facto"
- *
- *     The Java 8, and subsequent, "InputStream#read(b, o, l)" documentation
- *     says, in part: "An attempt is made to read as many as len bytes,
- *     but a smaller number may be read."
- *
- *     - Prior to the changes to resolve Issue 4023, Scala Native PipeIO
- *       followed the "as many as len bytes" clause, blocking until
- *       either the len bytes had been read or an End of File or Exception
- *       had been encountered. Compliant but not actual JVM practice.
- *
- *     - Issue 4023 requested that Scala Native PipeIO follow the actual
- *       practice of many JVMs of following the "but a smaller number may
- *       be read." clause. This code will now block until the first byte
- *       becomes available, and then immediately return that byte and
- *       any others which are available at that time. This may and will
- *       result in "short" reads.
- *
- *       JVM actual behavior, with all its JVM versions and implementations
- *       can only be modeled to an approximation. The approximation to resolve
- *       Issue 4023 should be better than the prior approximation.
  *
  *   - Unexpected use of synchronized methods
  *
@@ -98,174 +74,99 @@ import scala.scalanative.windows.NamedPipeApi.PeekNamedPipe
  *     has copied the in-flight os pipe data and switched the 'src' variable to
  *     read from that saved data. This is accomplished by using
  *     synchronized methods.
- *
- *     - UnixProcess* and WindowProcess check if the child process has exited
- *       at different places in the code. This can have a major effect on
- *       the timing of events, including the number of bytes available at
- *       an I/O event.
- *
- *       - UnixProcess* checks in the public "waitfor(*)" method.
- *         That method is usually called once by user of PipeIO.
- *
- *       - WindowsProcess checks in the private "checkResult()" method.
- *         That method is usually called once per PipeIO public method call.
- *         This means that it is called at least once per I/O.
- *
- *   - UnixProcessGen2 and WindowsProcess are well exercised.
- *     UnixProcessGen1 is less well exercised and may retain
- *     unfortunate timing interactions.
  */
 
-private[lang] final class PipeIO[T](
+private[process] final class PipeIO[T](
     val nullStream: T,
-    val fdStream: (GenericProcess, FileDescriptor) => T
+    val fdStream: FileDescriptor => T
 )
 
-private[lang] object PipeIO {
+private[process] object PipeIO {
   def apply[T](
-      process: GenericProcess,
       childFd: => FileDescriptor,
       redirect: ProcessBuilder.Redirect
   )(implicit ioStream: PipeIO[T]): T = {
     redirect.`type`() match {
       case ProcessBuilder.Redirect.Type.PIPE =>
-        ioStream.fdStream(process, childFd)
+        val fd = childFd // could specify INVALID if PIPE is not needed
+        if (fd.valid()) ioStream.fdStream(fd) else ioStream.nullStream
       case _ =>
         ioStream.nullStream
     }
   }
 
   trait Stream extends InputStream {
-    def process: GenericProcess
     def drain(): Unit = {}
   }
 
-  class StreamImpl(val process: GenericProcess, is: FileInputStream)
-      extends Stream {
+  class StreamImpl(is: FileInputStream) extends Stream {
 
     private var src: InputStream = is
 
-    // By convention, caller is synchronized on 'this'.
-    private def availableUnSync() = {
-      src match {
-        case fis: FileInputStream => availableFD()
-        case _                    => src.available()
-      }
+    override def available(): Int =
+      synchronized(src.available())
+
+    private def switchToNullInput(): Unit = {
+      src.close()
+      src = NullInput
     }
 
-    override def available(): Int = synchronized {
-      try
-        availableUnSync()
-      finally process.checkResult()
-    }
-
-    override def read(): Int = synchronized {
-      try
-        src.read()
-      finally process.checkResult()
-    }
-
-    override def read(buf: Array[scala.Byte], offset: Int, len: Int): Int =
-      synchronized {
-
-        if (offset < 0 || len < 0 || len > buf.length - offset) {
-          val end = offset + len
-          throw new IndexOutOfBoundsException(
-            s"Range [$offset, $end) out of bounds for length ${buf.length}"
-          )
+    override def read(): Int =
+      if (src eq NullInput) -1
+      else
+        synchronized {
+          val res = src.read()
+          if (res == -1) switchToNullInput()
+          res
         }
 
-        if (len == 0) 0
-        else {
-          try {
-            val avail = availableUnSync()
-
-            if (avail > 0) {
-              val nToRead = Math.min(len, avail)
-              src.read(buf, offset, nToRead)
-            } else {
-              src match {
-                case fis: FileInputStream =>
-                  val nRead = src.read(buf, offset, 1)
-
-                  if (nRead == -1) -1
-                  else {
-
-                    val nToRead =
-                      Math.min(len - 1, availableUnSync()) // possibly zero
-
-                    val nSecondRead =
-                      if (nToRead == 0) 0
-                      else src.read(buf, offset + 1, nToRead)
-
-                    if (nSecondRead == -1) 1
-                    else nSecondRead + 1
-                  }
-
-                case _ => -1 // EOF
-              }
-            }
-          } finally process.checkResult()
-        }
+    override def read(buf: Array[scala.Byte], offset: Int, len: Int): Int = {
+      if (offset < 0 || len < 0 || len > buf.length - offset) {
+        val end = offset + len
+        throw new IndexOutOfBoundsException(
+          s"Range [$offset, $end) out of bounds for length ${buf.length}"
+        )
       }
+
+      if (len == 0) 0
+      else if (src eq NullInput) -1
+      else
+        synchronized {
+          val res = src.read(buf, offset, len)
+          if (res < 0) switchToNullInput()
+          res
+        }
+    }
 
     /* Switch horses, or at least InputStreams, "in media res".
      * See Design Note at top of file.
      */
-    override def drain(): Unit = synchronized {
+    override def drain(): Unit = if (src eq is) synchronized {
+      if (src eq is) { // not yet drained
+        val avail = is.available()
 
-      val avail = availableUnSync()
+        src =
+          if (avail <= 0) PipeIO.NullInput
+          else new ByteArrayInputStream(is.readNBytes(avail))
 
-      val newSrc =
-        if (avail <= 0) PipeIO.NullInput
-        else new ByteArrayInputStream(src.readNBytes(avail))
-
-      // release JVM FileDescriptor and, especially, its OS fd.
-      src.close()
-
-      src = newSrc
-    }
-
-    private def availableFD(): Int = {
-      if (isWindows) {
-        val availableTotal = stackalloc[DWord]()
-        val hasPeaked = PeekNamedPipe(
-          pipe = is.getFD().handle,
-          buffer = null,
-          bufferSize = 0.toUInt,
-          bytesRead = null,
-          totalBytesAvailable = availableTotal,
-          bytesLeftThisMessage = null
-        )
-        if (hasPeaked) (!availableTotal).toInt
-        else 0
-      } else {
-        val res = stackalloc[CInt]()
-        ioctl(
-          is.getFD().fd,
-          FIONREAD,
-          res.asInstanceOf[Ptr[scala.Byte]]
-        ) match {
-          case -1 => 0
-          case _  => !res
-        }
+        // release JVM FileDescriptor and, especially, its OS fd.
+        is.close()
       }
     }
   }
 
   implicit val InputPipeIO: PipeIO[Stream] =
-    new PipeIO(NullInput, (p, fd) => new StreamImpl(p, new FileInputStream(fd)))
+    new PipeIO(NullInput, fd => new StreamImpl(new FileInputStream(fd)))
 
   implicit val OutputPipeIO: PipeIO[OutputStream] =
-    new PipeIO(NullOutput, (_, fd) => new FileOutputStream(fd))
+    new PipeIO(NullOutput, fd => new FileOutputStream(fd))
 
   private object NullInput extends Stream {
-    @stub
-    override def process: GenericProcess = ???
     override def available(): Int = 0
     override def close(): Unit = {}
-    override def read(): Int = 0
-    override def read(buf: Array[scala.Byte], offset: Int, len: Int) = -1
+    override def read(): Int = -1
+    override def read(buf: Array[scala.Byte], offset: Int, len: Int) =
+      if (len == 0) 0 else -1
   }
 
   private object NullOutput extends OutputStream {

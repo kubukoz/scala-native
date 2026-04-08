@@ -1,44 +1,45 @@
 package java.io
 
-import java.{lang => jl}
 import java.net.URI
 import java.nio.charset.StandardCharsets
-import java.nio.file.{FileSystems, Path}
-import java.nio.file.WindowsException
+import java.nio.file.{FileSystems, Path, WindowsException}
 import java.util.ScalaOps._
 import java.util.WindowsHelperMethods._
+import java.{lang => jl}
+
 import scala.annotation.tailrec
+
 import scala.scalanative.annotation.alwaysinline
 import scala.scalanative.libc._
 import scala.scalanative.libc.stdio._
 import scala.scalanative.libc.string._
+import scala.scalanative.meta.LinktimeInfo.isWindows
 import scala.scalanative.nio.fs.FileHelpers
 import scala.scalanative.posix.stdlib._
 import scala.scalanative.posix.sys.stat
 import scala.scalanative.posix.unistd._
 import scala.scalanative.posix.{limits, unistd, utime}
-import scala.scalanative.meta.LinktimeInfo.isWindows
-import scala.scalanative.runtime.{DeleteOnExit, Platform}
+import scala.scalanative.runtime.DeleteOnExit
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 import scala.scalanative.windows
-import windows._
-import windows.MinWinBaseApi.{FileTime => WinFileTime}
-import windows.MinWinBaseApiOps.FileTimeOps._
-import windows.WinBaseApi._
-import windows.WinBaseApiExt._
-import windows.SecurityBaseApi._
-import windows.SecurityBaseApiOps._
+
 import windows.AclApi._
-import windows.HandleApi._
-import windows.HandleApiExt._
 import windows.FileApi._
 import windows.FileApiExt._
-import windows.winnt.{HelperMethods => WinNtHelperMethods, _}
+import windows.HandleApi._
+import windows.HandleApiExt._
+import windows.MinWinBaseApi.{FileTime => WinFileTime}
+import windows.MinWinBaseApiOps.FileTimeOps._
+import windows.SecurityBaseApi._
+import windows.SecurityBaseApiOps._
+import windows.WinBaseApi._
+import windows.WinBaseApiExt._
+import windows._
+import windows.accctrl._
 import windows.winnt.AccessRights._
 import windows.winnt.AccessToken._
-import windows.winnt.TokenInformationClass
-import windows.accctrl._
+import windows.winnt.{HelperMethods => WinNtHelperMethods, _}
 
 class File(_path: String) extends Serializable with Comparable[File] {
   import File._
@@ -302,7 +303,7 @@ class File(_path: String) extends Serializable with Comparable[File] {
       val resolvedName: Ptr[Byte] = alloc[Byte](limits.PATH_MAX)
       if (realpath(toCString(path), resolvedName) == null) {
         throw new IOException(
-          s"realpath can't resolve: ${path}, errno=${fromCString(string.strerror(errno.errno))}"
+          s"realpath can't resolve: ${path}, errno=${LibcExt.strError()}"
         )
       }
       fromCString(resolvedName)
@@ -729,7 +730,7 @@ object File {
       } else {
         val buff: CString = alloc[CChar](4096)
         if (getcwd(buff, 4095.toUInt) == null) {
-          val errMsg = fromCString(string.strerror(errno.errno))
+          val errMsg = LibcExt.strError()
           throw new IOException(
             s"error in trying to get user directory - $errMsg"
           )

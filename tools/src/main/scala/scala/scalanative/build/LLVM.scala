@@ -3,14 +3,15 @@ package build
 
 import java.io.{File, PrintWriter}
 import java.nio.file.{Files, Path, Paths, StandardCopyOption}
+
+import scala.concurrent._
 import scala.sys.process._
+import scala.util.{Failure, Success}
+
 import scala.scalanative.build.IO.RichPath
 import scala.scalanative.linker.ReachabilityAnalysis
 import scala.scalanative.nir.Attr.Link
 
-import scala.concurrent._
-import scala.util.Failure
-import scala.util.Success
 import _root_.java.io.IOException
 
 /** Internal utilities to interact with LLVM command-line tools. */
@@ -206,7 +207,7 @@ private[scalanative] object LLVM {
     } catch {
       case ex: IOException if (outPath.toFile().exists()) =>
         throw new BuildException(
-          s"""Executable build module or `baseName` is named 'native'
+          s"""|Executable build module or `baseName` is named 'native'
               |which conflicts with the compiler `workDir`.
               |Please rename the build module or
               |use `withBaseName` to rename the executable.
