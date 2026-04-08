@@ -241,6 +241,13 @@ void Marker_markModules(Heap *heap, Stack *stack) {
     Bytemap *bytemap = heap->bytemap;
     for (int i = 0; i < nb_modules; i++) {
         Object *object = (Object *)modules[i];
+        // Module slots may point to partially-initialized objects (rtti not
+        // yet written) if GC fires during module construction.  Skip them —
+        // they will be reachable from the program stack instead.
+        if (object != NULL && Heap_IsWordInHeap(heap, (word_t *)object) &&
+            object->rtti == NULL) {
+            continue;
+        }
         Marker_markField(heap, stack, (Field_t)object);
     }
 }

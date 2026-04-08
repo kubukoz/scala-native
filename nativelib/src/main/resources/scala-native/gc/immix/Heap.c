@@ -54,7 +54,9 @@ size_t Heap_getMemoryUsed(Heap *heap) { return heap->heapSize; }
  */
 word_t *Heap_mapAndAlign(size_t memoryLimit, size_t alignmentSize) {
     assert(alignmentSize % WORD_SIZE == 0);
-    word_t *heapStart = memoryMap(memoryLimit);
+    // Allocate extra bytes so that after aligning the start pointer forward,
+    // there are still at least memoryLimit usable bytes.
+    word_t *heapStart = memoryMap(memoryLimit + alignmentSize);
     size_t alignmentMask = ~(alignmentSize - 1);
     // Heap start not aligned on
     if (((word_t)heapStart & alignmentMask) != (word_t)heapStart) {
