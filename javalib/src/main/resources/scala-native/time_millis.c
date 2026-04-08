@@ -8,6 +8,10 @@
 #include <sys/time.h>
 #endif
 
+#ifdef TARGET_PLAYDATE
+extern unsigned int pd_getSecondsSinceEpoch(unsigned int *milliseconds);
+#endif
+
 /**
  * Refer to javadoc for System.currentTimeMillis()
  *
@@ -20,7 +24,14 @@ long long scalanative_current_time_millis() {
     long long current_time_millis = 0LL;
 #define NANOS_PER_MILLI 1000000LL
 
-#if defined(_WIN32)
+#if defined(TARGET_PLAYDATE)
+    // Playdate's epoch is 2000-01-01 UTC; offset to Unix epoch (1970-01-01).
+#define PLAYDATE_EPOCH_OFFSET_SEC 946684800LL
+    unsigned int millis = 0;
+    unsigned int secs = pd_getSecondsSinceEpoch(&millis);
+    return ((long long)secs + PLAYDATE_EPOCH_OFFSET_SEC) * 1000LL +
+           (long long)millis;
+#elif defined(_WIN32)
     // Windows epoch is January 1, 1601 (start of Gregorian calendar cycle)
     // Unix epoch is January 1, 1970 (adjustment in "ticks" 100 nanosecond)
 #define UNIX_TIME_START 0x019DB1DED53E8000LL

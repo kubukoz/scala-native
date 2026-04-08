@@ -6,6 +6,10 @@
 #include <time.h>
 #endif // defined(_WIN32)
 
+#ifdef TARGET_PLAYDATE
+extern unsigned int pd_getCurrentTimeMilliseconds(void);
+#endif
+
 /**
  * Refer to javadoc for System.nanoTime()
 
@@ -24,7 +28,11 @@ long long scalanative_nano_time() {
     long long nano_time = 0LL;
 #define NANOS_PER_SEC 1000000000LL
 
-#if defined(_WIN32)
+#if defined(TARGET_PLAYDATE)
+    // Playdate has no clock_gettime; the SDK only exposes millisecond
+    // resolution for an absolute monotonic clock.
+    return (long long)pd_getCurrentTimeMilliseconds() * 1000000LL;
+#elif defined(_WIN32)
     // return value of 0 is failure
     LARGE_INTEGER count;
     int quad;
